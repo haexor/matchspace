@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MatchSpace Viewer</title>
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #0d1117; color: #e6edf3;
+    font: 14px/1.4 system-ui, sans-serif; }
+  canvas { display: block; touch-action: none; }
+  #top { position: fixed; top: 10px; left: 12px; pointer-events: none; text-shadow: 0 1px 3px #000; }
+  #top b { font-size: 16px; letter-spacing: .04em; }
+  #status { opacity: .85; }
+  #bar { position: fixed; left: 0; right: 0; bottom: 0; display: flex; flex-wrap: wrap; gap: 8px 12px;
+    align-items: center; padding: 10px 12px calc(10px + env(safe-area-inset-bottom, 0px));
+    background: rgba(13, 17, 23, .88); backdrop-filter: blur(6px); }
+  #seek { flex: 1 1 240px; min-width: 120px; accent-color: #3fb950; }
+  #clock { font-variant-numeric: tabular-nums; min-width: 9.5em; }
+  button, select { font: inherit; color: inherit; background: #21262d; border: 1px solid #3d444d;
+    border-radius: 6px; padding: 5px 10px; }
+  button:hover, select:hover { background: #2d333b; }
+  #play { min-width: 3em; }
+  [hidden] { display: none !important; }
+  label { display: flex; gap: 6px; align-items: center; white-space: nowrap; }
+  #help { position: fixed; top: 10px; right: 12px; max-width: 260px; font-size: 12px; opacity: .7;
+    text-align: right; pointer-events: none; text-shadow: 0 1px 3px #000; }
+  @media (max-width: 700px) { #help { display: none; } }
+  body.bare #top, body.bare #help, body.bare #bar { display: none; }
+</style>
+<script type="importmap">{ "imports": { "three": "./vendor/three.module.js" } }</script>
+</head>
+<body>
+<div id="top"><b>MatchSpace</b><br><span id="status">Lade Spieldaten …</span></div>
+<div id="help">Spieler anklicken zum Auswählen · Leertaste: Start/Stopp · ←/→: 5 s ·
+  ,/.: Einzelbild · Ich-Perspektive: ziehen zum Umsehen</div>
+<div id="bar">
+  <button id="play" title="Start/Stopp (Leertaste)">▶</button>
+  <span id="clock">–</span>
+  <input id="seek" type="range" min="0" max="1" step="1" value="0" aria-label="Zeitleiste">
+  <label>Tempo
+    <select id="speed">
+      <option value="0.25">0,25×</option><option value="0.5">0,5×</option>
+      <option value="1" selected>1×</option><option value="2">2×</option>
+      <option value="4">4×</option><option value="8">8×</option>
+    </select>
+  </label>
+  <label>Kamera
+    <select id="mode">
+      <option value="free">Frei</option>
+      <option value="follow">Spieler folgen</option>
+      <option value="fp">Ich-Perspektive</option>
+    </select>
+  </label>
+  <label>Spieler <select id="player"><option value="-1">–</option></select></label>
+  <label id="skeletonLabel" hidden>Darstellung
+    <select id="look">
+      <option value="body">Körper</option>
+      <option value="sticks">Skelett</option>
+      <option value="simple">Einfach</option>
+    </select>
+  </label>
+  <button id="topview" title="Taktikansicht von oben">Von oben</button>
+</div>
+<script type="module" src="./main.js?v=12"></script>
+</body>
+</html>

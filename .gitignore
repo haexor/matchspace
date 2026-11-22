@@ -1,0 +1,6 @@
+# Fremddaten und daraus erzeugte Dateien nicht einchecken (Lizenz unklar, groß)
+data/raw/
+web/data/
+.venv/
+data/work/
+models/
