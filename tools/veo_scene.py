@@ -26,6 +26,7 @@ Aufruf:
     .venv/bin/python tools/veo_scene.py VEO_ORDNER KAMERA.json VEO_ALIGN.json VIDEO START_S DETEKTIONEN.json BASIS_SPIEL AUSGABE_SPIEL
 Ohne Veo (eigenes Spielertracking aus tools/track_players.py, Spieler ohne Rückennummer): VEO_ORDNER und
 VEO_ALIGN.json als "-". Vom BASIS_SPIEL werden dann nur Platz, Kulisse, Mannschaften und Uhr übernommen.
+Die Teile ohne Veo (Spuren, Ball) stehen in tools/own_scene.py.
 """
 import json
 import math
@@ -49,10 +50,11 @@ import veo_camera  # noqa: E402
 import check_motion  # noqa: E402
 import ground_motion  # noqa: E402
 import track_limits  # noqa: E402
-import track_players  # noqa: E402
 import veo_keypoints  # noqa: E402
 import veo_tracks  # noqa: E402
 from veo_keypoints import torso_colour  # noqa: E402
+from own_scene import (BALL_GAP, BALL_REACH, MIN_APPEARANCE, OWN_GAP, attach_ball, drop_same_place, own_ball,  # noqa: E402
+                       own_identities)
 from synth_poses import BONES, JOINTS, NAMES  # noqa: E402
 
 LENSES = ("left", "right")
@@ -77,9 +79,6 @@ CACHE_VERSION = 6.0
 BOX_TO_BODY = 0.93    # Boxen umfassen etwas mehr als den Körper (Unschärfe, Haare, Sohle); Abzug geschätzt, nicht gemessen
 DEPTH_CALM = 36000.0  # Gewicht der Ruhe in Blickrichtung: Schwankungen des Abstands schneller als rund 0,3 Hz gelten als Rauschen
 OUT_FPS = 25
-BALL_GAP = 2.0        # s: so lange Lücken der eigenen Ballspur werden gerade überbrückt
-BALL_REACH = 0.9      # m: so nah an einer Fußspitze gilt der Ball als am Fuß
-BALL_AT_FOOT = 0.13   # m: Abstand Ballmitte zur Fußspitze bei Ballkontakt
 POSE_SCALE, MISSING, CHUNK_FRAMES = 0.001, -32768, 1500
 
 
@@ -289,99 +288,6 @@ def resample_keypoints(kp, lens, n_out, ratio):
     return out, lens_out
 
 
-def own_ball(found, n_out, ratio):
-    """Ballspur aus dem Video (Videobilder, NaN = nicht gefunden) im Takt der Ausgabe. Lücken bis BALL_GAP werden
-    gerade überbrückt (der Ball rollt zwischen zwei Berührungen geradeaus; am Fuß zieht ihn später
-    attach_ball heran), längere Lücken und Anfang und Ende halten die nächste bekannte Lage."""
-    out = resample(found, n_out, ratio)
-    seen = np.flatnonzero(~np.isnan(out[:, 0]))
-    if not len(seen):
-        return out
-    idx = np.arange(n_out)
-    filled = np.column_stack([np.interp(idx, seen, out[seen, a]) for a in range(2)])
-    gap_len = np.zeros(n_out)
-    for a, b in segments(np.isnan(out[:, 0]), 1):
-        gap_len[a:b] = b - a if a > 0 and b < n_out else np.inf
-    long = (gap_len > BALL_GAP * OUT_FPS) & np.isnan(out[:, 0])
-    for a, b in segments(long, 1):   # lange Lücke: in der ersten Hälfte die letzte, in der zweiten die nächste Lage halten
-        before = out[a - 1] if a > 0 else out[b] if b < n_out else filled[a]
-        after = out[b] if b < n_out else before
-        mid = (a + b) // 2
-        filled[a:mid], filled[mid:b] = before, after
-    return filled
-
-
-def attach_ball(ball_xy, feet, fps):
-    """Zieht den Ball an den Fuß, wenn er in Reichweite liegt: Die Ballspur ist in Blickrichtung auf rund einen halben Meter
-    genau, ein geführter Ball lag deshalb oft neben dem Spieler. feet: (T, F, 2) Fußspitzen aller Spieler (NaN = keiner)."""
-    T = len(ball_xy)
-    shift = np.zeros((T, 2))
-    for t in range(T):
-        if np.isnan(ball_xy[t, 0]):
-            continue
-        d = np.linalg.norm(feet[t] - ball_xy[t], axis=1)
-        if np.isnan(d).all():
-            continue
-        k = int(np.nanargmin(d))
-        if d[k] >= BALL_REACH:
-            continue
-        toward = (ball_xy[t] - feet[t, k]) / max(d[k], 1e-6)
-        target = feet[t, k] + toward * BALL_AT_FOOT
-        w = np.clip((BALL_REACH - d[k]) / (BALL_REACH - BALL_AT_FOOT), 0, 1)
-        shift[t] = (target - ball_xy[t]) * (w * w * (3 - 2 * w))
-    kernel = np.hanning(7)[1:-1]
-    kernel /= kernel.sum()
-    shift = np.column_stack([np.convolve(shift[:, a], kernel, "same") for a in range(2)])   # nicht von Bild zu Bild springen
-    return ball_xy + shift
-
-
-TEAM_OF_COLOUR = {0: "own", 1: "opponent", 2: "referee"}   # Trikotfarben des Heimspiels (tools/veo_colors.py): rot = wir
-KEEPER_INSIDE = 1.5   # m: so weit innerhalb der Linien muss eine solche Spur im Mittel liegen (Trainer, Betreuer stehen an der Linie)
-KEEPER_MIN = 5.0      # s: so lange muss eine Spur in unbekannter Farbe auf dem Platz sein, um als Torwart zu gelten
-MIN_APPEARANCE = 0.5  # s: kürzere Auftritte einer Figur entfallen
-OWN_SAME = 0.6        # m: zwei eigene Spuren derselben Mannschaft näher als das sind dieselbe Person
-OWN_GAP = 1.0         # s: so lange Lücken einer eigenen Spur werden überbrückt
-OWN_ID = 1000         # Spuren ohne Rückennummer: Nummern ab hier (nur intern, nicht auf dem Trikot)
-
-
-def own_identities(det, cam, n, video):
-    """Eigenes Tracking statt Veo (tools/track_players.py): Spuren auf dem Platz mit Mannschaft und Name.
-
-    Personen, die meist außerhalb der Linien stehen (Auswechselspieler, Trainer, Zuschauer), zählen nicht, ebenso
-    Spuren in Leibchen, die im Farbton deutlich vom Trikot ihrer Farbklasse abweichen (tools/track_players.split_bibs).
-    Eine Spur in unbekannter Farbe, die lange auf dem Platz ist, gilt als Torwart; er gehört zu der Mannschaft,
-    deren Feldspieler im Mittel näher an seinem Tor stehen. Rückgabe: {(Mannschaft, Nummer): (Farbe, Torwart,
-    {Bild: Zeile})}."""
-    L, W = cam["pitch"]["length"], cam["pitch"]["width"]
-    fps = det["fps"]
-    kept, centre = [], {}
-    result = track_players.track(det, cam)
-    team = track_players.split_bibs(result, track_players.track_hues(video, result), fps)   # Leibchen der Auswechselspieler zählen nicht
-    for tr in (t for t, ok in zip(result, team) if ok):
-        fs = sorted(tr["frames"])
-        pts = np.array([tr["frames"][f][:2] for f in fs])
-        mid = np.median(pts, axis=0)
-        inside = KEEPER_INSIDE if tr["colour"] < 0 else 0.0   # ohne Trikotfarbe: nicht die Leute an der Seitenlinie
-        if abs(mid[0]) > L / 2 - inside or abs(mid[1]) > W / 2 - inside:
-            continue
-        if tr["colour"] < 0 and (fs[-1] - fs[0]) / fps < KEEPER_MIN:
-            continue
-        kept.append((fs[0], tr, mid))
-        if tr["colour"] in (0, 1):
-            centre.setdefault(tr["colour"], []).append(pts[:, 0])
-    mean_x = {c: float(np.mean(np.concatenate(v))) for c, v in centre.items()}
-    out, count = {}, Counter()
-    for _, tr, mid in sorted(kept, key=lambda k: k[0]):
-        colour, keeper = tr["colour"], tr["colour"] < 0
-        if keeper:   # Torwart: Mannschaft, die im Mittel näher an seinem Tor steht
-            goal = math.copysign(L / 2, mid[0])
-            colour = min(mean_x, key=lambda c: abs(mean_x[c] - goal)) if mean_x else 0
-        team = TEAM_OF_COLOUR.get(colour, "opponent")
-        count[team] += 1
-        out[(team, OWN_ID + count[team])] = (colour, keeper, tr["frames"])
-    return out
-
-
 def main(veo_dir, camera_path, align_path, video, start, det_path, base_dir, out_dir):
     began = time.time()
 
@@ -483,24 +389,7 @@ def main(veo_dir, camera_path, align_path, video, start, det_path, base_dir, out
                     bridged[a:b] = True
             for fi in np.flatnonzero(bridged):
                 where[fi][key] = np.array([np.interp(fi, seen, rows[seen, 5]), np.interp(fi, seen, rows[seen, 6])])
-        # Zwei Spuren derselben Mannschaft an derselben Stelle sind eine Person: In dem Bild weicht die nur
-        # überbrückte Spur, sind beide gemessen, die kürzere.
-        removed = 0
-        length = {key: int((~np.isnan(rows[:, 0])).sum()) for key, rows in obs.items()}
-        for fi in range(n):
-            keys = list(where[fi])
-            for a in range(len(keys)):
-                for b in range(a + 1, len(keys)):
-                    ka, kb = keys[a], keys[b]
-                    if ka[0] != kb[0] or ka not in where[fi] or kb not in where[fi]:
-                        continue
-                    if np.linalg.norm(where[fi][ka] - where[fi][kb]) >= OWN_SAME:
-                        continue
-                    measured_a, measured_b = not np.isnan(obs[ka][fi, 0]), not np.isnan(obs[kb][fi, 0])
-                    loser = kb if (measured_a, length[ka]) >= (measured_b, length[kb]) else ka
-                    del where[fi][loser]
-                    obs[loser][fi] = np.nan
-                    removed += 1
+        removed = drop_same_place(obs, where)   # zwei Spuren an derselben Stelle sind eine Person
         total_boxes = int(sum((~np.isnan(b[:, 0])).sum() for b in obs.values()))
         print(f"Doppelte Spuren an derselben Stelle: {removed} Spieler-Bilder entfernt", flush=True)
         print(f"Eigenes Tracking: {len(obs)} Spuren auf dem Platz ({dict(Counter(k[0] for k in obs))}, davon {len(keepers)} Torwart), "
@@ -788,7 +677,7 @@ def main(veo_dir, camera_path, align_path, video, start, det_path, base_dir, out
     ball = next((i for i, e in enumerate(base["entities"]) if e["kind"] == "ball"), None)
     ball_source = "Veo"
     if ball is not None and Path(f"{det_path}.ball.npz").exists():   # eigener Ball aus dem Video (tools/veo_ball.py) statt Veos
-        xy[:, ball] = own_ball(np.load(f"{det_path}.ball.npz")["pos"], total, ratio)
+        xy[:, ball] = own_ball(resample(np.load(f"{det_path}.ball.npz")["pos"], total, ratio), BALL_GAP * OUT_FPS)
         ball_source = "Video"
 
     # 2b. Eigene Position: Fußpunkt am Boden. Veo füllt die Lücken, verschoben um den zuletzt
