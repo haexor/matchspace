@@ -4,3 +4,7 @@ web/data/
 .venv/
 data/work/
 models/
+
+graphify-out/
+__pycache__/
+.spaex/manifest.json.lock
