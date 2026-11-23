@@ -193,6 +193,13 @@ class SplitTest(unittest.TestCase):
             frames[f] = (*frames[f][:2], 1)
         self.assertEqual([p.id for p in il.split_by_colour([piece("a", frames)], COLOURS, FPS)], ["a"])
 
+    def test_foreign_colour_without_anyone_near_is_not_a_swap(self):
+        frames = path(0, 100, (0, 0), (10, 0), 0)
+        for f in range(30, 80):      # 1,6 s lang „fremde“ Farbe, aber kein Mensch weit und breit
+            frames[f] = (*frames[f][:2], 1)
+        far = piece("c", path(0, 100, (0, 30), (10, 30), 1), team="opponent")
+        self.assertEqual(sorted(p.id for p in il.split_by_colour([piece("a", frames), far], COLOURS, FPS)), ["a", "c"])
+
     def test_foreign_stretch_on_a_tracked_player_is_dropped(self):
         a = piece("a", {**path(0, 50, (0, 0), (5, 0), 0), **path(50, 100, (5.1, 0), (10, 0), 1)})
         c = piece("c", path(0, 100, (0, 3), (10, 0), 1), team="opponent")   # der Gegner hat schon seine Spur

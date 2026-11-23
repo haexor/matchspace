@@ -47,6 +47,8 @@ CONTACT_M = 1.5         # m: so nah kommen sich zwei Spuren derselben Mannschaft
 CONTACT_JOIN_S = 0.5    # s: Kontakte mit kürzerer Pause dazwischen sind einer
 COLOUR_SMOOTH_S = 0.2   # s: Farbe je Erkennung über ± so lange geglättet (Mehrheit)
 MIN_FOREIGN_S = 1.0     # s: so lange muss eine Spur fremde Trikots tragen, bevor getrennt wird
+SWAP_NEAR_M = 3.0       # m: so nah muss beim Beginn der fremden Farbe eine andere Spur sein, sonst ist es keine Verwechslung
+SWAP_WINDOW_S = 0.5     # s: um den Beginn der fremden Farbe so lange wird nach der zweiten Person gesucht
 COVERED = 0.5           # Anteil der Bilder, in denen schon eine Spur der anderen Mannschaft dort läuft
 
 
@@ -148,9 +150,23 @@ def contacts(pieces: Sequence[Piece], fps: float) -> list[Contact]:
     return sorted(out, key=lambda c: c.frame)
 
 
+def has_company(p: Piece, pieces: Sequence[Piece], frame: int, fps: float) -> bool:
+    """Ist um das Bild herum (± SWAP_WINDOW_S) eine andere Spur näher als SWAP_NEAR_M bei p? Ein Wechsel der Spur
+    auf eine andere Person braucht eine zweite Person in der Nähe."""
+    w = int(SWAP_WINDOW_S * fps)
+    for o in pieces:
+        if o is p:
+            continue
+        for g in range(frame - w, frame + w + 1):
+            if g in p.frames and g in o.frames and np.linalg.norm(o.at(g) - p.at(g)) < SWAP_NEAR_M:
+                return True
+    return False
+
+
 def split_by_colour(pieces: Sequence[Piece], colours: Mapping[str, int], fps: float) -> list[Piece]:
     """Trennt Stücke an Abschnitten fremder Trikotfarbe (Farbe je Erkennung in Zeile r[2]); colours: Farbklasse
-    je Mannschaft. Torhüter (eigene Farbe) bleiben ganz."""
+    je Mannschaft. Torhüter (eigene Farbe) bleiben ganz. Fremde Farbe ohne eine andere Spur in der Nähe (has_company)
+    ist ein Fehler der Farberkennung und trennt nicht."""
     team_of = {c: t for t, c in colours.items()}
     half = max(1, int(COLOUR_SMOOTH_S * fps))
     kept, foreign = [], []
@@ -163,7 +179,7 @@ def split_by_colour(pieces: Sequence[Piece], colours: Mapping[str, int], fps: fl
         col = np.array([int(p.frames[f][2]) for f in fs])
         smooth = np.array([np.bincount(col[max(0, i - half):i + half + 1] + 1).argmax() - 1 for i in range(len(col))])
         stretches = [(lo, hi) for lo, hi in _runs((smooth != want) & np.isin(smooth, list(team_of)))
-                     if (fs[hi] - fs[lo]) / fps >= MIN_FOREIGN_S]
+                     if (fs[hi] - fs[lo]) / fps >= MIN_FOREIGN_S and has_company(p, pieces, fs[lo], fps)]
         if not stretches:
             kept.append(p)
             continue
