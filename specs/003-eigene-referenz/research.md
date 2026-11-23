@@ -228,8 +228,8 @@ Je Linie (die fernen Linien haben gröbere Pixel in der Tiefe):
     722 `640d9142…`). Uhr, Mannschaften, Spieler und Nummern sind gleich.
   - Mit der neu kalibrierten Kamera (Unterschiede um 1e-10) weichen die Lagen höchstens 3 cm ab, nur 0,2 % der
     Spieler-Bilder um mehr als 1 cm. Spieler und Nummern sind gleich.
-- **Offen**: Die Anstoßzeiten in `spiel.json` (126 s und 3434 s) stammen noch aus Veo und müssen am Video bestätigt
-  werden. Das Panorama in den Rohdaten beginnt erst bei Sekunde 600.
+- **Bestätigt** (Nutzer, 2026-11-23): Die Anstoßzeiten in `spiel.json` (126 s und 3434 s) stammten aus Veo und stimmen.
+  Das Panorama in den Rohdaten beginnt erst bei Sekunde 600, deshalb konnte ich sie selbst nicht prüfen.
 
 ## R9 Tests
 
@@ -365,5 +365,5 @@ Kennzahlen (`jersey_eval.py`, gleiche Werte unter `own` mit und ohne `--veo`):
 - SC-004 (Wiederholbarkeit der Antworten von Hand): nicht gemessen, es gibt keine Wiederholungen.
 - Schätzung der Fehler außerhalb der Stellen aus den Kontrollstellen: nicht möglich, die 5 Kontrollstellen je Szene sind
   offen.
-- Anstoßzeiten (T023): die Werte in `spiel.json` sind noch die von Veo (126 s und 3434 s), vom Nutzer nicht bestätigt; das
-  Panoramavideo beginnt in den Rohdaten erst bei Sekunde 600.
+- Anstoßzeiten (T023): Nach Abschluss des Quickstarts vom Nutzer bestätigt (126 s und 3434 s); vorher waren es unbestätigte
+  Werte aus Veo, und das Panoramavideo beginnt in den Rohdaten erst bei Sekunde 600.
