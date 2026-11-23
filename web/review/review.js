@@ -40,8 +40,9 @@ const isNumber = (s) => s.kinds.some((k) => k === 'number' || k === 'number-unsu
 async function load() {
   data = await (await fetch('/spots')).json();
   $('scene').textContent = data.scene;
+  const asked = parseInt(new URLSearchParams(location.search).get('stelle'), 10);   // ?stelle=6 öffnet Stelle 6
   const first = data.spots.findIndex((s) => !data.answers[s.id]);
-  show(first >= 0 ? first : 0);
+  show(asked >= 1 && asked <= data.spots.length ? asked - 1 : first >= 0 ? first : 0);
   requestAnimationFrame(loop);
   if ('requestVideoFrameCallback' in video) video.requestVideoFrameCallback(onFrame);
 }
@@ -54,7 +55,7 @@ function list() {
     const a = data.answers[s.id];
     li.className = (i === index ? 'current ' : '') + (a ? (a.choice === 'unclear' ? 'unclear' : 'done') : '');
     const t = document.createElement('span');
-    t.innerHTML = `${(s.frame / data.fps).toFixed(1)} s <span class="kinds">${s.kinds.map((k) => KIND[k] || k).join(', ')}</span>`;
+    t.innerHTML = `<b>${i + 1}</b> · ${(s.frame / data.fps).toFixed(1)} s <span class="kinds">${s.kinds.map((k) => KIND[k] || k).join(', ')}</span>`;
     const state = document.createElement('span');
     state.className = 'state';
     state.textContent = a ? (a.choice === 'unclear' ? '?' : '✓') : '';
@@ -63,7 +64,9 @@ function list() {
     ol.append(li);
   });
   ol.children[index]?.scrollIntoView({ block: 'nearest' });
-  $('progress').textContent = `${data.spots.length - data.open} von ${data.spots.length} entschieden, offen ${data.open}`;
+  history.replaceState(null, '', `?stelle=${index + 1}`);
+  document.title = `Stelle ${index + 1} von ${data.spots.length} – ${data.scene}`;
+  $('progress').textContent = `Stelle ${index + 1} von ${data.spots.length} · ${data.spots.length - data.open} von ${data.spots.length} entschieden, offen ${data.open}`;
 }
 
 function participants(s) {
@@ -194,19 +197,44 @@ function render() {
   ctx.drawImage(video, x, y + s.lens * lensH, w, h, 0, 0, canvas.width, canvas.height);
   const after = f >= s.frame;
   $('phase').textContent = after ? 'nachher' : 'vorher';
+  for (const p of participants(s)) {      // Laufspur (Boxunterkante): bis jetzt kräftig, danach blass; Lücken werden überbrückt
+    const pts = Object.keys(p.boxes).map(Number).sort((a, b) => a - b).map((g) => [g, p.boxes[g]]);
+    ctx.lineWidth = 5;
+    for (const [from, to, alpha] of [[0, f, 0.9], [f, Infinity, 0.35]]) {
+      const part = pts.filter(([g]) => g >= from && g <= to);
+      if (part.length < 2) continue;
+      ctx.globalAlpha = alpha;
+      ctx.strokeStyle = color(p.letter);
+      ctx.beginPath();
+      part.forEach(([, b], i) => ctx[i ? 'lineTo' : 'moveTo'](((b[0] + b[2]) / 2 - x) * k, (b[3] - y) * k));
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+  }
   for (const p of participants(s)) {
-    const box = p.boxes[f] ?? p.boxes[String(f)];
-    if (!box) continue;
     const side = after ? s.after : s.before;
     if (!side.some((q) => q.letter === p.letter)) continue;
+    let box = p.boxes[f] ?? p.boxes[String(f)];
+    let guessed = false;
+    if (!box) {   // Lücke: Box zwischen dem letzten und dem nächsten Bild schätzen (höchstens 2 s)
+      const have = Object.keys(p.boxes).map(Number).sort((a, b) => a - b);
+      const lo = have.filter((g) => g < f).pop();
+      const hi = have.find((g) => g > f);
+      if (lo === undefined || hi === undefined || hi - lo > 2 * fps) continue;
+      const t = (f - lo) / (hi - lo);
+      box = p.boxes[lo].map((v, i) => v + (p.boxes[hi][i] - v) * t);
+      guessed = true;
+    }
     ctx.strokeStyle = color(p.letter);
     ctx.lineWidth = 3;
-    ctx.setLineDash(after ? [] : [10, 6]);
+    ctx.globalAlpha = guessed ? 0.55 : 1;
+    ctx.setLineDash(guessed ? [3, 7] : after ? [] : [10, 6]);
     ctx.strokeRect((box[0] - x) * k, (box[1] - y) * k, (box[2] - box[0]) * k, (box[3] - box[1]) * k);
     ctx.setLineDash([]);
     ctx.fillStyle = color(p.letter);
     ctx.font = 'bold 28px system-ui, sans-serif';
-    ctx.fillText(p.letter, (box[0] - x) * k, (box[1] - y) * k - 6);
+    ctx.fillText(guessed ? `${p.letter} (geschätzt)` : p.letter, (box[0] - x) * k, (box[1] - y) * k - 6);
+    ctx.globalAlpha = 1;
   }
   const span = s.to - s.from || 1;
   $('mark').style.left = `${((s.frame - s.from) / span) * 100}%`;
