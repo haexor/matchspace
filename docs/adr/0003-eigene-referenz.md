@@ -57,7 +57,8 @@ Kamerakalibrierung bei Veos Kameralage. Mit eigenen Kameras gibt es keine Veo-Da
   eingeordnet (research.md).
 - Nach jeder neuen Auswertung legt `review_spots.py` die Stellen neu an. Entschiedene Stellen werden über ihre
   Boxen wiedergefunden; nur neue sind offen.
-- Rund 60 Stellen je 25-Sekunden-Szene. Das ist knapp für 10 Minuten; die Schwelle der Verdeckung ist einstellbar.
+- Höchstens 3 Personen je Frage, größere Gedränge werden mehrere Fragen: 77 und 103 Stellen je 25-Sekunden-Szene.
+  Das ist viel für 10 Minuten; die Schwelle der Verdeckung ist einstellbar.
 - Ergebnisse mit derselben Kamera sind ohne Veo bitgleich zum Lauf mit Veo-Basisspiel.
 
 ## Verworfene Alternativen

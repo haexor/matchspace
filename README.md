@@ -229,7 +229,7 @@ python3 tools/convert_veo.py $V/export.json web/data/veo-2026-11-01 $W/veo_align
 - Eigene Referenz statt Veo (`review_spots.py`, `review_server.py`, `reference.py`, `jersey_eval.py`, Entscheidung
   in `docs/adr/0003-eigene-referenz.md`):
   - **Strittige Stellen**: Verdeckungen, Spurenden mitten auf dem Platz, Trennungen und Verbindungen, Nummern,
-    Widersprüche zu Veo; dazu 5 zufällige Kontrollstellen. Rund 60 Stellen je 25-Sekunden-Szene, meist 3 s Video.
+    Widersprüche zu Veo; dazu 5 zufällige Kontrollstellen. Höchstens 3 Personen je Frage; 77 und 103 Stellen je 25-Sekunden-Szene, meist 3 s Video.
   - **Markierwerkzeug**: lokal (`127.0.0.1`), ohne fremde Ressourcen. Je Stelle läuft ein Ausschnitt in Schleife, die
     Beteiligten tragen Buchstaben. `Enter` stimmt, `V` vertauscht, `N` andere Person, `U` unklar, Nummern eintippen.
     Jede Antwort wird sofort gespeichert (`*.det.json.reference.json`, ohne Bilder und Namen).

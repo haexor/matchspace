@@ -43,17 +43,19 @@ zusammengefasst):
 
   | Szene | Stellen | davon Verdeckung / Spurende oder -beginn / Trennung oder Verbindung / Nummer / Veo / Kontrolle | Beteiligte je Stelle | Ausschnitte zusammen |
   |---|---|---|---|---|
-  | 705 | 57 | 37 / 17 / 6 / 10 / 4 / 5 | 1–2: 41, 3–6: 16 | 200 s |
-  | 722 | 62 | 44 / 32 / 5 / 8 / – / 5 | 1–2: 38, 3–6: 24 | 232 s |
+  | 705 | 77 | 56 / 24 / 6 / 10 / 4 / 5 | 1: 16, 2: 30, 3: 31 | 257 s |
+  | 722 | 103 | 73 / 59 / 7 / 8 / – / 5 | 1: 13, 2: 25, 3: 65 | 367 s |
 
   Mehrere Gründe können auf eine Stelle fallen. Nachgeschärft gegenüber dem ersten Entwurf:
-  - Zusammengefasst wird nur bis 6 s Länge und 6 Beteiligte; sonst wuchsen Gedränge zu Stellen mit über 20
-    Spielern.
+  - Zusammengefasst wird nur bis 6 s Länge und 3 Beteiligte; sonst wuchsen Gedränge zu Stellen mit über 20
+    Spielern. Erste Fassung: 6 Beteiligte (57 und 62 Stellen). Nach der Rückmeldung beim Markieren („mehr als 3
+    Spieler sind ungünstig“) sind es höchstens 3; größere Gedränge werden mehrere Fragen, an Spurenden je Paar.
+    Das macht mehr, dafür überschaubarere Stellen (77 und 103).
   - An Spurenden zählen nur Spuren, die nahebei selbst beginnen oder enden. Wer weiterläuft, hätte bei einem Tausch
     eine Verdeckung.
   - Stellen ohne Beteiligte vorher oder nachher entfallen, weil es dort nichts zuzuordnen gibt.
 
-  Mit rund 60 Stellen ist SC-001 (10 Minuten) knapp. Die Schwelle der Verdeckung ist einstellbar (`OCCLUDE`), bei
+  Mit 77 und 103 Stellen ist SC-001 (10 Minuten) verfehlt, solange eine Frage länger als 8 s dauert. Die Schwelle der Verdeckung ist einstellbar (`OCCLUDE`), bei
   0,5 wären es rund ein Drittel weniger Verdeckungsstellen.
 - **Kontrollstellen**: 5 je Szene, zufällig über Zeit und Spieler aus Abschnitten ohne Grund, mit festem
   Startwert (wiederholbar). Die Frage lautet: Ist das dieselbe Person wie 1,5 s vorher?

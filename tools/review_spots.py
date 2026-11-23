@@ -34,9 +34,13 @@ MERGE_S = 1.0        # s: Stellen mit gemeinsamen Spielern, die höchstens so we
 INSIDE_M = 1.0       # m: so weit innerhalb der Linien muss ein Spurende liegen
 NEAR_M = 5.0         # m: Spieler so nah an einem Spurende sind beteiligt
 LONGEST_S = 6.0      # s: Stellen wachsen beim Zusammenfassen höchstens auf diese Länge
-MAX_PLAYERS = 6      # und auf so viele Beteiligte (größere Gedränge sind nicht mehr zu überblicken)
+MAX_PLAYERS = 3      # und auf so viele Beteiligte; mehr überblickt man nicht, größere Gedränge werden mehrere Fragen
+SPLIT_FROM = 3       # Wären an einem Spurende mehr als so viele Spieler beteiligt, wird je Spieler eine Frage daraus
 CONTROL_AWAY_S = 2.0  # s: Kontrollstellen so weit weg von Stellen desselben Spielers
-CROP_MIN = 256       # px: kleinster Bildausschnitt
+CROP_MIN = 400       # px: kleinste Breite des Bildausschnitts (Spieler sind nur rund 25 × 60 px groß)
+CROP_PAD = 60        # px: Rand um die Boxen
+CROP_ASPECT = 1.6    # Breite : Höhe des Ausschnitts, immer gleich, damit die Ansicht groß und ruhig bleibt
+LENS_SIZE = (2048, 1024)
 PRIORITY = {"split": 3.0, "link": 3.0, "veo": 3.0, "occlusion": 2.0, "end": 2.0, "start": 2.0,
             "number-unsure": 1.5, "number": 1.0, "control": 0.5}
 LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
@@ -62,8 +66,9 @@ def _runs(frames: Sequence[int], gap: int) -> list[tuple[int, int]]:
 class _Scene:
     """Hilfsdaten: Erkennungen je Spieler, Spieler je Bild."""
 
-    def __init__(self, identity: Mapping, boxes: Mapping, ground: Mapping, n_frames: int):
+    def __init__(self, identity: Mapping, boxes: Mapping, ground: Mapping, n_frames: int, lens_size=LENS_SIZE):
         self.fps = identity["fps"]
+        self.lens_size = tuple(lens_size)
         self.n = n_frames
         self.boxes, self.ground = boxes, ground
         self.dets = {name: [tuple(d) for d in p["detections"]] for name, p in identity["players"].items()}
@@ -73,16 +78,29 @@ class _Scene:
             for d in dets:
                 self.at.setdefault(d[0], []).append((name, d))
 
-    def near(self, frame: int, where, exclude: str) -> set[str]:
+    def near(self, frame: int, where, exclude: str) -> list[str]:
         """Wer an einem Spurende übernommen haben könnte: Spieler, deren eigene Spur im Ausschnitt (± WINDOW_S)
-        näher als NEAR_M beginnt oder endet. Wer einfach weiterläuft, gehört nicht dazu; ein Tausch mit ihm wäre
-        eine Verdeckung und damit eine eigene Stelle."""
-        out, w = set(), int(WINDOW_S * self.fps)
+        näher als NEAR_M beginnt oder endet, der nächste zuerst. Wer einfach weiterläuft, gehört nicht dazu; ein
+        Tausch mit ihm wäre eine Verdeckung und damit eine eigene Stelle."""
+        found, w = {}, int(WINDOW_S * self.fps)
         for name, dets in self.dets.items():
             for d in (dets[0], dets[-1]):
-                if name != exclude and abs(d[0] - frame) <= w and np.hypot(*(np.asarray(self.ground[d]) - where)) < NEAR_M:
-                    out.add(name)
-        return out
+                dist = float(np.hypot(*(np.asarray(self.ground[d]) - where)))
+                if name != exclude and abs(d[0] - frame) <= w and dist < NEAR_M:
+                    found[name] = min(dist, found.get(name, dist))
+        return sorted(found, key=lambda n: (found[n], n))
+
+
+def _crop(shown: Sequence[float], lens_size: Sequence[int]) -> list[int]:
+    """Bildausschnitt [x, y, Breite, Höhe] um die Boxen: festes Seitenverhältnis, mit Rand, innerhalb des Linsenbilds."""
+    x1, y1, x2, y2 = shown
+    lw, lh = lens_size
+    cw = max(CROP_MIN, x2 - x1 + 2 * CROP_PAD, (y2 - y1 + 2 * CROP_PAD) * CROP_ASPECT)
+    cw = min(cw, lw, lh * CROP_ASPECT)
+    ch = cw / CROP_ASPECT
+    x = min(max((x1 + x2 - cw) / 2, 0), lw - cw)
+    y = min(max((y1 + y2 - ch) / 2, 0), lh - ch)
+    return [round(x), round(y), round(cw), round(ch)]
 
 
 def _spot(sc: _Scene, kinds: Sequence[str], frame: int, lo: int, hi: int, players: set[str], number=None) -> ref.Spot | None:
@@ -110,8 +128,7 @@ def _spot(sc: _Scene, kinds: Sequence[str], frame: int, lo: int, hi: int, player
         return None
     x1, y1 = min(b[0] for b in shown), min(b[1] for b in shown)
     x2, y2 = max(b[2] for b in shown), max(b[3] for b in shown)
-    cw, ch = max(CROP_MIN, 1.6 * (x2 - x1)), max(CROP_MIN, 1.6 * (y2 - y1))
-    crop = [round((x1 + x2 - cw) / 2), round((y1 + y2 - ch) / 2), round(cw), round(ch)]
+    crop = _crop((x1, y1, x2, y2), sc.lens_size)
     before_letters = {p.letter for p in before}
     proposal = {p.letter: (p.letter if p.letter in before_letters else None) for p in after}
     key = json.dumps([frame, sorted(p.anchor[:3] for p in before), sorted(p.anchor[:3] for p in after), sorted(kinds)])
@@ -122,10 +139,10 @@ def _spot(sc: _Scene, kinds: Sequence[str], frame: int, lo: int, hi: int, player
 
 def find_spots(identity: Mapping, boxes: Mapping, ground: Mapping, pitch: tuple[float, float], n_frames: int,
                best_back: Mapping[str, int] | None = None, unsure: Mapping[str, int] | None = None,
-               veo: Sequence[tuple[int, str]] = ()) -> list[ref.Spot]:
+               veo: Sequence[tuple[int, str]] = (), lens_size: Sequence[int] = LENS_SIZE) -> list[ref.Spot]:
     """Strittige Stellen, zeitlich geordnet. boxes, ground: (Bild, Linse, Box) -> Box im Bild bzw. Lage am Boden;
     best_back: Spieler mit Nummer -> Bild der besten Rückenlesung; unsure: Spieler -> Bild; veo: (Bild, Spieler)."""
-    sc = _Scene(identity, boxes, ground, n_frames)
+    sc = _Scene(identity, boxes, ground, n_frames, lens_size)
     fps, events = sc.fps, []                       # [lo, hi, Gründe, Spieler]
     pairs: dict[tuple[str, str], list[int]] = {}
     for f, here in sc.at.items():
@@ -144,7 +161,9 @@ def find_spots(identity: Mapping, boxes: Mapping, ground: Mapping, pitch: tuple[
             if abs(x) > half_l or abs(y) > half_w or d[0] < edge or d[0] > n_frames - 1 - edge:
                 continue
             f = d[0] if kind == "start" else d[0] + 1
-            events.append([f, f, {kind}, {name} | sc.near(d[0], np.asarray((x, y)), name)])
+            others = sc.near(d[0], np.asarray((x, y)), name)
+            groups = [others] if 1 + len(others) <= SPLIT_FROM else [[o] for o in others]   # Gedränge: Paare
+            events += [[f, f, {kind}, {name, *g}] for g in groups]
     for e in identity.get("events", []):
         events.append([e["frame"], e["frame"], {e["kind"]}, {p for p in e.get("players", []) if p in sc.dets}])
     for f, name in veo:
@@ -174,10 +193,10 @@ def find_spots(identity: Mapping, boxes: Mapping, ground: Mapping, pitch: tuple[
 
 
 def control_spots(identity: Mapping, boxes: Mapping, spots: Sequence[ref.Spot], n_frames: int, seed: int,
-                  n: int = 5) -> list[ref.Spot]:
+                  n: int = 5, lens_size: Sequence[int] = LENS_SIZE) -> list[ref.Spot]:
     """n zufällige Stellen ohne Grund: ein Spieler, der 1,5 s vorher und nachher zu sehen ist, nicht nahe an einer
     Stelle mit ihm. Mit demselben Startwert dieselben Stellen."""
-    sc = _Scene(identity, boxes, {}, n_frames)
+    sc = _Scene(identity, boxes, {}, n_frames, lens_size)
     w, away = int(WINDOW_S * sc.fps), CONTROL_AWAY_S * sc.fps
     busy: dict[str, list[int]] = {}
     for s in spots:
@@ -279,8 +298,9 @@ def main(argv: list[str] | None = None) -> None:
     best, unsure = number_frames(args.det, identity)
     veo = veo_changes(identity, ground, det, *args.veo) if args.veo else []
     n = len(det["frames"])
-    spots = find_spots(identity, boxes, ground, (cam["pitch"]["length"], cam["pitch"]["width"]), n, best, unsure, veo)
-    spots += control_spots(identity, boxes, spots, n, args.seed, args.kontrolle)
+    spots = find_spots(identity, boxes, ground, (cam["pitch"]["length"], cam["pitch"]["width"]), n, best, unsure, veo,
+                       det.get("lensSize", LENS_SIZE))
+    spots += control_spots(identity, boxes, spots, n, args.seed, args.kontrolle, det.get("lensSize", LENS_SIZE))
     spots.sort(key=lambda s: (s.frame, s.id))
     open_, orphaned = update(path, Path(args.det).name.split(".")[0], identity, spots, args.seed)
     kinds = Counter(k for s in spots for k in s.kinds)

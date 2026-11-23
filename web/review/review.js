@@ -15,6 +15,23 @@ const ctx = canvas.getContext('2d');
 let data = null;          // {scene, fps, lensSize, spots, answers, open}
 let index = 0;            // aktuelle Stelle
 let slow = false;
+let zoom = 1;             // 1 = vorgeschlagener Ausschnitt; > 1 näher heran, < 1 weiter weg
+const VIEW_W = 1600;      // Breite der Zeichenfläche in Pixeln; die Seite skaliert sie auf die verfügbare Größe
+
+// Ausschnitt der Stelle mit Zoom um seine Mitte, im Linsenbild gehalten
+function view(s) {
+  const [x, y, w, h] = s.crop;
+  const [lw, lh] = data.lensSize || [2048, 1024];
+  const k = Math.min(1 / zoom, lw / w, lh / h);
+  const vw = w * k, vh = h * k;
+  return [Math.min(Math.max(x + (w - vw) / 2, 0), lw - vw), Math.min(Math.max(y + (h - vh) / 2, 0), lh - vh), vw, vh];
+}
+
+function fit() {
+  const [, , w, h] = view(spot());
+  canvas.width = VIEW_W;
+  canvas.height = Math.round(VIEW_W * h / w);
+}
 
 const spot = () => data.spots[index];
 const color = (letter) => COLORS[(letter.charCodeAt(0) - 65) % COLORS.length];
@@ -58,10 +75,7 @@ function participants(s) {
 function show(i) {
   index = Math.max(0, Math.min(data.spots.length - 1, i));
   const s = spot();
-  const [, , w, h] = s.crop;
-  const scale = Math.min(900 / w, 600 / h);
-  canvas.width = Math.round(w * scale);
-  canvas.height = Math.round(h * scale);
+  fit();
   video.currentTime = s.from / data.fps;
   video.playbackRate = slow ? 0.5 : 1;
   video.play().catch(() => {});
@@ -173,9 +187,10 @@ function render() {
   const s = spot();
   const fps = data.fps;
   const f = Math.round(shownTime * fps);
-  const [x, y, w, h] = s.crop;
+  const [x, y, w, h] = view(s);
   const lensH = data.lensSize ? data.lensSize[1] : video.videoHeight / 2;
   const k = canvas.width / w;
+  ctx.imageSmoothingQuality = 'high';
   ctx.drawImage(video, x, y + s.lens * lensH, w, h, 0, 0, canvas.width, canvas.height);
   const after = f >= s.frame;
   $('phase').textContent = after ? 'nachher' : 'vorher';
@@ -185,13 +200,13 @@ function render() {
     const side = after ? s.after : s.before;
     if (!side.some((q) => q.letter === p.letter)) continue;
     ctx.strokeStyle = color(p.letter);
-    ctx.lineWidth = 2;
-    ctx.setLineDash(after ? [] : [6, 4]);
+    ctx.lineWidth = 3;
+    ctx.setLineDash(after ? [] : [10, 6]);
     ctx.strokeRect((box[0] - x) * k, (box[1] - y) * k, (box[2] - box[0]) * k, (box[3] - box[1]) * k);
     ctx.setLineDash([]);
     ctx.fillStyle = color(p.letter);
-    ctx.font = 'bold 18px system-ui, sans-serif';
-    ctx.fillText(p.letter, (box[0] - x) * k, (box[1] - y) * k - 4);
+    ctx.font = 'bold 28px system-ui, sans-serif';
+    ctx.fillText(p.letter, (box[0] - x) * k, (box[1] - y) * k - 6);
   }
   const span = s.to - s.from || 1;
   $('mark').style.left = `${((s.frame - s.from) / span) * 100}%`;
@@ -213,6 +228,9 @@ document.addEventListener('keydown', (e) => {
   else if (e.key === 'ArrowRight') show(index + 1);
   else if (e.key === 'ArrowLeft') show(index - 1);
   else if (e.key === ' ') { e.preventDefault(); if (video.paused) video.play(); else video.pause(); }
+  else if (e.key === '+' || e.key === '=') { zoom = Math.min(3, zoom * 1.25); fit(); }
+  else if (e.key === '-') { zoom = Math.max(0.4, zoom / 1.25); fit(); }
+  else if (e.key === ',' || e.key === '.') { video.pause(); video.currentTime += (e.key === '.' ? 1 : -1) / data.fps; }
   else if (e.key === 's' || e.key === 'S') { slow = !slow; video.playbackRate = slow ? 0.5 : 1; }
 });
 

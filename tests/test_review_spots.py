@@ -130,6 +130,26 @@ class CropTest(unittest.TestCase):
             for b in p.boxes.values():
                 self.assertTrue(x <= b[0] and b[2] <= x + w and y <= b[1] and b[3] <= y + h)
 
+    def test_crop_has_fixed_aspect_and_stays_in_the_lens(self):
+        near_edge = lambda f: [2020, 900, 2040, 1000]            # noqa: E731  am Rand des Linsenbilds
+        ident, boxes, ground = scene(a=("own", range(0, 150), 0, near_edge, at(0)), c=("own", range(160, N), 0, near_edge, at(1)))
+        for s in rs.find_spots(ident, boxes, ground, PITCH, N):
+            x, y, w, h = s.crop
+            self.assertAlmostEqual(w / h, rs.CROP_ASPECT, delta=0.02)
+            self.assertGreaterEqual(w, rs.CROP_MIN)
+            self.assertTrue(x >= 0 and y >= 0 and x + w <= 2048 and y + h <= 1024)
+
+
+class CrowdTest(unittest.TestCase):
+    def test_no_question_has_more_than_three_people(self):
+        ends = {f"e{i}": ("own", range(0, 150), 0, fixed(100 + 40 * i), at(i)) for i in range(3)}
+        starts = {f"s{i}": ("own", range(160, N), 0, fixed(110 + 40 * i), at(i + 0.5)) for i in range(3)}
+        ident, boxes, ground = scene(**ends, **starts)
+        spots = rs.find_spots(ident, boxes, ground, PITCH, N)
+        self.assertGreater(len(spots), 1)                        # sechs Beteiligte: mehrere Fragen
+        for s in spots:
+            self.assertLessEqual(len({p.player for p in s.before + s.after}), rs.MAX_PLAYERS)
+
 
 if __name__ == "__main__":
     unittest.main()
