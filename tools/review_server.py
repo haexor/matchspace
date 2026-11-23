@@ -25,6 +25,7 @@ STATIC = {"/": ("index.html", "text/html; charset=utf-8"), "/review.js": ("revie
           "/review.css": ("review.css", "text/css; charset=utf-8")}
 CHOICES = ("proposed", "swapped", "mapped", "unclear")
 CHUNK = 1 << 20
+MAX_ANSWER_BYTES = 64 << 10
 
 
 class AnswerError(ValueError):
@@ -129,24 +130,43 @@ def handler(review: Review):
             if m and (m.group(1) or m.group(2)):
                 if m.group(1):   # offenes Ende: höchstens CHUNK Bytes je Antwort
                     start = int(m.group(1))
-                    end = min(int(m.group(2)) if m.group(2) else start + CHUNK - 1, size - 1)
+                    end = min(int(m.group(2)) if m.group(2) else start + CHUNK - 1,
+                              start + CHUNK - 1, size - 1)
                 else:
-                    start, end = max(0, size - int(m.group(2))), size - 1
+                    start, end = max(0, size - min(int(m.group(2)), CHUNK)), size - 1
                 if start >= size or end < start:
                     return self.send(416, b"", "video/mp4", {"Content-Range": f"bytes */{size}"})
                 with open(review.video, "rb") as f:
                     f.seek(start)
                     body = f.read(end - start + 1)
                 return self.send(206, body, "video/mp4", {"Accept-Ranges": "bytes", "Content-Range": f"bytes {start}-{end}/{size}"})
-            self.send(200, review.video.read_bytes(), "video/mp4", {"Accept-Ranges": "bytes"})
+            self.send_response(200)
+            self.send_header("Content-Type", "video/mp4")
+            self.send_header("Content-Length", str(size))
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("Accept-Ranges", "bytes")
+            self.end_headers()
+            if self.command != "HEAD":
+                with open(review.video, "rb") as f:
+                    while chunk := f.read(CHUNK):
+                        self.wfile.write(chunk)
 
         def do_POST(self):
             if self.path != "/answer":
                 return self.send(404, b"nicht gefunden", "text/plain; charset=utf-8")
+            origin = self.headers.get("Origin")
+            expected_origin = f"http://127.0.0.1:{self.server.server_port}"
+            if origin and origin != expected_origin:
+                return self.json(403, {"ok": False, "error": "fremder Ursprung"})
+            if self.headers.get_content_type() != "application/json":
+                return self.json(415, {"ok": False, "error": "Content-Type muss application/json sein"})
             try:
-                body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))) or b"{}")
+                length = int(self.headers.get("Content-Length", "0"))
+                if length < 0 or length > MAX_ANSWER_BYTES:
+                    return self.json(413, {"ok": False, "error": "Antwort ist zu groß"})
+                body = json.loads(self.rfile.read(length) or b"{}")
                 return self.json(200, review.answer(body))
-            except (AnswerError, json.JSONDecodeError, AttributeError, TypeError) as error:
+            except (AnswerError, json.JSONDecodeError, AttributeError, TypeError, ValueError) as error:
                 return self.json(400, {"ok": False, "error": str(error)})
     return Handler
 
