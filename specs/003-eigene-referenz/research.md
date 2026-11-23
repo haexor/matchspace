@@ -213,6 +213,22 @@ Je Linie (die fernen Linien haben gröbere Pixel in der Tiefe):
 - **Vergleich**: Lage, Spieler und Nummern der Szene gleichen dem Lauf mit Veo-Basisspiel (Prüfsumme von
   `tracks.bin`); die Uhr in `meta.json` zeigt dieselbe Spielzeit.
 
+### Ergebnis (T026, T027)
+
+- **Kalibrierung ohne Veo-Start**: Der Start aus dem Raster (48 Lagen) ergibt für das Heimspiel vom 2026-11-01
+  dieselbe Kamera wie bisher: 0,000 m Lage, 0,000° Drehung, Linienfehler gleich (Median 0,30 px, 90 % unter
+  0,97 px), 17 s Rechenzeit.
+- **Eigener Spielordner** `web/data/spiel-2026-11-01`: angelegt aus `spiel.json` und der Kamera. Luftbild und Kulisse
+  wurden im Prüflauf gerechnet; freigegeben war nur das Panoramavideo. Dauer 13 s.
+- **Szenen ohne Veo** (Prüflauf mit gesperrtem Veo-Basisspiel und `data/raw/veo/`): Beide Szenen laufen durch, ohne
+  eine Veo-Datei zu öffnen.
+  - Mit derselben Kamera ist `tracks.bin` bitgleich zum Lauf mit dem Veo-Basisspiel (705 `ea41a118…`,
+    722 `640d9142…`). Uhr, Mannschaften, Spieler und Nummern sind gleich.
+  - Mit der neu kalibrierten Kamera (Unterschiede um 1e-10) weichen die Lagen höchstens 3 cm ab, nur 0,2 % der
+    Spieler-Bilder um mehr als 1 cm. Spieler und Nummern sind gleich.
+- **Offen**: Die Anstoßzeiten in `spiel.json` (126 s und 3434 s) stammen noch aus Veo und müssen am Video bestätigt
+  werden. Das Panorama in den Rohdaten beginnt erst bei Sekunde 600.
+
 ## R9 Tests
 
 - `unittest` wie bisher:

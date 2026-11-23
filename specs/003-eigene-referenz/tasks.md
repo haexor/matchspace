@@ -232,7 +232,7 @@ und die Uhr stimmt.
   - **Ohne Veo**: `read_veo` nur noch für die Linsendaten; `-` statt Handpunkten bricht mit klarer Meldung ab.
   - **Prüfung**: Die neue Kamera liegt höchstens 0,1 m und 0,1° neben `camera.json`, bei gleichem Linienfehler.
   - Commit `feat(camera): calibrate without Veo start values`.
-- [ ] T027 [US4] Vergleichslauf:
+- [X] T027 [US4] Vergleichslauf:
   - Eigenen Spielordner anlegen (`own_match.py`, `veo_ground.py`, `veo_backdrop.py`).
   - Beide Szenen unter `no_veo_check.py --verbiete web/data/veo-2026-11-01` auswerten.
   - `tracks.bin` mit dem Lauf gegen das Veo-Basisspiel vergleichen (gleiche Prüfsumme); die Uhr in `meta.json`
