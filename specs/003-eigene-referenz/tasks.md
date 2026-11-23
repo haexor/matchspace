@@ -148,14 +148,14 @@ Referenzdatei enthält keine Bilder und keine Namen.
 **Independent Test**: Der Bericht für 705 ist ohne und mit `--veo` erzeugt. Unter `own` sind die Werte gleich,
 nur der zweite Bericht hat `veo` mit einer Widerspruchsliste.
 
-- [ ] T014 [P] [US2] `tests/test_jersey_eval.py` erweitern (künstliche Zuordnung und Referenz):
+- [X] T014 [P] [US2] `tests/test_jersey_eval.py` erweitern (künstliche Zuordnung und Referenz):
   - **Kennzahlen**: Identitäten je Person, falsche Zeit, Wechsel und Nummern gegen Personen der Referenz;
     Abschnitte nach „unklar“ zählen nicht.
   - **Abdeckung**: Offene und verwaiste Stellen werden gezählt; die Schätzung aus den Kontrollstellen ist der
     Anteil mit Fehler.
   - **Veo-Spalte**: Abgleich über die rohen Bodenpunkte ohne Versatz; ein Widerspruch wird gelistet.
   - **Ohne Veo**: Fehlt `--veo`, wird `veo_tracks` nicht importiert (Test über `sys.modules`).
-- [ ] T015 [US2] `tools/jersey_eval.py` nach [contracts/eval-report.md](contracts/eval-report.md) und
+- [X] T015 [US2] `tools/jersey_eval.py` nach [contracts/eval-report.md](contracts/eval-report.md) und
   [contracts/cli.md](contracts/cli.md):
   - neue Aufrufform `DETEKTIONEN.json KAMERA.json [--veo …]`;
   - Messung je Erkennung;
