@@ -213,7 +213,9 @@ python3 tools/convert_veo.py $V/export.json web/data/veo-2026-11-01 $W/veo_align
   - **Verbinden**: Stücke werden über den Laufweg verbunden (erreichbar, nahe an der erwarteten Lage),
     dieselbe sichere Nummer zählt stark, verschiedene verbieten. Aussehen (Bildmerkmale aus DINOv2-small,
     lokal unter `models/hf`, nur Merkmalsvektoren in `*.det.json.appearance.npz`) und Körpergröße entscheiden
-    nur mit. Verbunden wird nur, wenn der beste Kandidat deutlich günstiger ist als der zweitbeste.
+    nur mit. In einem zweiten Durchgang wird das Aussehen im Spiel gelernt (`appearance.learn_fingerprint`: Mitspieler
+    im gleichen Trikot werden so deutlich besser getrennt). Verbunden wird nur, wenn der beste Kandidat deutlich
+    günstiger ist als der zweitbeste.
   - **Nummern je Spieler**: Danach stimmen die Lesungen aller Stücke eines Spielers gemeinsam ab.
   - **Prüfen**: `.venv/bin/python tools/identity_link.py $W/scene_705.mp4 $W/scene_705.det.json $W/camera.json`
     listet Kontakte, getrennte Stücke, Verbindungen und knapp getrennt gelassene Enden.

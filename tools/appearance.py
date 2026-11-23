@@ -32,6 +32,9 @@ MIN_BOX_H = 20              # px: kleinere Boxen tragen kein Aussehen
 MIN_CONF = 0.3              # Mindestsicherheit von Schultern und Knöcheln für die Größe
 BATCH = 256
 CACHE_FORMAT = 1.0
+MIN_TRAIN = 40              # Erkennungen, ab denen eine Gruppe (Spur oder Kette) beim Lernen des Spielmerkmals zählt
+MIN_GROUPS = 4              # so viele Gruppen braucht das Lernen mindestens
+SHRINK = 0.5                # Anteil der Einheitsmatrix in der Streuung innerhalb der Gruppen (stabilisiert bei wenigen Daten)
 LENSES = ("left", "right")
 MEAN = (0.485, 0.456, 0.406)
 STD = (0.229, 0.224, 0.225)
@@ -149,6 +152,47 @@ def read_scene(video: str | Path, det_path: str | Path) -> SceneLooks | None:
     np.savez_compressed(cache, frame=out.frame, lens=out.lens, box=out.box, embedding=out.embedding,
                         height=out.height, stamp=stamp)
     return out
+
+
+def _discriminant(x: np.ndarray, groups: np.ndarray, shrink: float):
+    """Lineare Diskriminanzanalyse: Abbildung, die Bildmerkmale verschiedener Gruppen trennt und innerhalb einer
+    Gruppe zusammenzieht (höchstens Gruppenzahl − 1 Richtungen)."""
+    mu = x.mean(0)
+    within = np.zeros((x.shape[1],) * 2)
+    means = []
+    for g in np.unique(groups):
+        xg = x[groups == g]
+        means.append(xg.mean(0))
+        within += (xg - means[-1]).T @ (xg - means[-1])
+    within /= len(x)
+    within = (1 - shrink) * within + shrink * np.trace(within) / len(within) * np.eye(len(within))
+    values, vectors = np.linalg.eigh(within)
+    whiten = vectors @ np.diag(values ** -0.5) @ vectors.T
+    _, _, directions = np.linalg.svd((np.array(means) - mu) @ whiten, full_matrices=False)
+    projection = whiten @ directions[:len(means) - 1].T
+    return lambda e: (e - mu) @ projection
+
+
+def learn_fingerprint(scene: SceneLooks, where: Mapping[tuple[int, int, int], int],
+                      groups: Mapping[str, Mapping[int, np.ndarray]], min_count: int = MIN_TRAIN,
+                      shrink: float = SHRINK) -> SceneLooks:
+    """Spielmerkmal: lernt aus den langen Gruppen (Name -> Bild -> Zeile wie in piece_features), welche Bildmerkmale
+    in diesem Spiel verschiedene Spieler trennen, und gibt die Merkmale aller Erkennungen in diesem Raum zurück.
+    Zwei Boxen im selben Bild sind sicher verschiedene Personen, eine lange Spur ist dieselbe; allgemeine Bildmerkmale
+    trennen Mitspieler im gleichen Trikot kaum (AUC 0,8), die gelernten deutlich (0,95, research.md R11).
+    Mit weniger als MIN_GROUPS langen Gruppen bleiben die Merkmale unverändert."""
+    rows, labels = [], []
+    for g, frames in enumerate(groups.values()):
+        found = [i for f, r in frames.items() if (i := where.get((int(f), int(r[3]), int(r[8])))) is not None]
+        if len(found) >= min_count:
+            rows += found
+            labels += [g] * len(found)
+    if len(set(labels)) < MIN_GROUPS:
+        return scene
+    embedding = scene.embedding.astype(np.float32)
+    projected = _discriminant(embedding[rows], np.array(labels), shrink)(embedding)
+    projected /= np.maximum(np.linalg.norm(projected, axis=1, keepdims=True), 1e-9)
+    return SceneLooks(scene.frame, scene.lens, scene.box, projected.astype(np.float32), scene.height)
 
 
 def metres_per_pixel(cam, lens: int, ground: np.ndarray) -> np.ndarray:

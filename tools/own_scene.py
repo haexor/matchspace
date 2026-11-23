@@ -144,13 +144,16 @@ def drop_same_place(obs: dict, where: list[dict]) -> int:
     return removed
 
 
-def _piece_looks(video, det_path, tracks: dict, cam) -> dict[str, identity_link.Look]:
-    """Aussehen je Spur aus dem Zwischenspeicher (tools/appearance.py); ohne Bildmodell leer."""
+def _piece_looks(video, det_path, tracks: dict, cam, groups: dict | None = None) -> dict[str, identity_link.Look]:
+    """Aussehen je Spur aus dem Zwischenspeicher (tools/appearance.py); ohne Bildmodell leer. Mit groups (Name ->
+    Bild -> Zeile, etwa die Ketten des ersten Durchgangs) wird zuvor das Spielmerkmal gelernt (learn_fingerprint)."""
     import appearance   # erst hier: lädt Torch
     scene = appearance.read_scene(video, det_path)
     if scene is None:
         return {}
     where = scene.index()
+    if groups:
+        scene = appearance.learn_fingerprint(scene, where, groups)
     return {name: identity_link.Look(*appearance.piece_features(scene, where, frames, cam)) for name, frames in tracks.items()}
 
 
@@ -209,7 +212,13 @@ def split_and_link(identities: dict, video: str, det_path: str, cam, fps: float,
     looks = _piece_looks(video, det_path, tracks, cam)
     log: list[identity_link.Link] = []
     numbers = {n: v.number for n, v in votes.items()}
-    chains = identity_link.link(pieces, looks, numbers, fps, log)
+    chains = identity_link.link(pieces, looks, numbers, fps)
+    if looks:   # zweiter Durchgang: Spielmerkmal aus den Ketten des ersten lernen, dann noch einmal verbinden
+        groups = {c[0]: {f: r for name in c for f, r in tracks[name].items()} for c in chains}
+        looks = _piece_looks(video, det_path, tracks, cam, groups)
+        chains = identity_link.link(pieces, looks, numbers, fps, log)
+    else:
+        chains = identity_link.link(pieces, looks, numbers, fps, log)
     by_id = {p.id: p for p in pieces}
     if events is not None:
         groups: dict[tuple[str, str], list] = {}

@@ -251,3 +251,27 @@ Je Linie (die fernen Linien haben gröbere Pixel in der Tiefe):
 - Der Server liefert Video nur aus `data/work/` und nur an `127.0.0.1`. Die Seite lädt keine fremden Skripte,
   Schriften oder Bilder.
 - Bildschirmfotos zur Prüfung nur im Scratchpad.
+
+## R11 Gelerntes Spielmerkmal und Verbindungskosten
+
+- **Frage**: Lässt sich das Aussehen so verbessern, dass Mitspieler im gleichen Trikot besser auseinandergehalten werden?
+- **Messung** (je 8 Erkennungen als Stück, Paare derselben Person gegen Paare verschiedener Mitspieler, Trennschärfe
+  AUC; 0,5 Zufall, 1,0 perfekt):
+
+  | Szene | Bildmerkmale wie bisher | Mannschaftsanteil abgezogen | im Spiel gelernt (Hälfte 1 → Hälfte 2) |
+  |---|---|---|---|
+  | 705 | 0,78–0,86 | 0,81 | 0,96 |
+  | 722 | 0,78–0,82 | 0,81 | 0,94 |
+
+  Gelernt wird mit einer linearen Diskriminanzanalyse (`appearance.learn_fingerprint`) auf den Ketten des ersten
+  Verbindungsdurchgangs mit mindestens 40 Erkennungen. Der Kosinus derselben Person bleibt bei etwa 0,88, der
+  eines anderen Mitspielers fällt von 0,74–0,78 auf 0,22–0,38. Das Gewicht `LOOK_WEIGHT` bleibt deshalb unverändert.
+- **Grenzen der Messung**: Die Beschriftung kommt aus unseren eigenen Spuren, und die Stücke liegen zeitlich nah
+  beieinander. Das passt zum Verbinden über kurze Lücken, überschätzt aber die Trennschärfe etwas.
+- **Wirkung auf die Verbindungen** (zweiter Durchgang in `own_scene.split_and_link`): Es entstehen in beiden Szenen
+  dieselben Verbindungen wie ohne das gelernte Merkmal (705: 4, 722: 2; 38 und 49 Spieler). Falsche Kandidaten werden
+  teurer: In 722 sinken die offenen Enden mit einem Kandidaten unter dem Höchstpreis von 13 auf 10. Mehr Spuren
+  werden dadurch nicht verbunden. Was an den Szenen übrig bleibt, sind Spuren, die zwischen den Mannschaften wechseln
+  (Verbindungen über Mannschaften sind verboten), und echte Mehrdeutigkeiten.
+- **Entscheidung**: Das gelernte Merkmal bleibt als Schutz gegen falsche Verbindungen. Ob es Fehler verhindert,
+  zeigt erst die Messung an der eigenen Referenz.
