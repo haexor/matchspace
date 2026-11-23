@@ -40,6 +40,50 @@ class EvaluateTest(unittest.TestCase):
         self.assertEqual(r["identitiesPerPlayer"], 2.0)   # own-1002 nur 0,4 s
 
 
+class WrongTimeTest(unittest.TestCase):
+    def test_share_of_frames_not_on_main_person(self):
+        matched = {"own-1001": {**frames(("own", 7), 0, 80), **frames(("own", 8), 80, 100)}}
+        self.assertAlmostEqual(jersey_eval.wrong_time_share(matched), 0.2)
+
+    def test_unmatched_frames_do_not_count(self):
+        matched = {"a": {**frames(("own", 7), 0, 50), **frames(None, 50, 100)}, "b": frames(None, 0, 10)}
+        self.assertEqual(jersey_eval.wrong_time_share(matched), 0.0)
+
+    def test_over_all_players(self):
+        matched = {"a": {**frames(("own", 7), 0, 90), **frames(("own", 8), 90, 100)}, "b": frames(("own", 9), 0, 100)}
+        self.assertAlmostEqual(jersey_eval.wrong_time_share(matched), 0.05)
+
+
+class SwitchesTest(unittest.TestCase):
+    def test_lasting_change_counts(self):
+        matched = {"a": {**frames(("own", 7), 0, 50), **frames(("own", 8), 50, 100)}}
+        self.assertEqual(jersey_eval.switches(matched, FPS), 1)
+
+    def test_short_change_does_not_count(self):
+        matched = {"a": {**frames(("own", 7), 0, 50), **frames(("own", 8), 50, 60), **frames(("own", 7), 60, 100)}}
+        self.assertEqual(jersey_eval.switches(matched, FPS), 0)
+
+    def test_there_and_back_counts_twice(self):
+        matched = {"a": {**frames(("own", 7), 0, 50), **frames(("own", 8), 50, 100), **frames(("own", 7), 100, 150)}}
+        self.assertEqual(jersey_eval.switches(matched, FPS), 2)
+
+
+class DepthOffsetTest(unittest.TestCase):
+    def test_constant_offset_away_from_camera_is_found_and_removed(self):
+        eye = np.array([0.0, -40.0])
+        truth = [{("own", 7): np.array([0.0, 0.0]), ("own", 8): np.array([10.0, 5.0])} for _ in range(20)]
+        away = lambda q: q + (q - eye) / np.linalg.norm(q - eye) * 0.9
+        positions = {"a": {f: away(truth[f][("own", 7)]) for f in range(20)},
+                     "b": {f: away(truth[f][("own", 8)]) for f in range(20)}}
+        offset = jersey_eval.depth_offset(positions, truth, eye)
+        self.assertAlmostEqual(offset, 0.9, places=2)
+        moved = jersey_eval.shift_depth(positions, eye, offset)
+        self.assertLess(np.linalg.norm(moved["b"][3] - truth[3][("own", 8)]), 1e-6)
+
+    def test_no_references_means_no_offset(self):
+        self.assertEqual(jersey_eval.depth_offset({"a": {0: np.zeros(2)}}, [{}], np.array([0.0, -40.0])), 0.0)
+
+
 class DuplicateTest(unittest.TestCase):
     def test_same_number_same_time_is_counted(self):
         present = {"a": set(range(0, 10)), "b": set(range(5, 20)), "c": set(range(0, 20))}

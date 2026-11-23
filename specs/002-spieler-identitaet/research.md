@@ -18,6 +18,19 @@ endet, ein anderes beginnt) gibt es je Szene nur rund 5–8 Mal: 0–13 s lang, 
 Kandidaten derselben Mannschaft in der Nähe. Daraus folgt die Spec-Ergänzung FR-011: Spurwechsel erst
 trennen, dann alle Stücke verbinden.
 
+**Ausgangsstand an der fertigen Szene** (T003, `jersey_eval.py`, Bericht `scene_S.identity-before.json`):
+
+| Szene | Identitäten je Spieler | falsch zugeordnete Zeit | Wechsel ≥ 1 s | Tiefenversatz zu Veo |
+|---|---|---|---|---|
+| 705 | 2,22 | 6,9 % | 9 | +0,89 m |
+| 722 | 2,11 | 5,7 % | 5 | +0,96 m |
+
+Die fertige Szene setzt die Spieler über die Fußpunkte der Gelenkpunkte im Median rund 0,9 m weiter von der
+Kamera weg als Veo (die rohen Spuren liegen 0,3 m neben Veo). Ohne Korrektur zählten dadurch Nachbarn im
+Gedränge als Vertauschung: 10,3 % und 11,2 % falsche Zeit. Die Messung rechnet diesen festen Versatz deshalb
+heraus. Welche Lage näher an der Wirklichkeit ist, ist eine eigene Frage der Positionsgenauigkeit und nicht
+Teil dieses Features.
+
 ## R1 Aussehen: schwaches Merkmal bei 55 Pixeln
 
 **Messung** (AUC: 0,5 = Zufall, 1 = perfekte Trennung zwischen „gleiche Person“ und „anderer Mitspieler“,

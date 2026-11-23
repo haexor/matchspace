@@ -6,7 +6,13 @@ mit Nummern. Schreibt nichts in die Szene: Die Referenz kann das Ergebnis nicht 
 (specs/001-rueckennummern/contracts/eval-report.md):
   - je Mannschaft: Referenzspieler mit mindestens einem gut sichtbaren Rücken, davon richtig, falsch, unbekannt;
   - Identitäten je Referenzspieler (in wie viele eigene Spieler zerfällt er);
-  - Bilder, in denen zwei eigene Spieler einer Mannschaft dieselbe Nummer tragen.
+  - Bilder, in denen zwei eigene Spieler einer Mannschaft dieselbe Nummer tragen;
+  - Anteil der Spielerzeit, die der falschen Person gehört, und Wechsel der Person innerhalb eines Spielers
+    (specs/002-spieler-identitaet/contracts/eval-report.md).
+
+Gemessen wird die Identität, nicht die Lage: Die Szene setzt Spieler über die Fußpunkte der Gelenkpunkte rund
+0,9 m weiter von der Kamera weg als Veo. Dieser feste Versatz in Blickrichtung wird vor dem Abgleich
+herausgerechnet (depthOffsetM im Bericht), sonst zählten Nachbarn im Gedränge als Vertauschung.
 
 Aufruf:
     .venv/bin/python tools/jersey_eval.py SZENE_ORDNER DETEKTIONEN.json KAMERA.json VEO_ORDNER VEO_ALIGN.json START_S [--bericht BERICHT.json] [--lesezeit S]
@@ -26,6 +32,7 @@ import jersey_reader  # noqa: E402
 import track_players  # noqa: E402
 
 TEAMS = ("own", "opponent")
+OFFSET_GATE = 3.0   # m: nur so nahe Referenzen zählen für den Tiefenversatz
 WELL_VISIBLE = jersey_reader.FULL_HEIGHT   # px Schulter bis Hüfte: ab hier gilt ein Rücken als gut sichtbar
 
 
@@ -42,6 +49,57 @@ def duplicate_frames(present: Mapping[str, set[int]], numbers: Mapping[str, int 
             for b in range(a + 1, len(names)):
                 bad |= present[names[a]] & present[names[b]]
     return len(bad)
+
+
+def depth_offset(positions: Mapping[str, Mapping[int, np.ndarray]], truth: list[dict], eye: np.ndarray) -> float:
+    """Median-Abstand der Szene zur nächsten Referenz in Blickrichtung der Kamera (positiv: weiter weg)."""
+    radial = []
+    for frames in positions.values():
+        for f, p in frames.items():
+            refs = list(truth[f].values())
+            if not refs:
+                continue
+            q = min(refs, key=lambda q: float(np.hypot(*(p - q))))
+            if np.hypot(*(p - q)) < OFFSET_GATE:
+                ray = (q - eye) / np.linalg.norm(q - eye)
+                radial.append(float(np.dot(p - q, ray)))
+    return float(np.median(radial)) if radial else 0.0
+
+
+def shift_depth(positions: Mapping[str, Mapping[int, np.ndarray]], eye: np.ndarray, offset: float) -> dict:
+    """Schiebt alle Lagen um offset Meter zur Kamera hin."""
+    return {name: {f: p - (p - eye) / np.linalg.norm(p - eye) * offset for f, p in frames.items()}
+            for name, frames in positions.items()}
+
+
+def _references(frames: Mapping[int, tuple | None]) -> list[tuple]:
+    return [ref for _, ref in sorted(frames.items()) if ref is not None]
+
+
+def wrong_time_share(matched: Mapping[str, Mapping[int, tuple | None]]) -> float:
+    """Anteil der zugeordneten Spieler-Bilder, deren Referenz nicht die Hauptperson des Spielers ist."""
+    total = wrong = 0
+    for frames in matched.values():
+        refs = _references(frames)
+        if refs:
+            total += len(refs)
+            wrong += len(refs) - Counter(refs).most_common(1)[0][1]
+    return wrong / total if total else 0.0
+
+
+def switches(matched: Mapping[str, Mapping[int, tuple | None]], fps: float) -> int:
+    """Wechsel der Referenzperson innerhalb eines Spielers; Abschnitte unter 1 s zählen nicht."""
+    count = 0
+    for frames in matched.values():
+        runs: list[list] = []
+        for ref in _references(frames):
+            if runs and runs[-1][0] == ref:
+                runs[-1][1] += 1
+            else:
+                runs.append([ref, 1])
+        stable = [ref for ref, n in runs if n >= fps]
+        count += sum(1 for a, b in zip(stable, stable[1:]) if a != b)
+    return count
 
 
 def evaluate(numbers: Mapping[str, int | None], teams: Mapping[str, str], matched: Mapping[str, Mapping[int, tuple | None]],
@@ -144,17 +202,22 @@ def main(argv: list[str] | None = None) -> None:
     truth = [at(args.start + i / fps) for i in range(meta["frames"])]
     players = [(i, e) for i, e in enumerate(meta["entities"]) if e["kind"] == "player" and e["team"] in TEAMS]
     positions = {e["id"]: {f: xy[f, i] for f in range(meta["frames"]) if not np.isnan(xy[f, i, 0])} for i, e in players}
-    matched = track_players.match_reference(positions, truth)
+    eye = np.asarray(cam["position"][:2], float)
+    offset = depth_offset(positions, truth, eye)
+    matched = track_players.match_reference(shift_depth(positions, eye, offset), truth)
     numbers = {e["id"]: e.get("number") for _, e in players}
     teams = {e["id"]: e["team"] for _, e in players}
     report = {"scene": Path(args.scene).name,
               **evaluate(numbers, teams, matched, visible_references(det, cam, args.det, at, args.start), fps),
               "duplicateFrames": duplicate_frames({k: set(v) for k, v in positions.items()}, numbers, teams),
-              "readSeconds": args.lesezeit}
+              "wrongTimeShare": round(wrong_time_share(matched), 4), "switches": switches(matched, fps),
+              "depthOffsetM": round(offset, 2), "readSeconds": args.lesezeit}
     for team, c in report["teams"].items():
         print(f"{team:9s} gut sichtbar {c['visible']:2d}: richtig {c['correct']:2d}, falsch {c['wrong']:2d}, unbekannt {c['unknown']:2d}")
     print(f"Spieler mit Nummer {report['playersWithNumber']}, davon falsch {len(report['wrongPlayers'])}; "
           f"Identitäten je Referenzspieler {report['identitiesPerPlayer']}; Bilder mit doppelter Nummer {report['duplicateFrames']}")
+    print(f"falsch zugeordnete Zeit {report['wrongTimeShare']:.1%}; Wechsel der Person (>= 1 s) {report['switches']}; "
+          f"Tiefenversatz zu Veo herausgerechnet {offset:+.2f} m")
     for m in report["mismatches"] + report["wrongPlayers"]:
         print(f"  nachsehen: {m['player']} gelesen {m['read']}, Referenz {m['reference']}")
     if report_path:

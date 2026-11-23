@@ -23,7 +23,7 @@ description: "Aufgabenliste: Eine Identität je Spieler über die ganze Szene"
 
 ## Phase 1: Setup
 
-- [ ] T001 Im Worktree die Verknüpfungen prüfen (`data`, `models`, `.venv`, `web/data`, `web/models`).
+- [X] T001 Im Worktree die Verknüpfungen prüfen (`data`, `models`, `.venv`, `web/data`, `web/models`).
   Außerdem prüfen, dass DINOv2-small unter `models/hf` liegt (`HF_HOME` relativ zum Repo, siehe T004);
   `.venv/bin/python -m unittest discover -s tests` muss grün sein.
 
@@ -33,11 +33,11 @@ description: "Aufgabenliste: Eine Identität je Spieler über die ganze Szene"
 
 **Purpose**: Messung erweitern, Stand vor dem Feature festhalten, Merkmale je Erkennung bereitstellen.
 
-- [ ] T002 [P] `tests/test_jersey_eval.py` erweitern, beide Funktionen mit künstlichen Zuordnungen:
+- [X] T002 [P] `tests/test_jersey_eval.py` erweitern, beide Funktionen mit künstlichen Zuordnungen:
   - `wrong_time_share(matched)`: Ein Spieler mit 80 Bildern Hauptperson und 20 Bildern anderer Person
     ergibt 0,2.
   - `switches(matched, fps)`: Wechsel unter 1 s zählen nicht.
-- [ ] T003 `tools/jersey_eval.py`: Funktionen `wrong_time_share` und `switches` und Felder
+- [X] T003 `tools/jersey_eval.py`: Funktionen `wrong_time_share` und `switches` und Felder
   `wrongTimeShare` und `switches` im Bericht, nach [contracts/eval-report.md](contracts/eval-report.md).
   - Danach den Stand vor dem Feature für 705 und 722 messen und den Bericht unter
     `data/work/…/scene_S.identity-before.json` ablegen.
