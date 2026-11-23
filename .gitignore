@@ -8,3 +8,4 @@ models/
 graphify-out/
 __pycache__/
 .spaex/manifest.json.lock
+.spaex/composer.log
