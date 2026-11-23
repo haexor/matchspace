@@ -24,7 +24,7 @@ description: "Aufgabenliste: Eigene Referenz statt Veo"
 
 ## Phase 1: Setup
 
-- [ ] T001 Im Worktree die Verknüpfungen prüfen (`data`, `models`, `.venv`, `.specify`, `web/data`, `web/models`);
+- [X] T001 Im Worktree die Verknüpfungen prüfen (`data`, `models`, `.venv`, `.specify`, `web/data`, `web/models`);
   `.venv/bin/python -m unittest discover -s tests` muss grün sein.
 
 ---
@@ -33,13 +33,13 @@ description: "Aufgabenliste: Eigene Referenz statt Veo"
 
 **Purpose**: Die Zuordnung der Auswertung (welche Erkennung gehört zu welchem Spieler) liegt als Datei vor.
 
-- [ ] T002 [P] `tests/test_own_scene.py` erweitern, `write_identity(path, players, events, numbers, fps)`:
+- [X] T002 [P] `tests/test_own_scene.py` erweitern, `write_identity(path, players, events, numbers, fps)`:
   - **Form**: Die geschriebene Datei hat die Felder aus [data-model.md](data-model.md) „Zuordnung der Auswertung“
     (`fps`, `players` mit `team`, `keeper`, `number`, `detections` als [[Bild, Linse, Box]] zeitlich geordnet,
     `events`, `numbers`, `stamp`).
   - **Stempel**: Der Stempel ändert sich, wenn sich eine Erkennung eines Spielers ändert, sonst nicht.
   - **Inhalt**: keine Bilddaten, keine Bodenlagen.
-- [ ] T003 `tools/own_scene.py`:
+- [X] T003 `tools/own_scene.py`:
   - `split_and_link` gibt Trennungen und Verbindungen als Ereignisse zurück (`{kind, frame, players, reason}`).
   - `with_numbers` schreibt `{det}.identity.json`; Spielernamen wie im Viewer (`own-7`, `opponent-1003`).
   - **Prüfung**: Beide Szenen neu auswerten. `tracks.bin` hat dieselbe Prüfsumme wie vorher, es ändert sich kein

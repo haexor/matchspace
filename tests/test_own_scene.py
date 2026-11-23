@@ -104,3 +104,44 @@ class PlayerEntityTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class IdentityFileTest(unittest.TestCase):
+    """{det}.identity.json: welche Erkennung gehört zu welchem Spieler (specs/003-eigene-referenz/data-model.md)."""
+
+    def row(self, lens, box):
+        return np.array([1.0, 2.0, 0, lens, 10, 20, 30, 80, box], float)
+
+    def players(self):
+        return {"own-7": ("own", False, 7, {f: self.row(0, 3) for f in (5, 3, 4)}),
+                "opponent-1001": ("opponent", True, None, {f: self.row(1, 0) for f in range(2)})}
+
+    def write(self, players, events=()):
+        import json
+        import tempfile
+        from pathlib import Path
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "scene.det.json.identity.json"
+            own_scene.write_identity(path, players, list(events), {"own-7": [[7, 0.98], [1, 0.01]]}, 29.97)
+            return json.loads(path.read_text())
+
+    def test_form(self):
+        data = self.write(self.players(), [{"kind": "split", "frame": 4, "reason": "colour", "detections": [[3, 0, 3], [4, 0, 3]]}])
+        self.assertEqual(set(data), {"fps", "players", "events", "numbers", "stamp"})
+        p = data["players"]["own-7"]
+        self.assertEqual((p["team"], p["keeper"], p["number"]), ("own", False, 7))
+        self.assertEqual(p["detections"], [[3, 0, 3], [4, 0, 3], [5, 0, 3]])
+        self.assertTrue(data["players"]["opponent-1001"]["keeper"])
+        self.assertEqual(data["events"][0]["players"], ["own-7", "own-7"])
+        self.assertEqual(data["numbers"]["own-7"][0], [7, 0.98])
+
+    def test_no_positions_or_images(self):
+        text = str(self.write(self.players()))
+        self.assertNotIn("2.0", text)   # keine Bodenlagen
+
+    def test_stamp_follows_detections(self):
+        a = self.write(self.players())["stamp"]
+        self.assertEqual(a, self.write(self.players())["stamp"])
+        changed = self.players()
+        changed["own-7"][3][6] = self.row(0, 4)
+        self.assertNotEqual(a, self.write(changed)["stamp"])
