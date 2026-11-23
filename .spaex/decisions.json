@@ -1,0 +1,250 @@
+{
+  "schema_version": 1,
+  "checked": {
+    "source_hash": "4f1bfce54bb823d3d6e7165af762ba77badf89c5b4a816a8178f00c9500bc2a9",
+    "prompt_hash": "aad1b9eb44b8d38d2bb92a30d9806c85710edad91159543012d0d3a0c686372a"
+  },
+  "decisions": {
+    "4e1cdec9989b91f2f0f84298efa02bbf8802fe7695fb2c5070e017a51ef8847d": {
+      "kind": "duplicate",
+      "summary": "Both passages give the same instruction to pick the narrowest test level: unit tests for pure logic, integration tests for module boundaries and persistence, end-to-end tests only for critical whole-system journeys.",
+      "passages": [
+        {
+          "scoped_id": "com.github.haexmas.atoms.coding-guideline-javascript-typescript/javascript-typescript-testing",
+          "text_hash": "8e81310d26d63b82ae3295ab8f2895364c196843a20317b9ec7eb3cdebc18375",
+          "text": "- Choose the narrowest test level that proves the behavior: unit tests for\n  pure logic, integration tests for module boundaries and persistence, and\n  end-to-end tests for critical user journeys. Do not turn every test into a\n  slow end-to-end test."
+        },
+        {
+          "scoped_id": "com.github.haexmas.atoms.coding-guideline-python/python-testing",
+          "text_hash": "74228c643a6de1d7e2b62f6cf098308f979036eba939790e38a5d22742333e85",
+          "text": "- Use focused unit tests for pure logic and isolated components, integration\n  tests for real module boundaries, and end-to-end tests only for workflows\n  that need the complete system. Keep the test level visible in the test\n  location and name according to the repository convention."
+        }
+      ],
+      "choice": {
+        "kind": "keep_all"
+      },
+      "asked_at": "2026-11-22T21:12:13Z",
+      "answered_at": "2026-11-22T21:12:13Z"
+    },
+    "5478e71bc98c8e9b1630a998b9956cd392f8cfee99baf9241f62ac3d64a03891": {
+      "kind": "duplicate",
+      "summary": "All three passages instruct the same thing: run the repository's configured formatter, linter/static checks, type checker or compiler, and relevant tests before handing off, rather than substituting other tooling or claiming unrun checks.",
+      "passages": [
+        {
+          "scoped_id": "com.github.haexmas.atoms.coding-guideline-javascript-typescript/javascript-typescript",
+          "text_hash": "106d86cfcc95a3b5f321ba459697f55ed81fc5a6fcce7be266fbda4f473ebc96",
+          "text": "- Use the project's configured formatter, linter, compiler, and test runner.\n  At minimum, TypeScript changes SHOULD pass `tsc --noEmit` (or the project's\n  equivalent), linting, formatting checks, and the relevant tests. Do not\n  replace repository tooling with a personal global installation."
+        },
+        {
+          "scoped_id": "com.github.haexmas.atoms.coding-guideline-python/python",
+          "text_hash": "a9ff15093b69f5a4fe89017c215c61c46552d54f7f4a9f636b30160a3b25ecd7",
+          "text": "- Before handing off a change, run the project's formatter, linter, type\n  checker, and relevant tests. When no project-specific commands exist, a\n  reasonable baseline is `python -m compileall`, the configured test command,\n  and the configured static checks; do not claim checks passed without running\n  them."
+        },
+        {
+          "scoped_id": "com.github.haexmas.atoms.general-coding/general-coding",
+          "text_hash": "4faee003478985615514c17ece6d238eb07bc12d72f63b3166afe8064a186711",
+          "text": "- Before handoff, run the repository's formatter, static checks, and relevant\n  tests. Report what was run and any checks that were unavailable or skipped;\n  do not turn a green-looking diff into an unverified claim."
+        }
+      ],
+      "choice": {
+        "kind": "keep_all"
+      },
+      "asked_at": "2026-11-22T21:12:13Z",
+      "answered_at": "2026-11-22T21:12:13Z"
+    },
+    "625232ff4edbe7ea1165ceb0969aa7ae6435f95c31b37ecd56412b4ba99f28f6": {
+      "kind": "duplicate",
+      "summary": "Both passages instruct that tests cover failure behavior as well as success, naming the same cases: malformed input, missing values or configuration, expected errors, and authorization or persistence failures.",
+      "passages": [
+        {
+          "scoped_id": "com.github.haexmas.atoms.coding-guideline-javascript-typescript/javascript-typescript-testing",
+          "text_hash": "7b3f37bf3595ddc553451114a72426523428773cd8e606d2588174921cc23fc8",
+          "text": "- Test both successful and failure behavior, including malformed input,\n  missing values, rejected promises, cancellation or timeout behavior, and\n  authorization or persistence failures where they matter."
+        },
+        {
+          "scoped_id": "com.github.haexmas.atoms.coding-guideline-python/python-testing",
+          "text_hash": "99baaa17767af5ad4ea614be4b444ae41a7f1ccb768b6deed977c2fc549d0a27",
+          "text": "- Exercise successful and failure behavior, especially malformed input,\n  missing configuration, expected exceptions, authorization decisions,\n  persistence failures, and resource cleanup. Assert the exception type and\n  meaningful details without over-specifying incidental message formatting."
+        }
+      ],
+      "choice": {
+        "kind": "keep_all"
+      },
+      "asked_at": "2026-11-22T21:12:13Z",
+      "answered_at": "2026-11-22T21:12:13Z"
+    },
+    "78dc98847c5d7400de0afc038ce631cbc60c6a16ea3a000a1f735d7485daf1d7": {
+      "kind": "duplicate",
+      "summary": "All three passages state the same rule: test observable behavior and public contracts rather than private implementation details, so a contract-preserving refactor does not force test rewrites.",
+      "passages": [
+        {
+          "scoped_id": "com.github.haexmas.atoms.coding-guideline-javascript-typescript/javascript-typescript-testing",
+          "text_hash": "237398bdef10e44624fc1c104f6f542198af90e80cbbc4600da1d8a58f4b3c2b",
+          "text": "- Test observable behavior and public contracts, not the exact arrangement of\n  private functions or implementation details. A refactor that preserves the\n  contract should not require rewriting the test suite."
+        },
+        {
+          "scoped_id": "com.github.haexmas.atoms.coding-guideline-python/python-testing",
+          "text_hash": "b40d11822dc2a8a89a8a9bb2f1675146f0eb6c53715b90d4f5a49589cafd15d6",
+          "text": "- Test observable behavior and public contracts, not private implementation\n  details. A refactor that preserves the contract should not require rewriting\n  the tests."
+        },
+        {
+          "scoped_id": "com.github.haexmas.atoms.general-coding/general-coding",
+          "text_hash": "7a1a0eeaac59bc038091024ce18548618623c02b59b90c1111d5e43808366c25",
+          "text": "- Add or update tests with behavior changes. Test observable behavior and\n  important failure modes, not private implementation details. A test is\n  useful only when it can fail for a real regression."
+        }
+      ],
+      "choice": {
+        "kind": "keep_all"
+      },
+      "asked_at": "2026-11-22T21:12:13Z",
+      "answered_at": "2026-11-22T21:12:13Z"
+    },
+    "7b1d3e1ee85685cb48939439ab27f5ec377f43b1b926666380841bc49c1c4060": {
+      "kind": "duplicate",
+      "summary": "Both passages instruct that external input be validated or parsed once at the trust boundary and passed inward as a domain type that internal code may rely on.",
+      "passages": [
+        {
+          "scoped_id": "com.github.haexmas.atoms.coding-guideline-javascript-typescript/javascript-typescript",
+          "text_hash": "6e9bfc0e4b571e721d3c85d57f44796513d56727391ad7b056bbac7169c946b3",
+          "text": "- Validate data at trust boundaries: HTTP responses, request bodies, files,\n  environment variables, message queues, and browser storage are not made\n  safe by a TypeScript type assertion. Assertions have no runtime effect.\n  Parse or validate the data once, then pass the resulting domain type inward."
+        },
+        {
+          "scoped_id": "com.github.haexmas.atoms.coding-guideline-python/python",
+          "text_hash": "f1a778f76fffd3ce5386c5ea33d15177bee3a8b4147902a0042fb2e88a55a690",
+          "text": "- Validate external input at the boundary and convert it to a domain shape\n  once. Internal functions SHOULD be able to rely on their stated types and\n  invariants rather than repeatedly defending against every possible input."
+        }
+      ],
+      "choice": {
+        "kind": "keep_all"
+      },
+      "asked_at": "2026-11-22T21:12:13Z",
+      "answered_at": "2026-11-22T21:12:13Z"
+    },
+    "8049ce6218b7c560a9df2846137e2173cfc91978a9c495b2ff31f30a9ae15bf6": {
+      "kind": "duplicate",
+      "summary": "Both passages give the same rule about the dynamic escape-hatch type: avoid `any`/`Any`, prefer a precise type, and keep the untyped value narrowed at a deliberate boundary.",
+      "passages": [
+        {
+          "scoped_id": "com.github.haexmas.atoms.coding-guideline-javascript-typescript/javascript-typescript",
+          "text_hash": "75b4ed529eb46c9f570b1635fb3f464d2a5bd3542499d18e1a7aa86d07ed0965",
+          "text": "  `any`; use a precise type, a generic, or `unknown` followed by explicit\n  narrowing. Keep untyped escape hatches local and explain why they are\n  necessary."
+        },
+        {
+          "scoped_id": "com.github.haexmas.atoms.coding-guideline-python/python",
+          "text_hash": "9e862703d351337a3ea843af3dd0b318b9678c8067af02788b1d32e652177c5b",
+          "text": "  Prefer precise types and protocols over `Any`; use `Any` only at a deliberate\n  untyped boundary and narrow the value before it reaches domain logic. For\n  supported Python versions, prefer modern built-in generics such as"
+        }
+      ],
+      "choice": {
+        "kind": "keep_all"
+      },
+      "asked_at": "2026-11-22T21:12:13Z",
+      "answered_at": "2026-11-22T21:12:13Z"
+    },
+    "b0928e1237908e81ce32dec652b1dd7d8d645bd4ad4f25e4c50547ff03429f08": {
+      "kind": "duplicate",
+      "summary": "Both passages instruct that the project's own test and static-check commands be used and that test discovery of the intended files be confirmed rather than assumed.",
+      "passages": [
+        {
+          "scoped_id": "com.github.haexmas.atoms.coding-guideline-javascript-typescript/javascript-typescript-testing",
+          "text_hash": "97074ebb728f453ad685be2ccfc045e2df689e7b7fa6e0a28e116c31dbf9c495",
+          "text": "- Use the repository's configured runner, environment, formatter, linter, and\n  compiler. A change should include relevant tests and pass the project's\n  normal test command; do not assume that a test file is discovered unless the\n  runner configuration confirms it."
+        },
+        {
+          "scoped_id": "com.github.haexmas.atoms.coding-guideline-python/python-testing",
+          "text_hash": "a188a5dcba38ad9075e6ed883fa8e71ddb4b17e7fd4a45909c6a81b6b9a6c2cf",
+          "text": "- Run the project's normal test and static-check commands. At minimum, make\n  sure the test runner discovers the intended files and that a deliberately\n  broken assertion makes the test fail during test development."
+        }
+      ],
+      "choice": {
+        "kind": "keep_all"
+      },
+      "asked_at": "2026-11-22T21:12:13Z",
+      "answered_at": "2026-11-22T21:12:13Z"
+    },
+    "c087a2d64bb582e4a92f0e0c7f5e987ad36e7c5f767f6a08654ca7c595e5e022": {
+      "kind": "duplicate",
+      "summary": "Both passages give the same instruction not to introduce an abstraction merely because two pieces of code look similar or might be reusable, and to accept a little local duplication instead.",
+      "passages": [
+        {
+          "scoped_id": "com.github.haexmas.atoms.general-coding/general-coding",
+          "text_hash": "8613b227dbf67ae438c4504cb917f472a3794cb67d9198fb012bbdbaf84f2637",
+          "text": "- Do not abstract two things merely because they look similar. First establish\n  that they have the same behavior, ownership, change reason, and invariants.\n  A small amount of local duplication is preferable to a premature generic\n  abstraction that couples unrelated callers."
+        },
+        {
+          "scoped_id": "com.github.haexmas.atoms.ponytail/ponytail",
+          "text_hash": "762e24a72676f77dd6c37bbe977676817ac4012c63ec2d09cff09a3b67f565eb",
+          "text": "- Do not introduce speculative abstractions or abstractions solely because a\n  change might be reusable. A concrete, domain-owned abstraction that\n  improves cohesion, removes real duplication, or makes a branch independently\n  testable is not premature; use it when the code evidence supports it, even\n  when the task did not name the extraction. Keep it as small as possible."
+        }
+      ],
+      "choice": {
+        "kind": "keep_all"
+      },
+      "asked_at": "2026-11-22T22:10:13Z",
+      "answered_at": "2026-11-22T22:10:13Z"
+    },
+    "c7e6f241fb50528be272c1ce2f50a1de2a3feda55e64e344ea18d93c4c06427f": {
+      "kind": "duplicate",
+      "summary": "Both passages give the same mocking rule: keep mocks narrow, mock an external boundary only when isolation or determinism requires it, and do not mock the code under test so heavily that the test only proves its own wiring.",
+      "passages": [
+        {
+          "scoped_id": "com.github.haexmas.atoms.coding-guideline-javascript-typescript/javascript-typescript-testing",
+          "text_hash": "b38e75d0b6adb3fc7a064568859cf1e861d6ed3817a0f0f499546a5f85df2160",
+          "text": "- Keep mocks narrow and behavior-oriented. Mock an external boundary when\n  isolation or determinism requires it, but do not mock the unit's own logic\n  so thoroughly that the test only verifies the mock wiring."
+        },
+        {
+          "scoped_id": "com.github.haexmas.atoms.coding-guideline-python/python-testing",
+          "text_hash": "c02a20126f4cf5df0dc57b94ecbb9bb1359e7773a5079bb3c80823a7e48696af",
+          "text": "- Keep mocks narrow and purposeful. Mock an external boundary when isolation\n  or determinism requires it, but do not mock the code under test so heavily\n  that the test only proves its own setup."
+        }
+      ],
+      "choice": {
+        "kind": "keep_all"
+      },
+      "asked_at": "2026-11-22T21:12:13Z",
+      "answered_at": "2026-11-22T21:12:13Z"
+    },
+    "d92572fdcd86a53939f9bd11050d62966b024f000d20b3bb088864c5f452ad38": {
+      "kind": "duplicate",
+      "summary": "Both bullets state the same prohibition on calling `asyncio.run()` from code that is already running inside an event loop.",
+      "passages": [
+        {
+          "scoped_id": "com.github.haexmas.atoms.coding-guideline-python/python",
+          "text_hash": "864f54a76640337abb57121119d15d045a5b01c71c510c153969ce10fd390c19",
+          "text": "- Keep async code non-blocking. Do not call blocking I/O or CPU-heavy work\n  directly from an event loop; use an appropriate async API or explicitly move\n  the work to a worker. Do not call `asyncio.run()` from code that may already\n  be running inside an event loop."
+        },
+        {
+          "scoped_id": "com.github.haexmas.atoms.coding-guideline-python/python-testing",
+          "text_hash": "8a0e07fac184da1d85882955ae909b79e2fbd3056c9eedae8f0f21a99a908e96",
+          "text": "- For async code, test coroutines with the project's supported async test\n  tooling. Do not call `asyncio.run()` inside an already-running event loop,\n  and do not use sleeps to wait for concurrency. Test cancellation, timeout,\n  cleanup, and ordering assumptions when they affect correctness."
+        }
+      ],
+      "choice": {
+        "kind": "keep_all"
+      },
+      "asked_at": "2026-11-22T22:10:13Z",
+      "answered_at": "2026-11-22T22:10:13Z"
+    },
+    "f33fac02539e620b84f83f37e8441e63b983952dec4135830b5984a79de2c014": {
+      "kind": "duplicate",
+      "summary": "Both passages require deterministic, isolated tests with the same list of prohibitions and remedies: no real network, shared mutable state, uncontrolled randomness or arbitrary sleeps, and explicit control of time, randomness and external clients.",
+      "passages": [
+        {
+          "scoped_id": "com.github.haexmas.atoms.coding-guideline-javascript-typescript/javascript-typescript-testing",
+          "text_hash": "0de755c6a8a1b134d79005f09e6ace509519268d448283031482be75bb269d91",
+          "text": "- Keep tests deterministic and isolated. Avoid real network calls, shared\n  mutable state, random values without a controlled seed, and arbitrary timer\n  sleeps. Control time, randomness, environment, and external clients at\n  explicit boundaries."
+        },
+        {
+          "scoped_id": "com.github.haexmas.atoms.coding-guideline-python/python-testing",
+          "text_hash": "852f2f21dccad64783e2286471146e4ebd40a7f20e8b2007689ef3275afc40c6",
+          "text": "- Keep each test independent and deterministic. Avoid order dependence,\n  shared mutable module state, real network services, the current time, and\n  arbitrary sleeps. Use temporary directories, controlled clocks, seeded\n  randomness, and explicit fakes or mocks at external boundaries."
+        }
+      ],
+      "choice": {
+        "kind": "keep_all"
+      },
+      "asked_at": "2026-11-22T21:12:13Z",
+      "answered_at": "2026-11-22T21:12:13Z"
+    }
+  }
+}
