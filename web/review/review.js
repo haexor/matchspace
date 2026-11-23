@@ -128,11 +128,11 @@ function question(s) {
   for (const p of s.after) {
     const to = s.proposal[p.letter];
     const line = document.createElement('label');
-    line.append(chip(p.letter), document.createTextNode(' nachher ist '));
+    line.append(document.createTextNode('Box '), chip(p.letter), document.createTextNode(' nachher sitzt auf derselben Person wie '));
     const sel = document.createElement('select');
     sel.dataset.letter = p.letter;
-    for (const b of s.before) sel.add(new Option(`${b.letter} von vorher`, b.letter));
-    sel.add(new Option('eine andere Person', 'other'));
+    for (const b of s.before) sel.add(new Option(`Box ${b.letter} vorher`, b.letter));
+    sel.add(new Option('keine der Boxen von vorher (andere Person)', 'other'));
     sel.add(new Option('unklar', 'unclear'));
     sel.value = prev?.mapping?.[p.letter] ?? (to ?? 'other');
     line.append(sel);
@@ -141,7 +141,7 @@ function question(s) {
   const lost = s.before.filter((b) => !s.after.some((p) => p.letter === b.letter));
   for (const b of lost) {   // vorher da, nachher keine Box mehr: nichts zu entscheiden
     const line = document.createElement('span');
-    line.append(chip(b.letter), document.createTextNode(' ist nachher nicht mehr erkannt (nichts zu entscheiden)'));
+    line.append(document.createTextNode('Box '), chip(b.letter), document.createTextNode(' gibt es nachher nicht mehr (nichts zu entscheiden)'));
     line.style.color = 'var(--muted)';
     mapping.append(line);
   }
@@ -150,7 +150,7 @@ function question(s) {
     mapping.querySelectorAll('select').forEach((sel) => { m[sel.dataset.letter] = sel.value; });
     send('mapped', m);
   }));
-  const text = s.after.map((p) => `${p.letter} → ${s.proposal[p.letter] ?? 'neu'}`).join(', ');
+  const text = s.after.map((p) => `Box ${p.letter} nachher = ${s.proposal[p.letter] ? `Box ${s.proposal[p.letter]} vorher` : 'neue Person'}`).join(', ');
   choices.append(button(`Stimmt: ${text} (Enter)`, () => send('proposed')));
   if (s.before.length === 2) choices.append(button('Vertauscht (V)', () => send('swapped')));
   if (s.after.length === 1 && s.before.length >= 1) choices.append(button('Andere Person (N)', () => send('mapped', { [s.after[0].letter]: 'other' })));
