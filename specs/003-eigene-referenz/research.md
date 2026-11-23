@@ -275,3 +275,15 @@ Je Linie (die fernen Linien haben gröbere Pixel in der Tiefe):
   (Verbindungen über Mannschaften sind verboten), und echte Mehrdeutigkeiten.
 - **Entscheidung**: Das gelernte Merkmal bleibt als Schutz gegen falsche Verbindungen. Ob es Fehler verhindert,
   zeigt erst die Messung an der eigenen Referenz.
+
+## R12 Bekannte Grenze: Wechsel zwischen den Mannschaften (nicht weiter nachgestellt)
+
+- An einem Kontakt zweier Gegner (722, Bild 151 bis 547) tauscht die Spur der Auswertung zweimal die Person. Die
+  richtigen Verbindungen (Ende bei Bild 151 zum Anfang bei Bild 159, Lücke 0,27 s, 1,2 m) kosten 3,4 bis 4,4 statt
+  höchstens 2,5: Weg 1,2 bis 1,5, dazu 1,4 bis 2,7 für Aussehen und Größe. Am Kontakt überlappen sich beide Boxen, die
+  Bildausschnitte enthalten dann beide Personen, und das Aussehen ist dort unzuverlässig.
+- Naheliegende Abhilfen: Aussehen nur aus unverdeckten Erkennungen mitteln, oder an Kontakten Aussehen und Größe
+  weglassen und nur nach Weg und Trikotfarbe verbinden.
+- **Entscheidung**: Das wird nicht weiter nachgestellt. Der Platz und die Perspektive sind eine einzige; mit Kameras aus
+  anderen Blickwinkeln fallen Verdeckungen und Kontakte weg oder lassen sich über die zweite Sicht auflösen. Was
+  übrig bleibt, entscheidet die eigene Referenz (Markieren).
