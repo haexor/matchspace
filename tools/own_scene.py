@@ -2,7 +2,8 @@
 
 Wird von tools/veo_scene.py aufgerufen, wenn statt Veo-Angaben "-" übergeben wird. Grundlage sind das eigene
 Spielertracking (tools/track_players.py), die selbst gelesenen Rückennummern (tools/jersey_reader.py,
-tools/jersey_identity.py) und die eigene Ballspur (tools/veo_ball.py).
+tools/jersey_identity.py), das Verbinden von Spurstücken derselben Person (tools/identity_link.py, mit dem
+Aussehen aus tools/appearance.py) und die eigene Ballspur (tools/veo_ball.py).
 """
 import math
 import sys
@@ -12,6 +13,7 @@ from pathlib import Path
 import numpy as np
 
 sys.path.insert(0, str(Path(__file__).parent))
+import identity_link  # noqa: E402
 import jersey_identity  # noqa: E402
 import track_players  # noqa: E402
 
@@ -140,22 +142,71 @@ def drop_same_place(obs: dict, where: list[dict]) -> int:
     return removed
 
 
-def with_numbers(identities: dict, det: dict, video: str, det_path: str,
-                 squad: dict[str, frozenset[int]] | None = None, model_path: str | Path | None = None) -> dict:
-    """Rückennummern aus dem Video: Spuren mit gestützter Nummer heißen (Mannschaft, Nummer), Stücke mit derselben
-    Nummer werden ein Spieler. Ohne Nummernleser (models/jersey-digits.pt) bleibt alles wie es ist."""
-    import jersey_reader   # erst hier: lädt Torch
-    model_path = Path(model_path or jersey_reader.MODEL)
-    if not model_path.exists():
-        print(f"Hinweis: kein Nummernleser ({model_path.name}), alle Spieler ohne Rückennummer. "
-              "Trainieren mit tools/jersey_reader.py train", flush=True)
-        return identities
-    fps = det["fps"]
+def _piece_looks(video, det_path, tracks: dict, cam) -> dict[str, identity_link.Look]:
+    """Aussehen je Spur aus dem Zwischenspeicher (tools/appearance.py); ohne Bildmodell leer."""
+    import appearance   # erst hier: lädt Torch
+    scene = appearance.read_scene(video, det_path)
+    if scene is None:
+        return {}
+    where = scene.index()
+    return {name: identity_link.Look(*appearance.piece_features(scene, where, frames, cam)) for name, frames in tracks.items()}
+
+
+def link_pieces(identities: dict, video: str, det_path: str, cam, fps: float,
+                numbers: dict[str, int | None]) -> dict:
+    """Spurstücke derselben Person zu einem Spieler verbinden (tools/identity_link.py). numbers: sichere Nummer je
+    Spur („Mannschaft-Nummer“), soweit gelesen. Rückgabe in der Form von own_identities, ein Schlüssel je Spieler."""
     keys = {f"{key[0]}-{key[1]}": key for key in identities}
     tracks = {name: identities[key][2] for name, key in keys.items()}
+    pieces = [identity_link.Piece(name, key[0], identities[key][1], tracks[name]) for name, key in keys.items()]
+    looks = _piece_looks(video, det_path, tracks, cam)
+    log: list[identity_link.Link] = []
+    chains = identity_link.link(pieces, looks, numbers, fps, log)
+    out = {}
+    for chain in chains:
+        colour, keeper, _ = identities[keys[chain[0]]]
+        frames = {}
+        for name in chain:   # bei kurzer Übergabe gilt im gemeinsamen Bild das spätere Stück
+            frames.update(tracks[name])
+        out[keys[chain[0]]] = (colour, keeper, frames)
+    print(f"Spurstücke verbunden: {len(log)} Verbindungen, {len(identities)} Stücke -> {len(out)} Spieler"
+          f"{'' if looks else ' (ohne Aussehen)'}", flush=True)
+    return out
+
+
+def with_numbers(identities: dict, det: dict, video: str, det_path: str,
+                 squad: dict[str, frozenset[int]] | None = None, model_path: str | Path | None = None,
+                 cam=None) -> dict:
+    """Rückennummern aus dem Video und eine Identität je Spieler.
+
+    1. Je Spur abstimmen; sichere Nummern helfen beim Verbinden (und verbieten es bei verschiedenen Nummern).
+    2. Stücke derselben Person verbinden (link_pieces).
+    3. Je Spieler über die Lesungen aller seiner Stücke abstimmen; Spieler mit gestützter Nummer heißen
+       (Mannschaft, Nummer), Spieler mit derselben Nummer werden einer.
+    Ohne Nummernleser (models/jersey-digits.pt) wird nur über den Laufweg und das Aussehen verbunden."""
+    import jersey_reader   # erst hier: lädt Torch
+    fps = det["fps"]
+    model_path = Path(model_path or jersey_reader.MODEL)
+    scene = None
+    if model_path.exists():
+        scene = jersey_reader.read_scene(video, det_path, model_path)
+    else:
+        print(f"Hinweis: kein Nummernleser ({model_path.name}), alle Spieler ohne Rückennummer. "
+              "Trainieren mit tools/jersey_reader.py train", flush=True)
+
+    def votes_of(ids: dict) -> tuple[dict, dict, dict]:
+        keys = {f"{key[0]}-{key[1]}": key for key in ids}
+        tracks = {name: ids[key][2] for name, key in keys.items()}
+        teams = {name: key[0] for name, key in keys.items()}
+        readings = jersey_reader.readings_for_tracks(scene, tracks) if scene is not None else []
+        return keys, tracks, jersey_identity.vote(readings, teams, fps, squad)
+
+    _, _, piece_votes = votes_of(identities)
+    identities = link_pieces(identities, video, det_path, cam, fps, {n: v.number for n, v in piece_votes.items()})
+    if scene is None:
+        return identities
+    keys, tracks, votes = votes_of(identities)
     teams = {name: key[0] for name, key in keys.items()}
-    scene = jersey_reader.read_scene(video, det_path, model_path)
-    votes = jersey_identity.vote(jersey_reader.readings_for_tracks(scene, tracks), teams, fps, squad)
     positions = {name: {f: r[:2] for f, r in fr.items()} for name, fr in tracks.items()}
     numbers = jersey_identity.assign(votes, {name: set(fr) for name, fr in tracks.items()}, fps)
     players = jersey_identity.merge_by_number(numbers, votes, positions, teams, fps)

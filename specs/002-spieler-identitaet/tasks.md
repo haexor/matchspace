@@ -73,7 +73,7 @@ Zeit steigt nicht über den Stand aus T003.
 
 ### Tests für User Story 1
 
-- [ ] T006 [P] [US1] `tests/test_identity_link.py` (Verbinden), mit künstlichen Stücken als
+- [X] T006 [P] [US1] `tests/test_identity_link.py` (Verbinden), mit künstlichen Stücken als
   `{Bild: (x, y)}` plus Merkmalen:
   - **Ein Kandidat**: Eine Lücke von 2 s und 4 m mit einem einzigen erreichbaren Kandidaten wird
     verbunden.
@@ -87,7 +87,7 @@ Zeit steigt nicht über den Stand aus T003.
 
 ### Implementation für User Story 1
 
-- [ ] T007 [US1] `tools/identity_link.py`, Teil Verbinden (reine Logik):
+- [X] T007 [US1] `tools/identity_link.py`, Teil Verbinden (reine Logik):
   - **Datentypen**: `Piece`, `Look` und `Link` als `dataclass` nach [data-model.md](data-model.md).
   - **Kosten**: `link_cost(a, b, fps)` für das Ende von a und den Anfang von b. Aus der Laufrichtung der
     letzten 0,5 s wird die erwartete Lage am Anfang von b berechnet. Ihre Unsicherheit ist 1,5 m plus
@@ -97,15 +97,15 @@ Zeit steigt nicht über den Stand aus T003.
   - **Verbinden**: `link(pieces, looks, numbers, fps) -> list[list[str]]`, gierig nach Kosten, nur mit
     `margin ≥ MIN_MARGIN` (2) in beide Richtungen (bestes Ende für einen Anfang und umgekehrt).
   - **Kommentar**: `ponytail:` mit Ceiling (gierig statt Netzfluss).
-- [ ] T008 [US1] `tools/own_scene.py`:
+- [X] T008 [US1] `tools/own_scene.py`:
   - **Ablauf**: In `with_numbers` vor der Nummernvergabe Merkmale laden (`appearance.read_scene`), die
     Spuren zu Stücken machen, `identity_link.link` aufrufen und Spieler aus verbundenen Stücken bilden.
     Die Rückgabeform bleibt gleich (Bilder der Stücke vereinigt unter einem Schlüssel).
   - **Ohne Merkmale**: Verbunden wird nur mit Weg und Nummer.
   - **Konsole**: nennt die Zahl der Verbindungen.
-- [ ] T009 [US1] `tools/identity_link.py`, CLI nach [contracts/cli.md](contracts/cli.md): Kontakte,
+- [X] T009 [US1] `tools/identity_link.py`, CLI nach [contracts/cli.md](contracts/cli.md): Kontakte,
   Trennungen (ab US2) und Verbindungen mit Kosten und Abstand zum Zweitbesten ausgeben; zum Prüfen.
-- [ ] T010 [US1] Szene 705 auswerten und messen. Die Gewichte (`LOOK_WEIGHT`, `HEIGHT_WEIGHT`,
+- [X] T010 [US1] Szene 705 auswerten und messen. Die Gewichte (`LOOK_WEIGHT`, `HEIGHT_WEIGHT`,
   `NUMBER_BONUS`, `MIN_MARGIN`) an 705 einstellen, dann 722 prüfen. Commit
   `feat(identity): link track pieces of the same player` mit Messwerten.
 

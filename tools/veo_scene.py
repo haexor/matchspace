@@ -367,7 +367,7 @@ def main(veo_dir, camera_path, align_path, video, start, det_path, base_dir, out
         # Lücken gerade verbunden (dort wird wie bisher in vergrößerten Ausschnitten nach Liegenden gesucht).
         identities = own_identities(det, cam, n, video)
         clock("Eigene Spuren")
-        identities = with_numbers(identities, det, video, det_path, squad)
+        identities = with_numbers(identities, det, video, det_path, squad, cam=cam)
         clock("Rückennummern gelesen")
         own_kit, keepers = {}, set()
         where = [{} for _ in range(n)]
