@@ -240,3 +240,35 @@ class MergeTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PlayerVoteTest(unittest.TestCase):
+    """Nummern je Spieler: Die Lesungen aller Stücke eines Spielers stimmen gemeinsam ab (Szenario P3/1)."""
+
+    def setUp(self):
+        import jersey_reader
+        self.reader = jersey_reader
+        self.pieces = {"a": range(0, 25), "b": range(50, 75), "c": range(100, 125)}
+        frames, box = [], []
+        for k, fs in enumerate(self.pieces.values()):
+            for f in (fs[0], fs[-1]):        # je Stück zwei Fenster
+                frames.append(f)
+                box.append(k)
+        n = len(frames)
+        self.scene = jersey_reader.SceneReadings(np.array(frames), np.zeros(n, np.int8), np.array(box),
+                                                 np.tile(probs(n15=0.9), (n, 1)), np.full(n, 40.0, np.float32))
+
+    def rows(self, k, fs):
+        return {f: np.array([0, 0, 0, 0, 0, 0, 1, 1, k], float) for f in fs}
+
+    def test_each_piece_alone_stays_unknown(self):
+        tracks = {name: self.rows(k, fs) for k, (name, fs) in enumerate(self.pieces.items())}
+        votes = ji.vote(self.reader.readings_for_tracks(self.scene, tracks), dict.fromkeys(tracks, "own"), FPS)
+        self.assertTrue(all(v.number is None for v in votes.values()))
+
+    def test_player_of_three_pieces_gets_the_number(self):
+        player = {}
+        for k, fs in enumerate(self.pieces.values()):
+            player.update(self.rows(k, fs))
+        votes = ji.vote(self.reader.readings_for_tracks(self.scene, {"own-1001": player}), {"own-1001": "own"}, FPS)
+        self.assertEqual(votes["own-1001"].number, 15)
