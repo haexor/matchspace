@@ -135,7 +135,7 @@ Zeit steigt nicht über den Stand aus T003.
 
 ### Tests für User Story 2
 
-- [ ] T012 [P] [US2] `tests/test_identity_link.py` erweitern (Trennen):
+- [X] T012 [P] [US2] `tests/test_identity_link.py` erweitern (Trennen):
   - **Kontakte**: `contacts(pieces, fps)` findet Annäherungen unter 1,5 m derselben Mannschaft, nicht
     über Mannschaften hinweg.
   - **Tausch**: Zwei Spuren tauschen an einem Kontakt ihre Wege (gerade Linien, die sich kreuzen und
@@ -147,15 +147,15 @@ Zeit steigt nicht über den Stand aus T003.
 
 ### Implementation für User Story 2
 
-- [ ] T013 [US2] `tools/identity_link.py`, Teil Trennen:
+- [X] T013 [US2] `tools/identity_link.py`, Teil Trennen:
   - **Kontakte**: `contacts(pieces, fps)`.
   - **Prüfung**: `swap_evidence(contact, pieces, looks, readings)` mit den Belegen, die in T011 das
     Kriterium erfüllt haben.
   - **Trennen**: `split(pieces, contacts) -> pieces` erzeugt Stücke `{Spur}/{k}`.
   - **Lesungen**: Die Rückenlesungen werden mit den Stücken getrennt.
-- [ ] T014 [US2] `tools/own_scene.py`: Ablauf Trennen → Verbinden → Nummern. Die Konsole nennt Kontakte,
+- [X] T014 [US2] `tools/own_scene.py`: Ablauf Trennen → Verbinden → Nummern. Die Konsole nennt Kontakte,
   Trennungen und Verbindungen.
-- [ ] T015 [US2] Szene 705 und 722 auswerten und messen (`wrongTimeShare`, `switches`, Identitäten).
+- [X] T015 [US2] Szene 705 und 722 auswerten und messen (`wrongTimeShare`, `switches`, Identitäten).
   Schwellen der Wechselprüfung an 705, Prüfung an 722. Commit
   `feat(identity): split tracks at identity switches` mit Messwerten.
 

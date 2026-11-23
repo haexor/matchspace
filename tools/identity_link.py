@@ -2,6 +2,11 @@
 """Eine Identität je Spieler: Spurstücke derselben Person vorsichtig verbinden, ohne Fremddaten.
 
 Reine Logik ohne Datei-, Video- oder Netzzugriff (außer der Kommandozeile):
+  split_by_colour: Trägt eine Spur mindestens MIN_FOREIGN_S lang das Trikot der anderen Mannschaft, folgt sie
+        dort nicht mehr ihrer Person (Spurwechsel im Gedränge, research.md R3). Sie wird getrennt; der fremde
+        Abschnitt wird ein Stück der anderen Mannschaft, außer dort läuft schon eine Spur dieser Mannschaft.
+  split_by_numbers: Lesen sich die Rücken vor und nach einem Kontakt zweier Spuren derselben Mannschaft als
+        verschiedene sichere Nummern, wird dort getrennt.
   link: Endet ein Stück und beginnt später ein anderes, werden beide verbunden, wenn genau ein Kandidat klar
         passt. Hauptmerkmal ist der Laufweg (wohin konnte der Spieler in der Lücke kommen), dazu dieselbe
         sichere Rückennummer; Aussehen und Größe entscheiden nur mit (research.md R1, R2). Ist der zweitbeste
@@ -14,10 +19,15 @@ Aufruf (zum Prüfen):
     .venv/bin/python tools/identity_link.py SZENENVIDEO DETEKTIONEN.json KAMERA.json
 """
 import math
+import sys
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from pathlib import Path
 
 import numpy as np
+
+sys.path.insert(0, str(Path(__file__).parent))
+import jersey_identity  # noqa: E402
 
 MERGE_SPEED = 8.0       # m/s: schneller überbrückt kein Spieler eine Lücke (wie jersey_identity)
 POSITION_NOISE = 1.5    # m: Messrauschen der Lage am Boden
@@ -27,12 +37,17 @@ HEADING_S = 0.5         # s: Laufrichtung aus dem Ende des Stücks
 PREDICT_S = 2.0         # s: höchstens so lange wird die Laufrichtung fortgeschrieben (danach bremst jeder)
 BASE_COST = 0.5         # Grundkosten jeder Verbindung: Kosten nahe null machten den Verhältnistest beliebig
 MAX_COST = 2.5          # teurer wird nie verbunden, auch ohne Konkurrenz
-MIN_MARGIN = 2.0        # der zweitbeste Kandidat muss mindestens so viel teurer sein
+MIN_MARGIN = 1.5        # der zweitbeste Kandidat muss mindestens so viel teurer sein (an 705 eingestellt, an 722 geprüft)
 LOOK_WEIGHT = 5.0       # Gewicht von 1 − Kosinus der Bildmerkmale
 HEIGHT_WEIGHT = 3.0     # Gewicht des relativen Größenunterschieds
 NUMBER_FACTOR = 0.1     # dieselbe sichere Nummer: Kosten mal diesem Faktor
 MIN_LOOK = 8            # Erkennungen, ab denen das Aussehen eines Stücks zählt
 NO_LINK_TEAMS = ("referee",)
+CONTACT_M = 1.5         # m: so nah kommen sich zwei Spuren derselben Mannschaft bei einem Kontakt
+CONTACT_JOIN_S = 0.5    # s: Kontakte mit kürzerer Pause dazwischen sind einer
+COLOUR_SMOOTH_S = 0.2   # s: Farbe je Erkennung über ± so lange geglättet (Mehrheit)
+MIN_FOREIGN_S = 1.0     # s: so lange muss eine Spur fremde Trikots tragen, bevor getrennt wird
+COVERED = 0.5           # Anteil der Bilder, in denen schon eine Spur der anderen Mannschaft dort läuft
 
 
 @dataclass
@@ -68,12 +83,141 @@ class Look:
 
 
 @dataclass
+class Contact:
+    """Zwei Stücke derselben Mannschaft näher als CONTACT_M; frame: Bild des geringsten Abstands."""
+    a: str
+    b: str
+    frame: int
+    distance: float
+
+
+@dataclass
 class Link:
     """Verbindung vom Ende eines Spielers zum Anfang eines anderen."""
     end: str
     start: str
     cost: float
     margin: float
+
+
+def _cut(p: Piece, at: Sequence[int], teams: Sequence[str] | None = None) -> list[Piece]:
+    """Teilt p vor den Bildern at; Namen {id}/{k}; teams: Mannschaft je Teil (sonst die von p)."""
+    edges = [p.start] + sorted(at) + [p.end + 1]
+    out = []
+    for k, (lo, hi) in enumerate(zip(edges, edges[1:])):
+        frames = {f: r for f, r in p.frames.items() if lo <= f < hi}
+        if frames:
+            out.append(Piece(f"{p.id}/{len(out)}", teams[k] if teams else p.team, p.keeper, frames))
+    return out
+
+
+def _runs(mask: np.ndarray) -> list[tuple[int, int]]:
+    """Abschnitte (erster, letzter Index) mit mask wahr."""
+    out, start = [], None
+    for i, m in enumerate(mask):
+        if m and start is None:
+            start = i
+        if not m and start is not None:
+            out.append((start, i - 1))
+            start = None
+    if start is not None:
+        out.append((start, len(mask) - 1))
+    return out
+
+
+def contacts(pieces: Sequence[Piece], fps: float) -> list[Contact]:
+    """Kontakte zwischen Stücken derselben Mannschaft (Schiedsrichter ausgenommen)."""
+    out = []
+    for i, a in enumerate(pieces):
+        for b in pieces[i + 1:]:
+            if a.team != b.team or a.team in NO_LINK_TEAMS:
+                continue
+            common = sorted(set(a.frames) & set(b.frames))
+            if not common:
+                continue
+            d = np.array([np.linalg.norm(a.at(f) - b.at(f)) for f in common])
+            merged: list[list[int]] = []
+            for lo, hi in _runs(d < CONTACT_M):
+                if merged and common[lo] - common[merged[-1][1]] < CONTACT_JOIN_S * fps:
+                    merged[-1][1] = hi
+                else:
+                    merged.append([lo, hi])
+            for lo, hi in merged:
+                k = lo + int(np.argmin(d[lo:hi + 1]))
+                out.append(Contact(a.id, b.id, common[k], float(d[k])))
+    return sorted(out, key=lambda c: c.frame)
+
+
+def split_by_colour(pieces: Sequence[Piece], colours: Mapping[str, int], fps: float) -> list[Piece]:
+    """Trennt Stücke an Abschnitten fremder Trikotfarbe (Farbe je Erkennung in Zeile r[2]); colours: Farbklasse
+    je Mannschaft. Torhüter (eigene Farbe) bleiben ganz."""
+    team_of = {c: t for t, c in colours.items()}
+    half = max(1, int(COLOUR_SMOOTH_S * fps))
+    kept, foreign = [], []
+    for p in pieces:
+        want = colours.get(p.team)
+        if p.keeper or want is None:
+            kept.append(p)
+            continue
+        fs = sorted(p.frames)
+        col = np.array([int(p.frames[f][2]) for f in fs])
+        smooth = np.array([np.bincount(col[max(0, i - half):i + half + 1] + 1).argmax() - 1 for i in range(len(col))])
+        stretches = [(lo, hi) for lo, hi in _runs((smooth != want) & np.isin(smooth, list(team_of)))
+                     if (fs[hi] - fs[lo]) / fps >= MIN_FOREIGN_S]
+        if not stretches:
+            kept.append(p)
+            continue
+        at, teams = [], [p.team]
+        for lo, hi in stretches:
+            if fs[lo] > p.start:
+                at.append(fs[lo])
+            else:
+                teams.pop()
+            teams.append(team_of[int(np.bincount(smooth[lo:hi + 1] + 1).argmax() - 1)])
+            if hi + 1 < len(fs):
+                at.append(fs[hi + 1])
+                teams.append(p.team)
+        for part in _cut(p, at, teams):
+            (kept if part.team == p.team else foreign).append(part)
+    out = list(kept)
+    for q in foreign:   # schon von einer Spur der anderen Mannschaft erfasst? Dann doppelt.
+        others = [o for o in kept if o.team == q.team]
+        near = sum(1 for f in q.frames
+                   if any(f in o.frames and np.linalg.norm(o.at(f) - q.at(f)) < CONTACT_M for o in others))
+        if near < COVERED * len(q.frames):
+            out.append(q)
+    return out
+
+
+def split_by_numbers(pieces: Sequence[Piece], found: Sequence[Contact], readings: Sequence[jersey_identity.Reading],
+                     fps: float, squad: Mapping[str, frozenset[int]] | None = None) -> list[Piece]:
+    """Trennt ein Stück an einem Kontakt, wenn die Lesungen davor und danach (bis zum vorigen und nächsten
+    Kontakt) verschiedene sichere Nummern ergeben (jersey_identity.vote)."""
+    by_piece: dict[str, list[jersey_identity.Reading]] = {}
+    for r in readings:
+        by_piece.setdefault(r.track, []).append(r)
+    at: dict[str, list[int]] = {}
+    for c in found:
+        at.setdefault(c.a, []).append(c.frame)
+        at.setdefault(c.b, []).append(c.frame)
+    out = []
+    for p in pieces:
+        frames = sorted(set(at.get(p.id, [])))
+        mine = by_piece.get(p.id, [])
+        cuts, lo = [], p.start
+        for i, f in enumerate(frames):
+            hi = frames[i + 1] if i + 1 < len(frames) else p.end + 1
+
+            def number(a: int, b: int) -> int | None:
+                part = [r for r in mine if a <= r.frame < b]
+                v = jersey_identity.vote(part, {p.id: p.team}, fps, squad).get(p.id) if part else None
+                return v.number if v is not None else None
+            before, after = number(lo, f), number(f, hi)
+            if before is not None and after is not None and before != after:
+                cuts.append(f)
+                lo = f
+        out.extend(_cut(p, cuts) if cuts else [p])
+    return out
 
 
 def heading(p: Piece, fps: float) -> np.ndarray:
@@ -189,12 +333,9 @@ def open_ends(chains: Sequence[Sequence[str]], pieces: Sequence[Piece], looks: M
 
 
 def main(argv: list[str] | None = None) -> None:
+    """Prüfausgabe: Kontakte, getrennte Stücke und Verbindungen einer Szene (Ablauf wie tools/own_scene.py)."""
     import argparse
     import json
-    import sys
-    from pathlib import Path
-    sys.path.insert(0, str(Path(__file__).parent))
-    import jersey_identity
     import jersey_reader
     import own_scene
     import veo_camera
@@ -205,28 +346,12 @@ def main(argv: list[str] | None = None) -> None:
     args = ap.parse_args(argv)
     det = json.loads(Path(args.det).read_text())
     cam = veo_camera.load(args.camera)
-    fps = det["fps"]
     identities = own_scene.own_identities(det, cam, len(det["frames"]), args.video)
-    keys = {f"{key[0]}-{key[1]}": key for key in identities}
-    tracks = {name: identities[key][2] for name, key in keys.items()}
-    pieces = [Piece(name, key[0], identities[key][1], tracks[name]) for name, key in keys.items()]
-    numbers: dict[str, int | None] = {}
-    if jersey_reader.MODEL.exists():
-        scene = jersey_reader.read_scene(args.video, args.det)
-        votes = jersey_identity.vote(jersey_reader.readings_for_tracks(scene, tracks), {n: k[0] for n, k in keys.items()}, fps)
-        numbers = {n: v.number for n, v in votes.items()}
-    looks = own_scene._piece_looks(args.video, args.det, tracks, cam)
-    log: list[Link] = []
-    chains = link(pieces, looks, numbers, fps, log)
-    print(f"{len(pieces)} Spurstücke, {sum(1 for n in numbers.values() if n is not None)} mit sicherer Nummer, "
-          f"Aussehen {'ja' if looks else 'nein'}")
-    for item in log:
-        print(f"verbunden   {item.end:16s} -> {item.start:16s} Kosten {item.cost:5.2f}, Zweitbester {item.margin:4.1f}-mal so teuer")
-    for end, best in open_ends(chains, pieces, looks, numbers, fps):
-        if best[0][0] <= MAX_COST * MIN_MARGIN:
-            rival = f", Zweitbester {best[1][1]} {best[1][0]:.2f}" if len(best) > 1 else ""
-            print(f"getrennt gelassen {end:16s}: bester Anfang {best[0][1]} Kosten {best[0][0]:.2f}{rival}")
-    print(f"-> {len(chains)} Spieler")
+    scene = jersey_reader.read_scene(args.video, args.det) if jersey_reader.MODEL.exists() else None
+    report: list[str] = []
+    players = own_scene.split_and_link(identities, args.video, args.det, cam, det["fps"], scene, report=report)
+    print("\n".join(report))
+    print(f"-> {len(players)} Spieler")
 
 
 if __name__ == "__main__":

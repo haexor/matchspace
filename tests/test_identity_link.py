@@ -4,6 +4,7 @@ import numpy as np
 
 from tests import helpers  # noqa: F401  (macht tools/ importierbar)
 import identity_link as il
+import jersey_identity
 
 FPS = 25
 
@@ -126,6 +127,82 @@ class CostTest(unittest.TestCase):
         ahead = il.link_cost(a, piece("b", run(100, 150, (8.5, 0))), None, None, FPS)
         behind = il.link_cost(a, piece("c", run(100, 150, (0, 0))), None, None, FPS)
         self.assertLess(ahead, behind)
+
+
+COLOURS = {"own": 0, "opponent": 1, "referee": 2}
+
+
+def path(a, b, p0, p1, colour):
+    """Gerade von p0 (Bild a) nach p1 (Bild b-1), Zeilen (x, y, Farbe)."""
+    n = b - a - 1
+    return {f: (p0[0] + (p1[0] - p0[0]) * (f - a) / n, p0[1] + (p1[1] - p0[1]) * (f - a) / n, colour) for f in range(a, b)}
+
+
+def reading(track, frame, number):
+    probs = np.full(jersey_identity.CLASSES, 0.05 / (jersey_identity.CLASSES - 1))
+    probs[number] = 0.95
+    return jersey_identity.Reading(track, frame, probs, 1.0)
+
+
+class ContactTest(unittest.TestCase):
+    def test_close_approach_of_same_team(self):
+        a = piece("a", path(0, 100, (0, 0), (10, 0), 0))
+        b = piece("b", path(0, 100, (10, 1), (0, 1), 0))
+        got = il.contacts([a, b], FPS)
+        self.assertEqual(len(got), 1)
+        self.assertEqual({got[0].a, got[0].b}, {"a", "b"})
+        self.assertAlmostEqual(got[0].frame, 50, delta=1)
+
+    def test_no_contact_across_teams(self):
+        a = piece("a", path(0, 100, (0, 0), (10, 0), 0))
+        b = piece("b", path(0, 100, (10, 1), (0, 1), 1), team="opponent")
+        self.assertEqual(il.contacts([a, b], FPS), [])
+
+
+class SplitTest(unittest.TestCase):
+    def test_swap_across_teams_is_split_and_relinked_crosswise(self):
+        # A (wir) läuft von (0,0) nach (10,10), B (Gegner) von (0,10) nach (10,0); in der Mitte tauschen die Spuren.
+        a = piece("a", {**path(0, 63, (0, 0), (5, 5), 0), **path(63, 125, (5.08, 4.92), (10, 0), 1)})
+        b = piece("b", {**path(0, 63, (0, 10), (5, 5), 1), **path(63, 125, (5.08, 5.08), (10, 10), 0)}, team="opponent")
+        pieces = il.split_by_colour([a, b], COLOURS, FPS)
+        self.assertEqual(sorted((p.id, p.team) for p in pieces),
+                         [("a/0", "own"), ("a/1", "opponent"), ("b/0", "opponent"), ("b/1", "own")])
+        self.assertEqual(groups(il.link(pieces, {}, {}, FPS)), [["a/0", "b/1"], ["a/1", "b/0"]])
+
+    def test_passing_without_swap_stays_whole(self):
+        a = piece("a", path(0, 100, (0, 0), (10, 0), 0))
+        b = piece("b", path(0, 100, (10, 0.8), (0, 0.8), 1), team="opponent")
+        pieces = il.split_by_colour([a, b], COLOURS, FPS)
+        self.assertEqual(sorted(p.id for p in pieces), ["a", "b"])
+
+    def test_short_foreign_colour_is_ignored(self):
+        frames = path(0, 100, (0, 0), (10, 0), 0)
+        for f in range(40, 55):      # 0,6 s fremde Farbe (Verdeckung)
+            frames[f] = (*frames[f][:2], 1)
+        self.assertEqual([p.id for p in il.split_by_colour([piece("a", frames)], COLOURS, FPS)], ["a"])
+
+    def test_foreign_stretch_on_a_tracked_player_is_dropped(self):
+        a = piece("a", {**path(0, 50, (0, 0), (5, 0), 0), **path(50, 100, (5.1, 0), (10, 0), 1)})
+        c = piece("c", path(0, 100, (0, 3), (10, 0), 1), team="opponent")   # der Gegner hat schon seine Spur
+        pieces = il.split_by_colour([a, c], COLOURS, FPS)
+        self.assertEqual(sorted(p.id for p in pieces), ["a/0", "c"])
+
+    def test_different_sure_numbers_split_at_the_contact(self):
+        a = piece("a", path(0, 200, (0, 0), (20, 0), 0))
+        c = piece("c", path(80, 120, (10, 1), (10, 0.5), 0))      # steht bei Bild 100 neben a
+        readings = [reading("a", f, 7) for f in range(0, 90, 2)] + [reading("a", f, 9) for f in range(110, 200, 2)]
+        contacts = il.contacts([a, c], FPS)
+        pieces = il.split_by_numbers([a, c], contacts, readings, FPS)
+        self.assertEqual(sorted(p.id for p in pieces), ["a/0", "a/1", "c"])
+        cut = next(p for p in pieces if p.id == "a/1").start
+        self.assertTrue(80 <= cut <= 120)
+
+    def test_same_number_on_both_sides_stays_whole(self):
+        a = piece("a", path(0, 200, (0, 0), (20, 0), 0))
+        c = piece("c", path(80, 120, (10, 1), (10, 0.5), 0))
+        readings = [reading("a", f, 7) for f in list(range(0, 90, 2)) + list(range(110, 200, 2))]
+        pieces = il.split_by_numbers([a, c], il.contacts([a, c], FPS), readings, FPS)
+        self.assertEqual(sorted(p.id for p in pieces), ["a", "c"])
 
 
 if __name__ == "__main__":

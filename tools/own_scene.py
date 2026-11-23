@@ -152,24 +152,54 @@ def _piece_looks(video, det_path, tracks: dict, cam) -> dict[str, identity_link.
     return {name: identity_link.Look(*appearance.piece_features(scene, where, frames, cam)) for name, frames in tracks.items()}
 
 
-def link_pieces(identities: dict, video: str, det_path: str, cam, fps: float,
-                numbers: dict[str, int | None]) -> dict:
-    """Spurstücke derselben Person zu einem Spieler verbinden (tools/identity_link.py). numbers: sichere Nummer je
-    Spur („Mannschaft-Nummer“), soweit gelesen. Rückgabe in der Form von own_identities, ein Schlüssel je Spieler."""
-    keys = {f"{key[0]}-{key[1]}": key for key in identities}
-    tracks = {name: identities[key][2] for name, key in keys.items()}
-    pieces = [identity_link.Piece(name, key[0], identities[key][1], tracks[name]) for name, key in keys.items()]
+def split_and_link(identities: dict, video: str, det_path: str, cam, fps: float, scene=None,
+                   squad: dict[str, frozenset[int]] | None = None, report: list[str] | None = None) -> dict:
+    """Eine Identität je Spieler (tools/identity_link.py): Spuren an Spurwechseln trennen (fremdes Trikot,
+    verschiedene sichere Nummern an einem Kontakt), dann Stücke derselben Person verbinden. scene: gelesene
+    Rücken (jersey_reader.read_scene) oder None; report: sammelt Zeilen zum Prüfen (tools/identity_link.py).
+    Rückgabe in der Form von own_identities, neu durchnummeriert."""
+    import jersey_reader   # erst hier: lädt Torch
+    pieces = [identity_link.Piece(f"{key[0]}-{key[1]}", key[0], keeper, frames)
+              for key, (_, keeper, frames) in identities.items()]
+    colour_of = {f"{key[0]}-{key[1]}": colour for key, (colour, _, _) in identities.items()}
+    team_colour = {team: c for c, team in TEAM_OF_COLOUR.items()}
+    pieces = identity_link.split_by_colour(pieces, team_colour, fps)
+    by_colour = len(pieces) - len(identities)
+    found = identity_link.contacts(pieces, fps)
+
+    def readings(ps):
+        return jersey_reader.readings_for_tracks(scene, {p.id: p.frames for p in ps}) if scene is not None else []
+    count = len(pieces)
+    pieces = identity_link.split_by_numbers(pieces, found, readings(pieces), fps, squad)
+    by_number = len(pieces) - count
+    votes = jersey_identity.vote(readings(pieces), {p.id: p.team for p in pieces}, fps, squad)
+    tracks = {p.id: p.frames for p in pieces}
     looks = _piece_looks(video, det_path, tracks, cam)
     log: list[identity_link.Link] = []
+    numbers = {n: v.number for n, v in votes.items()}
     chains = identity_link.link(pieces, looks, numbers, fps, log)
-    out = {}
-    for chain in chains:
-        colour, keeper, _ = identities[keys[chain[0]]]
+    by_id = {p.id: p for p in pieces}
+    if report is not None:
+        report.extend(f"Kontakt   {c.a:18s} mit {c.b:18s} Bild {c.frame:4d}, {c.distance:.2f} m" for c in found)
+        report.extend(f"Stück     {p.id:18s} {p.team:8s} Bild {p.start:4d}-{p.end:4d}, Nummer {numbers.get(p.id)}"
+                      for p in sorted(pieces, key=lambda p: p.id) if "/" in p.id)
+        report.extend(f"verbunden {k.end:18s} -> {k.start:18s} Kosten {k.cost:5.2f}, Zweitbester {k.margin:4.1f}-mal so teuer"
+                      for k in log)
+        for end, best in identity_link.open_ends(chains, pieces, looks, numbers, fps):
+            if best[0][0] <= identity_link.MAX_COST * identity_link.MIN_MARGIN:
+                rival = f", Zweitbester {best[1][1]} {best[1][0]:.2f}" if len(best) > 1 else ""
+                report.append(f"getrennt gelassen {end:18s}: bester Anfang {best[0][1]} Kosten {best[0][0]:.2f}{rival}")
+    out, count_of = {}, Counter()
+    for chain in sorted(chains, key=lambda c: by_id[c[0]].start):
+        first = by_id[chain[0]]
         frames = {}
         for name in chain:   # bei kurzer Übergabe gilt im gemeinsamen Bild das spätere Stück
             frames.update(tracks[name])
-        out[keys[chain[0]]] = (colour, keeper, frames)
-    print(f"Spurstücke verbunden: {len(log)} Verbindungen, {len(identities)} Stücke -> {len(out)} Spieler"
+        colour = colour_of[chain[0].split("/")[0]] if first.keeper else team_colour[first.team]
+        count_of[first.team] += 1
+        out[(first.team, OWN_ID + count_of[first.team])] = (colour, first.keeper, frames)
+    print(f"Spurwechsel getrennt: {by_colour} an fremden Trikots, {by_number} an verschiedenen Nummern "
+          f"({len(found)} Kontakte); Stücke verbunden: {len(log)}; {len(identities)} Spuren -> {len(out)} Spieler"
           f"{'' if looks else ' (ohne Aussehen)'}", flush=True)
     return out
 
@@ -179,11 +209,12 @@ def with_numbers(identities: dict, det: dict, video: str, det_path: str,
                  cam=None) -> dict:
     """Rückennummern aus dem Video und eine Identität je Spieler.
 
-    1. Je Spur abstimmen; sichere Nummern helfen beim Verbinden (und verbieten es bei verschiedenen Nummern).
-    2. Stücke derselben Person verbinden (link_pieces).
-    3. Je Spieler über die Lesungen aller seiner Stücke abstimmen; Spieler mit gestützter Nummer heißen
+    1. Spuren an Spurwechseln trennen und Stücke derselben Person verbinden (split_and_link); sichere Nummern
+       je Stück helfen dabei.
+    2. Je Spieler über die Lesungen aller seiner Stücke abstimmen; Spieler mit gestützter Nummer heißen
        (Mannschaft, Nummer), Spieler mit derselben Nummer werden einer.
-    Ohne Nummernleser (models/jersey-digits.pt) wird nur über den Laufweg und das Aussehen verbunden."""
+    Ohne Nummernleser (models/jersey-digits.pt) wird nur über Trikotfarbe, Laufweg und Aussehen getrennt
+    und verbunden."""
     import jersey_reader   # erst hier: lädt Torch
     fps = det["fps"]
     model_path = Path(model_path or jersey_reader.MODEL)
@@ -194,19 +225,13 @@ def with_numbers(identities: dict, det: dict, video: str, det_path: str,
         print(f"Hinweis: kein Nummernleser ({model_path.name}), alle Spieler ohne Rückennummer. "
               "Trainieren mit tools/jersey_reader.py train", flush=True)
 
-    def votes_of(ids: dict) -> tuple[dict, dict, dict]:
-        keys = {f"{key[0]}-{key[1]}": key for key in ids}
-        tracks = {name: ids[key][2] for name, key in keys.items()}
-        teams = {name: key[0] for name, key in keys.items()}
-        readings = jersey_reader.readings_for_tracks(scene, tracks) if scene is not None else []
-        return keys, tracks, jersey_identity.vote(readings, teams, fps, squad)
-
-    _, _, piece_votes = votes_of(identities)
-    identities = link_pieces(identities, video, det_path, cam, fps, {n: v.number for n, v in piece_votes.items()})
+    identities = split_and_link(identities, video, det_path, cam, fps, scene, squad)
     if scene is None:
         return identities
-    keys, tracks, votes = votes_of(identities)
+    keys = {f"{key[0]}-{key[1]}": key for key in identities}
+    tracks = {name: identities[key][2] for name, key in keys.items()}
     teams = {name: key[0] for name, key in keys.items()}
+    votes = jersey_identity.vote(jersey_reader.readings_for_tracks(scene, tracks), teams, fps, squad)
     positions = {name: {f: r[:2] for f, r in fr.items()} for name, fr in tracks.items()}
     numbers = jersey_identity.assign(votes, {name: set(fr) for name, fr in tracks.items()}, fps)
     players = jersey_identity.merge_by_number(numbers, votes, positions, teams, fps)
