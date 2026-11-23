@@ -138,6 +138,13 @@ function question(s) {
     line.append(sel);
     mapping.append(line);
   }
+  const lost = s.before.filter((b) => !s.after.some((p) => p.letter === b.letter));
+  for (const b of lost) {   // vorher da, nachher keine Box mehr: nichts zu entscheiden
+    const line = document.createElement('span');
+    line.append(chip(b.letter), document.createTextNode(' ist nachher nicht mehr erkannt (nichts zu entscheiden)'));
+    line.style.color = 'var(--muted)';
+    mapping.append(line);
+  }
   mapping.append(button('Zuordnung speichern', () => {
     const m = {};
     mapping.querySelectorAll('select').forEach((sel) => { m[sel.dataset.letter] = sel.value; });
