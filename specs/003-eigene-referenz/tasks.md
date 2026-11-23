@@ -217,9 +217,9 @@ und die Uhr stimmt.
   - Ein Kindprozess, der eine Datei in einem verbotenen Ordner öffnet, bricht mit Fehler ab.
   - Eine ausdrücklich freigegebene Datei darf gelesen werden.
   - Ausgabeordner mit `veo-` im Namen sind nicht betroffen.
-- [ ] T023 [US4] `tools/own_match.py` nach [contracts/match-description.md](contracts/match-description.md).
+- [X] T023 [US4] `tools/own_match.py` nach [contracts/match-description.md](contracts/match-description.md).
   - Dazu `data/work/veo-2026-11-01/spiel.json` anlegen.
-  - Die Anstoßzeiten bestätigt der Nutzer am Video; bis dahin als unbestätigt markieren.
+  - Die Anstoßzeiten (126 s und 3434 s) hat der Nutzer bestätigt.
 - [X] T024 [US4] `tools/veo_scene.py`:
   - Im Betrieb ohne Veo nur Spielabschnitte, Uhr, Platz, Mannschaften und Quelle aus dem Spielordner lesen, keine
     Bewegungsdaten.
