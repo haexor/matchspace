@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MatchSpace – strittige Stellen</title>
+<link rel="stylesheet" href="review.css">
+</head>
+<body>
+<header>
+  <strong id="scene">Szene</strong>
+  <span id="progress"></span>
+  <label title="Zweites Entscheiden zur Prüfung der Wiederholbarkeit (zählt nicht für die Referenz)">
+    <input type="checkbox" id="repeat"> Wiederholung</label>
+</header>
+<main>
+  <nav><ol id="list"></ol></nav>
+  <section>
+    <div id="stage">
+      <canvas id="view" width="900" height="600"></canvas>
+      <div id="phase"></div>
+    </div>
+    <div id="timeline"><div id="mark"></div><div id="head"></div></div>
+    <div id="question"></div>
+    <div id="choices"></div>
+    <div id="mapping"></div>
+    <div id="numbers"></div>
+    <div id="message" role="status"></div>
+    <p class="keys">
+      <kbd>Enter</kbd> stimmt · <kbd>V</kbd> vertauscht · <kbd>N</kbd> andere Person (eine Spur) · <kbd>U</kbd> unklar ·
+      <kbd>←</kbd>/<kbd>→</kbd> blättern · <kbd>Leertaste</kbd> Pause · <kbd>S</kbd> langsam
+    </p>
+  </section>
+</main>
+<video id="video" src="/video" preload="auto" muted playsinline></video>
+<script src="review.js"></script>
+</body>
+</html>

@@ -88,23 +88,26 @@ class _Scene:
 def _spot(sc: _Scene, kinds: Sequence[str], frame: int, lo: int, hi: int, players: set[str], number=None) -> ref.Spot | None:
     w = int(WINDOW_S * sc.fps)
     start, end = max(0, lo - w), min(sc.n - 1, hi + w)
+    window = {name: [d for d in sc.dets[name] if start <= d[0] <= end] for name in sorted(players)}
+    seen = [d[1] for dets in window.values() for d in dets]
+    if not seen:
+        return None
+    lens = Counter(seen).most_common(1)[0][0]   # gezeigt wird eine Linse; Boxen der anderen fehlen dort
     before, after, letters = [], [], {}
-    for name in sorted(players):
-        dets = sc.dets[name]
-        b = [d for d in dets if start <= d[0] < frame]
-        a = [d for d in dets if frame <= d[0] <= end]
+    for name, dets in window.items():
+        b = [d for d in dets if d[0] < frame]
+        a = [d for d in dets if d[0] >= frame]
         if not b and not a:
             continue
         letter = letters.setdefault(name, LETTERS[len(letters) % len(LETTERS)])
-        boxes = {d[0]: list(sc.boxes[d]) for d in dets if start <= d[0] <= end}
+        boxes = {d[0]: list(sc.boxes[d]) for d in dets if d[1] == lens}
         if b:
             before.append(ref.Participant(name, letter, [*b[-1], *sc.boxes[b[-1]]], boxes))
         if a:
             after.append(ref.Participant(name, letter, [*a[0], *sc.boxes[a[0]]], boxes))
-    if not before and not after:
+    shown = [b for p in before + after for b in p.boxes.values()]
+    if not shown:
         return None
-    lens = Counter(p.anchor[1] for p in before + after).most_common(1)[0][0]
-    shown = [b for p in before + after for d, b in p.boxes.items() if p.anchor[1] == lens]
     x1, y1 = min(b[0] for b in shown), min(b[1] for b in shown)
     x2, y2 = max(b[2] for b in shown), max(b[3] for b in shown)
     cw, ch = max(CROP_MIN, 1.6 * (x2 - x1)), max(CROP_MIN, 1.6 * (y2 - y1))

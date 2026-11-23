@@ -107,15 +107,15 @@ Referenzdatei enthält keine Bilder und keine Namen.
 
 ### Tests und Umsetzung Markierwerkzeug
 
-- [ ] T009 [P] [US1] `tests/test_review_server.py`, Server in einem Thread auf freiem Port:
+- [X] T009 [P] [US1] `tests/test_review_server.py`, Server in einem Thread auf freiem Port:
   - **Video**: `GET /video` mit `Range: bytes=0-99` ergibt 206 mit 100 Bytes.
   - **Stellen**: `GET /spots` liefert Stellen und Antworten.
   - **Antwort**: `POST /answer` speichert, und die Datei ist danach gültiges JSON.
   - **Fehler**: Eine fehlerhafte Antwort ergibt 400; ein Pfad wie `/../data` ergibt 404.
   - **Erreichbarkeit**: Der Server lauscht nur an `127.0.0.1`.
-- [ ] T010 [US1] `tools/review_server.py` nach [contracts/review-api.md](contracts/review-api.md) (nur
+- [X] T010 [US1] `tools/review_server.py` nach [contracts/review-api.md](contracts/review-api.md) (nur
   Standardbibliothek; atomares Schreiben über temporäre Datei und Umbenennen).
-- [ ] T011 [US1] `web/review/index.html`, `review.js`, `review.css`:
+- [X] T011 [US1] `web/review/index.html`, `review.js`, `review.css`:
   - **Anzeige**: Liste der Stellen mit Grund und Stand. Je Stelle spielt der Ausschnitt in Schleife; Linse
     ausgeschnitten und vergrößert, Boxen der Beteiligten mit Buchstaben, vorher und nachher.
   - **Tasten**:
@@ -127,7 +127,7 @@ Referenzdatei enthält keine Bilder und keine Namen.
   - **Rückmeldung**: Warnungen aus der Antwort anzeigen; Fortschritt „offen n“; nach dem Neuladen weiter bei der
     nächsten offenen Stelle.
   - **Datenschutz**: keine externen Ressourcen (keine CDN, keine Schriften).
-- [ ] T012 [US1] Prüfen von Hand:
+- [X] T012 [US1] Prüfen von Hand:
   - Server für 705 starten und mit Chromium headless ein Bildschirmfoto einer Stelle machen (nur Scratchpad).
   - Ansehen: Boxen sitzen auf den Spielern, Buchstaben sind lesbar.
   - Commit `feat(reference): local review tool for contested spots`.
