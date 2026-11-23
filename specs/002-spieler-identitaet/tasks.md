@@ -43,12 +43,12 @@ description: "Aufgabenliste: Eine Identität je Spieler über die ganze Szene"
     `data/work/…/scene_S.identity-before.json` ablegen.
   - Erwartet: falsche Zeit rund 6,5 % und 5,7 %, Identitäten 2,24 und 2,17.
   - Commit `feat(numbers): report wrong-person time and identity switches`.
-- [ ] T004 [P] `tests/test_appearance.py`:
+- [X] T004 [P] `tests/test_appearance.py`:
   - **Ausgabe**: `describe(crops)` liefert Vektoren der Länge 1, Form (n, 768). Dafür wird das Modell
     durch ein kleines Ersatznetz per `unittest.mock` ersetzt, ohne Download.
   - **Zwischenspeicher**: `load_or_compute` liest einen passenden Stempel, rechnet bei einem veralteten
     neu und schreibt keine Bilddaten (nur `frame`, `lens`, `box`, `embedding`, `height`, `stamp`).
-- [ ] T005 `tools/appearance.py` nach [contracts/appearance-cache.md](contracts/appearance-cache.md) und
+- [X] T005 `tools/appearance.py` nach [contracts/appearance-cache.md](contracts/appearance-cache.md) und
   [data-model.md](data-model.md):
   - **Modell**: `MODEL_ID = "facebook/dinov2-small"`, `HF_HOME` relativ zum Repo (`models/hf`).
   - **Merkmale**: `describe(crops)` ergibt Pooler-Ausgabe und Mittel der Bildteile, normiert.
