@@ -109,6 +109,42 @@ Stücke derselben Mannschaft):
   - Neues Tracking mit Aussehen schon bei der Zuordnung: der grundsätzlichere Weg, aber ein Umbau von
     `track_players.py`. Für später, wenn eigene Kameras höhere Auflösung liefern.
 
+### Ergebnis des Messpunkts (T011)
+
+Gemessen an allen Kontaktstellen (unter 1,5 m) der rohen Spuren, gegen die Wechsel laut Referenz. Ein Tausch
+zweier Spuren zählt als ein Ereignis.
+
+| Beleg | 705 (rund 7 Wechsel, 101 Kontakte) | 722 (3 Wechsel, 115 Kontakte) |
+|---|---|---|
+| Nummer vorher/nachher | 0 erkannt: kein Teil um einen Kontakt hat beidseits eine sichere Nummer | 0 |
+| Aussehen (DINOv2, je 1 s vorher/nachher, mit Gegenüber) | Tauschwert meist um 0, nur 2 von 7 positiv | nicht trennscharf |
+| Bewegung (Laufrichtung gerade gegen vertauscht) | Vorzeichen meist falsch: Die Spieler laufen beim Wechsel gemeinsam | uneinheitlich |
+| **Farbe je Erkennung** (neu) | 3 erkannt, 1 Fehlalarm | 2 erkannt, 4 Fehlalarme laut Referenz |
+
+Viele Wechsel gehen über Mannschaftsgrenzen: Eine Spur „wir“ folgt im Gedränge einem Gegner (Beispiel 705:
+`own-1002` trägt ab Bild 510 gegnerische Trikots). Die Farbklasse jeder Erkennung zeigt das, obwohl die Spur
+als Ganzes eine Mannschaft hat. Die „Fehlalarme“ in 722 tragen ebenfalls eindeutig das andere Trikot; die
+Referenz sieht sie nicht, weil sie nur Spieler mit Veo-Nummer kennt.
+
+- **Decision**: Kein Beleg erfüllt das Kriterium (5 von 7, höchstens 1 falsche Trennung).
+  - Getrennt wird an Abschnitten fremder Trikotfarbe (ab 1 s, Farbe über 0,4 s geglättet). Eine Spur in
+    fremdem Trikot folgt sicher nicht mehr ihrer Person; das ist kein schwacher Hinweis, sondern ein
+    Widerspruch. Der fremde Abschnitt wird zu einem Stück der anderen Mannschaft, außer dort läuft schon eine
+    Spur dieser Mannschaft (dann ist er doppelt und entfällt).
+  - Dazu bleibt die Nummer: verschiedene sichere Nummern vor und nach einem Kontakt derselben Mannschaft.
+  - Aussehen und Bewegung prüfen keine Wechsel. Das Aussehen bleibt beim Verbinden, wo es eine falsche
+    Verbindung verhindert (722) und eine richtige ermöglicht (705).
+- **Wirkung an den rohen Spuren** (vor dem Verbinden):
+
+  | Szene | falsche Zeit | Wechsel | Identitäten |
+  |---|---|---|---|
+  | 705 | 6,4 % → 5,4 % | 7 → 5 | 2,17 → 2,28 |
+  | 722 | 5,9 % → 2,8 % | 7 → 2 | 2,06 → 2,00 |
+
+- **Grenze**: Wechsel zwischen zwei Spielern derselben Mannschaft ohne lesbare Nummer bleiben unerkannt. Das
+  ist der größte Rest in 705. Abhilfe bringen erst schärfere Bilder (eigene Kameras, mehrere Blickwinkel),
+  siehe ADR 0002.
+
 ## R4 Nummern über zusammengeführte Spieler
 
 - **Decision**:

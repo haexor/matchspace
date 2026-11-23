@@ -121,7 +121,7 @@ Zeit steigt nicht über den Stand aus T003.
 
 ### Messpunkt (vor dem Einbau)
 
-- [ ] T011 [US2] Entscheidung zur Wechselprüfung, mit `tools/identity_link.py` und Veo nur als Referenz:
+- [X] T011 [US2] Entscheidung zur Wechselprüfung, mit `tools/identity_link.py` und Veo nur als Referenz:
   - **Kandidaten**: alle Kontaktstellen (unter 1,5 m, gleiche Mannschaft) in 705 und 722.
   - **Belege je Kontakt**:
     - Bewegung: Verlängerung der Laufrichtung, gerade gegen vertauscht;
