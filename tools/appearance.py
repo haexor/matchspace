@@ -109,6 +109,15 @@ def _crop(lens_image: np.ndarray, box) -> np.ndarray | None:
     return crop[:, :, ::-1]   # BGR -> RGB
 
 
+def read_cache(det_path: str | Path) -> SceneLooks | None:
+    """Merkmale aus dem Zwischenspeicher {det}.appearance.npz, ohne das Video zu prüfen oder zu lesen; sonst None."""
+    cache = Path(f"{det_path}.appearance.npz")
+    if not cache.exists():
+        return None
+    with np.load(cache) as c:
+        return SceneLooks(c["frame"], c["lens"], c["box"], c["embedding"], c["height"])
+
+
 def read_scene(video: str | Path, det_path: str | Path) -> SceneLooks | None:
     """Merkmale aller Erkennungen (jedes EVERY-te Bild, beide Linsen); Zwischenspeicher {det}.appearance.npz.
 

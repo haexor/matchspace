@@ -132,6 +132,13 @@ class CoverageTest(unittest.TestCase):
         self.assertEqual((c["spots"], c["decided"], c["unclear"], c["open"], c["orphaned"]), (2, 1, 1, 0, 1))
         self.assertEqual(c["control"], {"spots": 1, "answered": 1, "errorsFound": 1, "missedRateEstimate": 1.0})
         self.assertEqual(c["repeat"], {"spots": 1, "agree": 1})
+        self.assertEqual((c["auto"], c["byHand"]), (0, 2))
+
+    def test_automatic_answers_are_counted_apart(self):
+        spots = [swap_spot()]
+        auto = ref.Answer("s1", "proposed", {}, {}, {}, "t", False, "auto")
+        c = jersey_eval.coverage(spots, [auto], ref.persons(identity(), spots, [auto]))
+        self.assertEqual((c["decided"], c["auto"], c["byHand"], c["open"]), (1, 1, 0, 0))
 
 
 class DisagreementTest(unittest.TestCase):

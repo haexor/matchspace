@@ -53,12 +53,12 @@ function list() {
   data.spots.forEach((s, i) => {
     const li = document.createElement('li');
     const a = data.answers[s.id];
-    li.className = (i === index ? 'current ' : '') + (a ? (a.choice === 'unclear' ? 'unclear' : 'done') : '');
+    li.className = (i === index ? 'current ' : '') + (a ? (a.choice === 'unclear' ? 'unclear' : a.source === 'auto' ? 'auto' : 'done') : '');
     const t = document.createElement('span');
     t.innerHTML = `<b>${i + 1}</b> · ${(s.frame / data.fps).toFixed(1)} s <span class="kinds">${s.kinds.map((k) => KIND[k] || k).join(', ')}</span>`;
     const state = document.createElement('span');
     state.className = 'state';
-    state.textContent = a ? (a.choice === 'unclear' ? '?' : '✓') : '';
+    state.textContent = a ? (a.choice === 'unclear' ? '?' : a.source === 'auto' ? 'A' : '✓') : '';
     li.append(t, state);
     li.onclick = () => show(i);
     ol.append(li);
@@ -66,7 +66,9 @@ function list() {
   ol.children[index]?.scrollIntoView({ block: 'nearest' });
   history.replaceState(null, '', `?stelle=${index + 1}`);
   document.title = `Stelle ${index + 1} von ${data.spots.length} – ${data.scene}`;
-  $('progress').textContent = `Stelle ${index + 1} von ${data.spots.length} · ${data.spots.length - data.open} von ${data.spots.length} entschieden, offen ${data.open}`;
+  const given = Object.values(data.answers);
+  const auto = given.filter((a) => a.source === 'auto').length;
+  $('progress').textContent = `Stelle ${index + 1} von ${data.spots.length} · automatisch ${auto} · von Hand ${given.length - auto} · offen ${data.open}`;
 }
 
 function participants(s) {
@@ -111,6 +113,12 @@ function question(s) {
   mapping.replaceChildren();
   numbers.replaceChildren();
   const prev = data.answers[s.id];
+  if (prev?.source === 'auto') {
+    const note = document.createElement('p');
+    note.className = 'auto-note';
+    note.textContent = 'Die Auswertung hat diese Stelle selbst beantwortet, weil das Aussehen eindeutig ist. Ändern geht, Weiterblättern genügt sonst.';
+    choices.append(note);
+  }
   const kinds = s.kinds.map((k) => KIND[k] || k).join(', ');
   if (isNumber(s)) {
     q.textContent = s.number != null ? `${kinds}: Trägt ${s.after[0].letter} die Nummer ${s.number}?`

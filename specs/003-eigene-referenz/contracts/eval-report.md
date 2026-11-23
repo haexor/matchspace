@@ -4,7 +4,7 @@
 {
   "scene": "scene_705",
   "reference": {
-    "spots": 42, "decided": 40, "unclear": 3, "open": 2, "orphaned": 0,
+    "spots": 42, "decided": 40, "auto": 25, "byHand": 15, "unclear": 3, "open": 2, "orphaned": 0,
     "control": {"spots": 5, "errorsFound": 0, "missedRateEstimate": 0.0}
   },
   "own": {
@@ -41,6 +41,9 @@ Alle Werte oben sind Beispiele. Gezählt wird so:
   - `identitiesPerPerson`, `wrongTimeShare`, `switches`: wie in Feature 002, aber gegen Personen der Referenz.
 - **`veo`**: dieselben Kennzahlen gegen Veo (Abgleich über die rohen Bodenpunkte, ohne Versatz), dazu die
   Stellen, an denen Veo und die Referenz verschiedene Personen sehen. Fehlt, wenn ohne `--veo` gemessen wird.
+- **`reference.auto` und `byHand`**: Von den entschiedenen Stellen hat die Auswertung `auto` selbst beantwortet
+  (Aussehen eindeutig, `tools/auto_answer.py`), `byHand` der Nutzer. Offene Stellen werden bei der Messung
+  ausgenommen, `open` nennt, wie viele es sind.
 - **`reference.control.missedRateEstimate`**: Anteil der Kontrollstellen mit Fehler, als Schätzung für Fehler
   außerhalb der strittigen Stellen.
 - **`lines`**: nur von `line_check.py`.

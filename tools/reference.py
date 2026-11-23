@@ -53,6 +53,7 @@ class Answer:
     anchors: dict
     at: str
     repeat: bool = False
+    source: str = "hand"   # hand: vom Nutzer; auto: von der Auswertung beantwortet (tools/auto_answer.py)
 
 
 @dataclass
@@ -220,7 +221,8 @@ def refind(old: Sequence[Spot], answers: Sequence[Answer], new: Sequence[Spot]) 
         else:
             mapping = {letters[k]: letters.get(v, v) for k, v in mapping_of(s, a).items()}
         kept.append(Answer(t.id, "unclear" if a.choice == "unclear" else "mapped", mapping,
-                           {letters[k]: v for k, v in a.numbers.items() if k in letters}, a.anchors, a.at, a.repeat))
+                           {letters[k]: v for k, v in a.numbers.items() if k in letters}, a.anchors, a.at, a.repeat,
+                           a.source))
     return kept, orphaned
 
 

@@ -303,3 +303,16 @@ Je Linie (die fernen Linien haben gröbere Pixel in der Tiefe):
   hat; andere stammen aus der Zeit der missverständlichen Fragestellung (Boxen statt Personen).
 - **Vorsicht**: Das Spielmerkmal liefert zugleich die Verbindungen und könnte die Referenz vorbelegen. Dann prüft die
   Referenz nicht mehr unabhängig, was das Merkmal leistet.
+
+## R14 Klare Stellen selbst beantworten (Entscheidung des Nutzers)
+
+- **Entscheidung** (2026-11-23): Der Nutzer will nur Unklares entscheiden müssen, am liebsten gar nichts von Hand. Die
+  Auswertung beantwortet deshalb Stellen mit mindestens zwei Beteiligten vorher selbst, wenn jede Box nachher einer Box
+  von vorher um mindestens 0,3 (Kosinus der gelernten Bildmerkmale) ähnlicher sieht als allen anderen
+  (`tools/auto_answer.py`). Die Antwort trägt die Herkunft `auto`; Antworten von Hand haben immer Vorrang und werden nie
+  überschrieben. Automatische Antworten werden bei jeder neuen Auswertung neu bestimmt.
+- **Nie automatisch**: Kontrollstellen (sie sollen unabhängig prüfen), Nummernstellen, Stellen mit nur einem Beteiligten
+  vorher und alle mit zu kleinem Abstand. Sie bleiben offen und werden bei der Messung ausgenommen. Der Bericht nennt
+  Zahl und Anteil (`reference.auto`, `byHand`, `open`).
+- **Preis**: Dasselbe Merkmal entscheidet beim Verbinden mit. An diesen Stellen prüft die Referenz das Aussehen nicht mehr
+  unabhängig, alles andere schon. Ohne Handantworten ist die Schätzung aus den Kontrollstellen nicht möglich.

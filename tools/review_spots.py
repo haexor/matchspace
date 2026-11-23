@@ -223,12 +223,17 @@ def control_spots(identity: Mapping, boxes: Mapping, spots: Sequence[ref.Spot], 
     return out
 
 
-def update(path: Path, scene: str, identity: Mapping, spots: list[ref.Spot], seed: int) -> tuple[int, list[ref.Answer]]:
-    """Schreibt oder ergänzt die Referenzdatei; vorhandene Antworten werden wiedergefunden. Rückgabe (offen, verwaist)."""
+def update(path: Path, scene: str, identity: Mapping, spots: list[ref.Spot], seed: int,
+           auto=None) -> tuple[int, list[ref.Answer]]:
+    """Schreibt oder ergänzt die Referenzdatei; Antworten von Hand werden wiedergefunden, automatische (tools/
+    auto_answer.py) neu bestimmt. auto: Funktion (von Hand entschiedene Stellen) -> Antworten. Rückgabe (offen,
+    verwaist)."""
     answers, orphaned = [], []
     if path.exists():
         old_spots, old_answers, seed = ref.from_json(json.loads(path.read_text()))
-        answers, orphaned = ref.refind(old_spots, old_answers, spots)
+        answers, orphaned = ref.refind(old_spots, [a for a in old_answers if a.source != "auto"], spots)
+    if auto is not None:
+        answers += auto({a.spot for a in answers if not a.repeat})
     data = ref.to_json(scene, identity.get("stamp", ""), spots, answers, seed)
     tmp = Path(f"{path}.tmp")
     tmp.write_text(json.dumps(data, ensure_ascii=False) + "\n")
@@ -302,11 +307,30 @@ def main(argv: list[str] | None = None) -> None:
                        det.get("lensSize", LENS_SIZE))
     spots += control_spots(identity, boxes, spots, n, args.seed, args.kontrolle, det.get("lensSize", LENS_SIZE))
     spots.sort(key=lambda s: (s.frame, s.id))
-    open_, orphaned = update(path, Path(args.det).name.split(".")[0], identity, spots, args.seed)
+    auto = auto_for(args.det, identity, spots)
+    open_, orphaned = update(path, Path(args.det).name.split(".")[0], identity, spots, args.seed, auto)
     kinds = Counter(k for s in spots for k in s.kinds)
     print(f"{len(spots)} Stellen ({', '.join(f'{k} {v}' for k, v in sorted(kinds.items()))}); offen {open_}"
           + (f"; verwaiste Antworten {len(orphaned)}" if orphaned else ""))
+    saved = ref.from_json(json.loads(path.read_text()))[1]
+    print(f"automatisch beantwortet {sum(1 for a in saved if a.source == 'auto')}, "
+          f"von Hand {len({a.spot for a in saved if a.source == 'hand' and not a.repeat})}, offen {open_}")
     print(f"-> {path}")
+
+
+def auto_for(det_path: str, identity: Mapping, spots: Sequence[ref.Spot]):
+    """Funktion für update(): beantwortet die klaren Stellen aus den gelernten Bildmerkmalen; None ohne Zwischenspeicher."""
+    import appearance
+    import auto_answer
+    scene = appearance.read_cache(det_path)
+    if scene is None:
+        return None
+    where = scene.index()
+    groups = {n: {d[0]: np.array([0, 0, 0, d[1], 0, 0, 0, 0, d[2]], float) for d in p["detections"]}
+              for n, p in identity["players"].items()}
+    embedding = appearance.learn_fingerprint(scene, where, groups).embedding
+    rows = {n: {d[0]: where[tuple(d)] for d in p["detections"] if tuple(d) in where} for n, p in identity["players"].items()}
+    return lambda decided: auto_answer.answers(spots, rows, embedding, decided)
 
 
 def veo_changes(identity: Mapping, ground: Mapping, det: Mapping, veo_dir: str, align: str, start: str) -> list[tuple[int, str]]:

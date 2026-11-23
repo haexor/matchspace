@@ -163,7 +163,9 @@ def coverage(spots: Sequence[ref.Spot], answers: Sequence[ref.Answer], persons: 
     agree = sum(1 for a in repeats if ref.mapping_of(by_id[a.spot], a) == ref.mapping_of(by_id[a.spot], latest[a.spot])
                 and a.numbers == latest[a.spot].numbers)
     unclear = sum(1 for a in latest.values() if a.choice == "unclear" or "unclear" in a.mapping.values())
+    auto = sum(1 for a in latest.values() if a.source == "auto")
     return {"spots": len(spots), "decided": len(latest) - unclear, "unclear": unclear, "open": len(spots) - len(latest),
+            "auto": auto, "byHand": len(latest) - auto,
             "orphaned": sum(1 for a in answers if a.spot not in ids),
             "control": {"spots": len(controls), "answered": len(answered), "errorsFound": errors,
                         "missedRateEstimate": round(errors / len(answered), 3) if answered else None},
@@ -233,7 +235,7 @@ def main(argv: list[str] | None = None) -> None:
         veo = track_players.match_reference(positions, truth)
         report["veo"] = {**identity_metrics(veo, fps), "disagreements": disagreements(matched, veo, fps)}
     c, o = report["reference"], report["own"]
-    print(f"Referenz: {c['spots']} Stellen, entschieden {c['decided']}, unklar {c['unclear']}, offen {c['open']}, verwaist {c['orphaned']}; "
+    print(f"Referenz: {c['spots']} Stellen, entschieden {c['decided']} (automatisch {c['auto']}, von Hand {c['byHand']}), unklar {c['unclear']}, offen {c['open']}, verwaist {c['orphaned']}; "
           f"Kontrolle {c['control']['errorsFound']} Fehler in {c['control']['answered']}; Wiederholung {c['repeat']['agree']} von {c['repeat']['spots']} gleich")
     for team, t in o["teams"].items():
         print(f"{team:9s} Personen {t['persons']:2d}; mit bekannter Nummer: richtig {t['correct']}, falsch {t['wrong']}, unbekannt {t['unknown']}")

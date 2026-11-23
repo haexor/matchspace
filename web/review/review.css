@@ -32,3 +32,5 @@ section { padding: 0.8em 1.2em; overflow-y: auto; }
 kbd { border: 1px solid var(--line); border-radius: 3px; padding: 0 4px; font-size: 11px; }
 video { display: none; }
 #hint { margin: 0 0 0.6em; color: var(--muted); font-size: 13px; max-width: 70em; }
+#list li.auto .state { color: var(--muted); }
+.auto-note { flex-basis: 100%; margin: 0 0 0.4em; color: var(--muted); font-size: 13px; }
