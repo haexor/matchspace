@@ -316,3 +316,33 @@ Je Linie (die fernen Linien haben gröbere Pixel in der Tiefe):
   Zahl und Anteil (`reference.auto`, `byHand`, `open`).
 - **Preis**: Dasselbe Merkmal entscheidet beim Verbinden mit. An diesen Stellen prüft die Referenz das Aussehen nicht mehr
   unabhängig, alles andere schon. Ohne Handantworten ist die Schätzung aus den Kontrollstellen nicht möglich.
+
+## R15 Messung gegen die eigene Referenz (T016)
+
+Abdeckung der Referenz (Szene 705: nach den Änderungen an Verbindung und Farbtrennung neu erzeugt):
+
+| Szene | Stellen | automatisch | von Hand | offen |
+|---|---|---|---|---|
+| 705 | 71 | 17 | 27 | 27 |
+| 722 | 99 | 26 | 0 | 73 |
+
+Kennzahlen (`jersey_eval.py`, gleiche Werte unter `own` mit und ohne `--veo`):
+
+| Szene | Identitäten je Person | falsch zugeordnete Zeit | Wechsel | Spieler mit Nummer, davon falsch |
+|---|---|---|---|---|
+| 705, laut eigener Referenz | 1,14 | 5,2 % | 6 | 6, davon 0 |
+| 705, laut Veo (zweite Meinung) | 2,0 | 5,4 % | 5 | (13 Widersprüche zur Referenz) |
+| 722, laut eigener Referenz | 1,0 | 11,2 % | 11 | 7, davon 0 |
+| 722, laut Veo (zweite Meinung) | 2,0 | 3,9 % | 3 | (13 Widersprüche zur Referenz) |
+
+**Einordnung, ehrlich:**
+- Die Zahlen sind nur schwach belastbar. In 722 sind erst 26 von 99 Stellen entschieden, keine von Hand. Die 11,2 %
+  gehen auf eine einzige automatische Antwort zurück (18,5 s, Ende und Beginn). In 705 stammen alle 9 Antworten, die den
+  Vorschlag der Auswertung ändern, aus der Zeit der missverständlichen Fragestellung (Boxen statt Personen).
+- „Identitäten je Person“ ist gegen die eigene Referenz nicht mit den 2,2 aus Feature 002 vergleichbar: Die frühere
+  Zahl galt gegen Veo, das selbst jede Person unter zwei Nummern führt (hier 2,0).
+- Die Vergleichswerte aus Feature 002 gegen Veo (705: 5,8 %, 722: 2,9 % falsche Zeit) und die jetzigen gegen Veo (5,4 %
+  und 3,9 %) liegen nahe beieinander. Die eigene Referenz bestätigt die Größenordnung in 705 und liefert für 722 noch
+  keine belastbare Zahl.
+- Offen: Kontrollstellen (5 je Szene) und Nummernstellen sind nie automatisch; ohne Handantworten gibt es daher keine
+  Schätzung für Fehler außerhalb der Stellen und keine Wiederholungsprobe (SC-004).

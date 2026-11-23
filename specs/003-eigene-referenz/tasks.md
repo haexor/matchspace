@@ -131,7 +131,7 @@ Referenzdatei enthält keine Bilder und keine Namen.
   - Server für 705 starten und mit Chromium headless ein Bildschirmfoto einer Stelle machen (nur Scratchpad).
   - Ansehen: Boxen sitzen auf den Spielern, Buchstaben sind lesbar.
   - Commit `feat(reference): local review tool for contested spots`.
-- [ ] T013 [US1] **Nutzerschritt** (Anleitung an den Nutzer, Umsetzung wartet darauf):
+- [ ] T013 [US1] **Nutzerschritt, jetzt freiwillig** (der Nutzer will nur Unklares entscheiden, am liebsten nichts; klare Stellen beantwortet die Auswertung selbst, research.md R14):
   - strittige Stellen von 705 und 722 entscheiden, Zeit stoppen;
   - je Szene 5 Stellen ein zweites Mal entscheiden (Wiederholung, SC-004).
 
@@ -160,7 +160,7 @@ nur der zweite Bericht hat `veo` mit einer Widerspruchsliste.
   - neue Aufrufform `DETEKTIONEN.json KAMERA.json [--veo …]`;
   - Messung je Erkennung;
   - `depth_offset` und `shift_depth` entfallen; die Tests aus Feature 002 dazu werden durch die neuen ersetzt.
-- [ ] T016 [US2] 705 und 722 ohne und mit `--veo` messen.
+- [X] T016 [US2] 705 und 722 ohne und mit `--veo` messen (research.md R15; Abdeckung dünn, siehe dort).
   - Werte aus Feature 001 und 002 neu einordnen: falsche Zeit, Wechsel, Identitäten und Nummern laut eigener
     Referenz gegen laut Veo.
   - Festhalten in [research.md](research.md).
