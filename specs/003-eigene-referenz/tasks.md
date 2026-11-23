@@ -176,22 +176,22 @@ sie falsch liegt.
 **Independent Test**: Der Bericht `lines` für beide Szenen hat mindestens 20 Linienstellen und Median und Streuung
 je Quelle.
 
-- [ ] T017 [P] [US3] `tests/test_line_check.py` mit künstlicher Kamera (aus `veo_camera`, vereinfachte Linsen):
+- [X] T017 [P] [US3] `tests/test_line_check.py` mit künstlicher Kamera (aus `veo_camera`, vereinfachte Linsen):
   - **Treffer**: Ein Fußgelenk, das auf die Projektion von `touch+` fällt, ist eine Linienstelle mit dem
     Linienpunkt als wahrer Lage.
   - **Fehler je Quelle**: Eine Lage 0,8 m weiter von der Kamera ergibt einen Tiefenfehler von +0,8 und quer 0.
   - **Ausschlüsse**: Ein Fuß, der sich über 3 Bilder um mehr als 2 Pixel bewegt, zählt nicht; ebenso ein
     Linienpunkt, der im Hintergrundbild nicht hell ist.
   - **Begrenzung**: höchstens 3 Stellen je Spieler und Sekunde.
-- [ ] T018 [US3] `tools/line_check.py` nach [contracts/cli.md](contracts/cli.md):
+- [X] T018 [US3] `tools/line_check.py` nach [contracts/cli.md](contracts/cli.md):
   - wiederverwendet werden `veo_camera.model_lines`, `project`, `to_ground` und `brightness`;
   - Quellen: Szene (`tracks.bin`), Boxunterkante, Fußpunkt aus Gelenkpunkten, Veo mit `--veo`.
-- [ ] T019 [US3] Beide Szenen prüfen und auswerten:
+- [X] T019 [US3] Beide Szenen prüfen und auswerten:
   - **Kontrollbild**: Ausschnitte einiger Linienstellen im Scratchpad ansehen.
   - **Entscheidung**: Trägt die Szene, Veo oder keiner den Versatz von 0,9 m?
   - **Festhalten** in [research.md](research.md).
   - Commit `feat(scene): check ground positions against pitch lines`.
-- [ ] T020 [US3] Nur wenn die fertige Szene den Fehler trägt:
+- [X] T020 [US3] Entfällt: Die fertige Szene trägt den Fehler nicht (research.md R5, Ergebnis). Nur wenn die fertige Szene den Fehler trägt:
   - Ursache in `tools/veo_scene.py` beheben (vermutlich `feet_on_ground`) und mit einem Test in
     `tests/test_line_check.py` absichern.
   - Beide Szenen neu auswerten. Danach erneut `line_check.py`, `review_spots.py` (Antworten müssen wiedergefunden

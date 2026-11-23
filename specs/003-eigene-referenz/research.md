@@ -138,6 +138,40 @@ liegen an Torlinie, Seitenlinie, Mittelkreis und Torraum.
   Feature behoben (Ursache in `veo_scene.feet_on_ground`). Danach wird die Prüfung wiederholt.
 - **Kontrollbild**: Ausschnitte einiger Linienstellen im Scratchpad zum Ansehen, nie eingecheckt.
 
+### Ergebnis der Lageprüfung (T019)
+
+`line_check.py` mit 218 (705) und 176 (722) Linienstellen. Fehler gegenüber dem Fuß auf der Linie, Tiefe positiv =
+weiter weg von der Kamera, Median (Streuung 25.–75. Perzentil):
+
+| Quelle | 705 | 722 |
+|---|---|---|
+| fertige Szene | +0,78 m (0,65) | +0,21 m (1,20) |
+| Fußpunkt aus Gelenkpunkten | +0,54 m (0,57) | +0,13 m (0,71) |
+| Boxunterkante (rohe Spuren) | −0,81 m (0,66) | −0,91 m (0,94) |
+| Veo | −1,01 m (0,67) | −1,33 m (1,82) |
+
+Je Linie (die fernen Linien haben gröbere Pixel in der Tiefe):
+
+| Linie | Entfernung | Boxunterkante | fertige Szene |
+|---|---|---|---|
+| Mittelkreis | 43–45 m | −0,83 bis −1,04 m (4,6–5,0 px unter dem Fuß) | +0,15 m (1,5–1,8 px) |
+| Strafraum, Mittellinie, Bogen | 42–51 m | −0,62 bis −1,18 m | −0,06 bis +0,41 m |
+| ferne Seitenlinie | 66 m | −0,59 bis −0,68 m | +0,87 bis +0,95 m (1,8 px; 1 px ≈ 0,5 m) |
+| Torraum rechts (722, meist Torwart) | 55 m | −1,76 m | −1,85 m |
+
+- **Befund**: Die fertige Szene liegt an den mittleren Linien auf 0,1–0,4 m genau. Boxunterkante und Veo setzen die
+  Spieler rund 1 m zu nah an die Kamera; die Box reicht 4–5 Pixel unter den Fuß. Der Versatz von rund 0,9 m zwischen
+  Szene und Veo aus Feature 002 ist damit überwiegend ein Fehler von Veo, nicht der Szene.
+- **Kontrollbild**: 16 zufällige Linienstellen aus 705 angesehen. Die Schuhe stehen auf der Linie, das Fußgelenk
+  liegt 2–3 Pixel über der Sohle, die Boxunterkante 2–5 Pixel darunter.
+- **Grenzen**:
+  - Die Stellen werden über das Fußgelenk gefunden. Liegt es selbst ein bis zwei Pixel daneben, verschiebt das
+    die Wahrheit um rund 0,3–0,5 m. Das Kontrollbild spricht dagegen, ein Rest bleibt.
+  - Auf der fernen Seitenlinie stehen auch viele Betreuer und Auswechselspieler.
+  - Der Torraum rechts in 722 hängt fast nur am Torwart.
+- **Folge**: Keine Korrektur der Szene (T020 entfällt). Die Messung gegen Veo braucht keinen pauschalen Versatz,
+  weil sie über die rohen Bodenpunkte abgleicht, die wie Veo auf der Boxunterkante beruhen (R4).
+
 ## R6 Kamerakalibrierung ohne Veo-Start
 
 - **Decision**: Die Anpassung an die Handpunkte startet ohne Veos Kameralage. Durchprobiert wird ein grobes
