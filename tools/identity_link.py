@@ -239,7 +239,12 @@ def path_cost(a: Piece, b: Piece, fps: float) -> float:
     if d_end > MERGE_SPEED * gap + POSITION_NOISE:
         return math.inf
     expected = a.at(a.end) + heading(a, fps) * min(gap, PREDICT_S)
-    return float(np.linalg.norm(b.at(b.start) - expected)) / (POSITION_NOISE + SPREAD * gap)
+    sigma = POSITION_NOISE + SPREAD * gap
+    # Der Logarithmus ist der Preis der Unsicherheit: Je länger die Lücke, desto breiter die erwartete Lage und desto
+    # weniger Gewicht trägt jeder einzelne Anfang darin. Ohne ihn war jeder späte, ferne Anfang „erreichbar“ und
+    # billiger als einer, der ein Bild später am selben Ort beginnt, und sperrte über den Verhältnistest die richtige
+    # Verbindung (Szene 705, Bild 122/123).
+    return float(np.linalg.norm(b.at(b.start) - expected)) / sigma + math.log(sigma / POSITION_NOISE)
 
 
 def look_cost(look_a: Look | None, look_b: Look | None) -> float:

@@ -128,6 +128,18 @@ class CostTest(unittest.TestCase):
         behind = il.link_cost(a, piece("c", run(100, 150, (0, 0))), None, None, FPS)
         self.assertLess(ahead, behind)
 
+    def test_a_late_far_start_is_not_cheaper_than_a_start_right_after(self):
+        a = piece("a", run(0, 50, (0, 0), speed=(0.0, 0.0)))
+        near = il.link_cost(a, piece("b", run(51, 100, (1.2, 0), speed=(0.0, 0.0))), None, None, FPS)   # 1 Bild später, 1,2 m
+        late = il.link_cost(a, piece("c", run(450, 500, (10, 0), speed=(0.0, 0.0))), None, None, FPS)   # 16 s später, 10 m
+        self.assertLess(near, late)
+
+    def test_occlusion_gap_is_linked_despite_a_late_far_start(self):
+        a = piece("a", run(0, 50, (0, 0), speed=(0.0, 0.0)))
+        near = piece("b", run(51, 100, (1.2, 0), speed=(0.0, 0.0)))
+        late = piece("c", run(450, 500, (10, 0), speed=(0.0, 0.0)))
+        self.assertIn(["a", "b"], groups(il.link([a, near, late], {}, {}, FPS)))
+
 
 COLOURS = {"own": 0, "opponent": 1, "referee": 2}
 
