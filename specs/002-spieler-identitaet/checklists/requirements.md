@@ -38,5 +38,7 @@
   - nur innerhalb einer Szene;
   - Veo nur als Referenz;
   - keine Gesichter, keine Namen.
+- **Ergänzung beim Planen (Entscheidung des Nutzers, 2026-11-23):** Spurwechsel erkennen und trennen
+  (FR-011, Szenario P2/4), weil SC-002 sonst nicht erreichbar ist. Erneut geprüft, alle Punkte erfüllt.
 - **Grundlage:** Feature 001 (Branch `001-rueckennummern`), noch nicht nach main gemergt; dieser Branch
   baut darauf auf.

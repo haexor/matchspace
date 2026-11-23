@@ -46,8 +46,9 @@ werden, denn eine falsche Verbindung verfälscht Laufwege und Nummern schlimmer 
 **Why this priority**: Eine falsche Verbindung ist im Viewer schwer zu erkennen und vergiftet alles
 Weitere: Die Figur springt an eine andere Stelle, und die Nummer wandert zu einem anderen Spieler.
 
-**Independent Test**: In den Referenzszenen messen, wie viel Zeit jedes zusammengeführten Spielers zu
-einer anderen echten Person gehört als zu seiner Hauptperson.
+**Independent Test**: In den Referenzszenen messen, wie viel Zeit jedes Spielers zu einer anderen echten
+Person gehört als zu seiner Hauptperson. Heute sind das 6,5 % und 5,7 %, weil das Tracking im Gedränge
+von einem Spieler zum anderen springt (je Szene rund 7 Wechsel).
 
 **Acceptance Scenarios**:
 
@@ -58,6 +59,9 @@ einer anderen echten Person gehört als zu seiner Hauptperson.
    **Then** werden sie nie zusammengeführt.
 3. **Given** zwei Stücke verschiedener Mannschaften, **When** die Szene ausgewertet wird, **Then** werden
    sie nie zusammengeführt.
+4. **Given** das Tracking springt im Gedränge von einem Spieler auf einen anderen derselben Mannschaft und
+   folgt danach dem anderen, **When** die Szene ausgewertet wird, **Then** wird die Spur an dieser Stelle
+   getrennt, und beide Teile werden ihren richtigen Spielern zugeordnet oder bleiben eigene Spieler.
 
 ---
 
@@ -95,6 +99,10 @@ vergleichen. Die Zahl falscher Nummern darf dabei nicht steigen.
 - **Lange Lücke:** Ein Spieler ist lange nicht zu sehen, weil er am Bildrand außerhalb der Kamera oder
   lange verdeckt ist. Je länger die Lücke, desto mehr Orte sind möglich und desto vorsichtiger wird
   verbunden.
+- **Spurwechsel in beide Richtungen:** Zwei Spuren tauschen im Gedränge ihre Spieler. Beide Spuren werden
+  an derselben Stelle getrennt, und die Teile werden über Kreuz neu verbunden.
+- **Kurzer Kontakt ohne Wechsel:** Zwei Spieler laufen dicht aneinander vorbei, und das Tracking bleibt
+  richtig. Dann wird nicht getrennt.
 - **Doppelte Spuren:** Zwei Spurstücke folgen kurz derselben Person. Das ist eine Person, keine zwei
   gleichzeitig.
 - **Licht:** Schatten und Gegenlicht ändern die Farben eines Trikots zwischen zwei Stücken.
@@ -133,6 +141,10 @@ vergleichen. Die Zahl falscher Nummern darf dabei nicht steigen.
   Bilddaten über die bestehenden Videotexturen hinaus.
 - **FR-010**: Die Verbindung MUST unabhängig von bestimmten Trikotfarben funktionieren; sie vergleicht
   Stücke untereinander statt mit festen Farben.
+- **FR-011**: Das System MUST Stellen erkennen, an denen eine Spur von einer Person auf eine andere
+  springt (Aussehen oder gelesene Nummer ändern sich deutlich, meist bei engem Kontakt zweier Spieler).
+  Dort MUST es die Spur trennen; die Teile werden danach wie alle Stücke neu verbunden. Im Zweifel wird
+  nicht getrennt, wenn Aussehen und Nummer vor und nach der Stelle zusammenpassen.
 
 ### Key Entities *(include if feature involves data)*
 
@@ -154,7 +166,8 @@ vergleichen. Die Zahl falscher Nummern darf dabei nicht steigen.
 - **SC-001**: Ein echter Spieler zerfällt in beiden Referenzszenen im Mittel in höchstens 1,5
   Identitäten (heute 2,24 und 2,17).
 - **SC-002**: Höchstens 3 % der Spielerzeit gehören zu einer anderen echten Person als der Hauptperson
-  des Spielers (falsch verbunden). Gemessen wird über alle Spieler einer Szene.
+  des Spielers (falsch verbunden; heute 6,5 % und 5,7 % durch Spurwechsel im Tracking). Gemessen wird über
+  alle Spieler einer Szene.
 - **SC-003**: Mindestens so viele Spieler wie heute tragen ihre richtige Nummer (je Szene 7), möglichst
   mehr. Höchstens 5 % der Spieler tragen eine falsche Nummer.
 - **SC-004**: Bei 10 Stichproben je Szene, in denen ein Spieler im Viewer über eine frühere Bruchstelle
