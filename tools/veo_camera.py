@@ -17,7 +17,8 @@ innen, weil dahinter oft ein heller Randstein liegt. Den Maßstab liefern die ge
 Tor 7,32 × 2,44 m, Mittelkreis 9,15 m, Strafraum 16,5 × 40,32 m, Torraum 5,5 × 18,32 m.
 
 Start: etwa 19 von Hand abgelesene Punkte je Hälfte (Ecken, Mittellinie, Mittelkreis,
-Strafraum, Torraum, Torpfosten unten und oben).
+Strafraum, Torraum, Torpfosten unten und oben). Die Kameralage startet aus einem groben Raster
+möglicher Standorte hinter der Seitenlinie; Veos Kameralage und Veos Ecken werden nicht verwendet.
 
 Aufruf:
     .venv/bin/python tools/veo_camera.py VIDEO HANDPUNKTE.json CAMERA_ALIGNMENT.json AUSGABE.json [KONTROLLBILD.jpg]
@@ -28,6 +29,7 @@ der Kamera weg), z hoch.
 """
 import json
 import sys
+from itertools import product
 from pathlib import Path
 
 import cv2
@@ -47,6 +49,10 @@ STEP = 0.5     # Raster quer zur Linie beim Verfolgen (Pixel)
 PEAK = 10.0    # Mindestkontrast einer Linie gegen beide Seiten
 CLIP = 25.0    # mehr Kontrast zählt nicht: schwache Linien sind so viel wert wie kräftige
 JUMP = 100.0   # Preis je Rasterschritt Seitenversatz zwischen Nachbarpunkten
+START_HEIGHT = (4.0, 6.0, 9.0, 13.0)        # m: Raster für den Start ohne Veo (Kamerahöhe,
+START_BACK = (3.0, 8.0, 14.0, 20.0)         #    Abstand hinter der Seitenlinie,
+START_ALONG = (-15.0, 0.0, 15.0)            #    Lage entlang der Seitenlinie)
+START_LENGTH, START_WIDTH = 92.0, 55.0      # m: angenommener Platz zum Start, wird mit angepasst
 
 
 # ---------------------------------------------------------------- Kameramodell
@@ -117,7 +123,8 @@ def load(path):
 
 
 def read_veo(path):
-    """Veos Linsendaten und Veos Schätzung der Kameralage (nur als Startwert)."""
+    """Linsendaten der Kamera aus camera_alignment.json (Brennweite, Verzeichnung, Lage der Linsen zueinander).
+    Veos Schätzung der Kameralage wird mitgelesen, aber nicht mehr verwendet."""
     al = json.loads(Path(path).read_text())["alignment"]
 
     def numbers(text):
@@ -133,18 +140,6 @@ def read_veo(path):
     c = numbers(al["camera2world"]).reshape(4, 4)
     swap = np.array([[1, 0, 0], [0, 0, 1], [0, -1, 0]], float)   # Veo: y nach unten, z vom Standort weg
     return lenses, Rotation.from_matrix((swap @ c[:3, :3]).T).as_rotvec(), swap @ c[:3, 3], float(al.get("field_length", 105.0))
-
-
-def veo_corners(path, size):
-    """Die vier in Veo angeklickten Platzecken als Handpunkte je Linse (oft einige Meter daneben)."""
-    stacked = json.loads(Path(path).read_text())["selected_corners"]["corners_stacked"]
-    out = {lens: [] for lens in LENSES}
-    for key, (along, across) in {"cl": (-1, -1), "fl": (-1, 1), "cr": (1, -1), "fr": (1, 1)}.items():
-        for i, lens in enumerate(LENSES):
-            c = stacked[key][lens]
-            if c["valid"] > 0:
-                out[lens].append([along, 0, across, 0, 0, c["stacked"][0] * size[0], c["stacked"][1] * 2 * size[1] - i * size[1]])
-    return {lens: np.array(v, float).reshape(-1, 7) for lens, v in out.items()}
 
 
 # ---------------------------------------------------------------- Normplatz und Linien im Bild
@@ -330,6 +325,14 @@ class Fit:
         return embed(least_squares(residuals, x[free], loss="soft_l1", f_scale=2 if lines else 6, x_scale="jac", max_nfev=300).x)
 
 
+def look_at(eye, target):
+    """Drehvektor Welt -> Kamera für eine Kamera in eye mit Blick auf target, ohne Rollen (x rechts, y unten, z vorn)."""
+    z = (target - eye) / np.linalg.norm(target - eye)
+    x = np.cross(z, [0.0, 0.0, 1.0])
+    x /= np.linalg.norm(x)
+    return Rotation.from_matrix(np.array([x, np.cross(z, x), z])).as_rotvec()
+
+
 def free_parameters(*names):
     m = np.zeros(20, bool)
     m[0:8] = True                     # Lage der Kamera und Platzmaße
@@ -343,45 +346,36 @@ def free_parameters(*names):
 def main(video, landmarks_path, veo_path, out_path, check=None):
     image = cv2.imread(video) if Path(video).suffix.lower() in (".png", ".jpg", ".jpeg") else background(video)
     size = [image.shape[1], image.shape[0] // 2]
-    by_hand = landmarks_path != "-"
-    landmarks = {lens: np.array(json.loads(Path(landmarks_path).read_text())[lens], float) for lens in LENSES} if by_hand else veo_corners(veo_path, size)
-    veo_lenses, rotation, position, veo_length = read_veo(veo_path)
+    if landmarks_path == "-":
+        raise SystemExit("Handpunkte fehlen: Der Start aus Veos angeklickten Ecken entfällt (Betrieb ohne Veo). Bitte rund 19 "
+                         "Punkte je Linse im Hintergrundbild ablesen (siehe Kopf dieser Datei und data/work/…/landmarks.json).")
+    landmarks = {lens: np.array(json.loads(Path(landmarks_path).read_text())[lens], float) for lens in LENSES}
+    veo_lenses = read_veo(veo_path)[0]   # nur die Linsendaten der Kamera
     fit = Fit(image, landmarks, veo_lenses)
     start = np.array(MAP_START) * [1, 2048 / size[0], 1, 1024 / size[1], size[1] / 1024, 1]   # andere Auflösung der Bildhälften
-    hand_weight = 0.5 if by_hand else 0.05
+    hand_weight = 0.5
 
     def hand(x):
         return np.linalg.norm(fit.landmark_residuals(x).reshape(-1, 2), axis=1)
 
-    def first(length):
-        return np.array([*rotation, *(position * length / veo_length), length, length * 0.6, *start, *start])
-
-    # 1. Start nur aus den Handpunkten.
-    if by_hand:
-        x = fit.solve(first(92.0), free_parameters(), lines=False)
-        x = fit.solve(x, free_parameters("offset"), lines=False)
-    else:
-        # Aus vier Ecken allein folgt kein Maßstab. Für jede angenommene Platzlänge wird die Kamera an die
-        # Ecken angepasst; richtig ist die Länge, bei der die genormten Linien (Mittelkreis, Strafraum,
-        # Torraum) im Bild dort liegen, wo das Modell sie erwartet.
-        best = None
-        for length in np.arange(80.0, 122.0, 2.0):
-            free = free_parameters()
-            free[6] = False
-            x = fit.solve(first(length), free, lines=False)
-            fit.retrace(x, 6)
-            found = sum(len(v) for lens in LENSES for name, v in fit.traced[lens].items() if name not in BOUNDARY and name != "half" and not name.startswith("bar"))
-            if best is None or found > best[0]:
-                best = (found, x)
-        x = best[1]
-        print(f"Ohne Handpunkte: Start aus Veos vier Ecken, Platzlänge {x[6]:.0f} m passt am besten zu den genormten Linien", flush=True)
+    # 1. Start nur aus den Handpunkten, ohne Veos Kameralage: grobes Raster möglicher Standorte hinter der
+    #    Seitenlinie, Blick zur Platzmitte; je Standort nur an die Handpunkte angepasst, der beste gewinnt.
+    best = None
+    for height, back, along in product(START_HEIGHT, START_BACK, START_ALONG):
+        eye = np.array([along, -START_WIDTH / 2 - back, height])
+        x0 = np.array([*look_at(eye, np.array([along / 2, 0.0, 0.0])), *eye, START_LENGTH, START_WIDTH, *start, *start])
+        x = fit.solve(x0, free_parameters(), lines=False)
+        err = float(np.median(hand(x)))
+        if best is None or err < best[0]:
+            best = (err, x)
+    x = fit.solve(best[1], free_parameters("offset"), lines=False)
     print(f"Start: Fehler der Handpunkte Median {np.median(hand(x)):.1f} px, größter {hand(x).max():.1f} px; "
           f"Platz {x[6]:.1f} × {x[7]:.1f} m, Kamera {x[3]:.1f}/{x[4]:.1f}/{x[5]:.1f}", flush=True)
 
     # 2. Verfeinern an den verfolgten Linien; die Suchbreite schrumpft mit jedem Durchgang.
-    for reach in (12, 8, 5, 4, 4) if by_hand else (16, 12, 8, 5, 4, 4):
+    for reach in (12, 8, 5, 4, 4):
         fit.retrace(x, reach)
-        x = fit.solve(x, free_parameters("offset", "scale", "kink") if by_hand or reach < 16 else free_parameters("offset"), hand_weight=hand_weight)
+        x = fit.solve(x, free_parameters("offset", "scale", "kink"), hand_weight=hand_weight)
         r = np.abs(np.concatenate(list(fit.line_residuals(x).values())))
         print(f"Suchbreite {reach:2d} px: {len(r)} Linienpunkte, Abweichung Median {np.median(r):.2f} px, 90 % unter {np.percentile(r, 90):.2f} px; "
               f"Platz {x[6]:.2f} × {x[7]:.2f} m, Kamera {x[3]:.2f}/{x[4]:.2f}/{x[5]:.2f}", flush=True)
@@ -401,7 +395,7 @@ def main(video, landmarks_path, veo_path, out_path, check=None):
                        "Verzeichnung dist = k1..k6: Faktor (1 + k1 r² + k2 r⁴ + k3 r⁶) / (1 + k4 r² + k5 r⁴ + k6 r⁶). "
                        "Sensor -> Bildhälfte: u = (us - map0) / map1, v = (vs - map2) / map3; unterhalb der Zeile map4 ist v um map5 gestaucht.",
               "lenses": {lens: {k: np.asarray(cam["lenses"][lens][k], float).tolist() for k in ("R", "t", "K", "dist", "map")} for lens in LENSES},
-              "fit": {"start": "Handpunkte" if by_hand else "Veo-Ecken", "linesFound": len(expected) - len(missing), "linesExpected": len(expected), "lineMedianPx": float(np.median(r)), "lineP90Px": float(np.percentile(r, 90)),
+              "fit": {"start": "Handpunkte, Raster ohne Veo", "linesFound": len(expected) - len(missing), "linesExpected": len(expected), "lineMedianPx": float(np.median(r)), "lineP90Px": float(np.percentile(r, 90)),
                       "landmarkMedianPx": float(np.median(hand(x))), "landmarkMaxPx": float(hand(x).max())}}
     lines = model_lines(x[6], x[7], step=0.04)
     for lens in LENSES:

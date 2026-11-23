@@ -24,8 +24,9 @@ Boden, Sprünge gehen verloren.
 
 Aufruf:
     .venv/bin/python tools/veo_scene.py VEO_ORDNER KAMERA.json VEO_ALIGN.json VIDEO START_S DETEKTIONEN.json BASIS_SPIEL AUSGABE_SPIEL
-Ohne Veo (eigenes Spielertracking aus tools/track_players.py, Spieler ohne Rückennummer): VEO_ORDNER und
-VEO_ALIGN.json als "-". Vom BASIS_SPIEL werden dann nur Platz, Kulisse, Mannschaften und Uhr übernommen.
+Ohne Veo (eigenes Spielertracking aus tools/track_players.py, Rückennummern selbst aus dem Video gelesen): VEO_ORDNER und
+VEO_ALIGN.json als "-", optional am Ende --kader KADER.json (erlaubte Nummern je Mannschaft). Vom BASIS_SPIEL werden dann nur Platz, Kulisse, Mannschaften und Uhr übernommen.
+Die Teile ohne Veo (Spuren, Ball) stehen in tools/own_scene.py.
 """
 import json
 import math
@@ -33,6 +34,7 @@ import os
 import shutil
 import sys
 import time
+import zlib
 from array import array
 from collections import Counter
 from pathlib import Path
@@ -49,10 +51,13 @@ import veo_camera  # noqa: E402
 import check_motion  # noqa: E402
 import ground_motion  # noqa: E402
 import track_limits  # noqa: E402
-import track_players  # noqa: E402
 import veo_keypoints  # noqa: E402
 import veo_tracks  # noqa: E402
 from veo_keypoints import torso_colour  # noqa: E402
+import jersey_identity  # noqa: E402
+from own_match import period_at  # noqa: E402
+from own_scene import (BALL_GAP, BALL_REACH, MIN_APPEARANCE, OWN_GAP, attach_ball, drop_same_place, own_ball,  # noqa: E402
+                       own_identities, player_entity, with_numbers)
 from synth_poses import BONES, JOINTS, NAMES  # noqa: E402
 
 LENSES = ("left", "right")
@@ -73,13 +78,10 @@ DOWN_CONF = 0.3       # Mindestsicherheit eines Gelenkpunkts am Boden
 HOLD = 60             # Bilder, über die die letzte erkannte Haltung am Boden gehalten wird
 MIN_DOWN = 8          # Bilder am Stück, die ein Spieler liegen muss, damit es als Sturz gilt
 AROUND = 45           # Bilder vor und nach dem Liegen, die noch zur Bodenphase gehören (fallen, aufstehen)
-CACHE_VERSION = 6.0
+CACHE_VERSION = 7.0
 BOX_TO_BODY = 0.93    # Boxen umfassen etwas mehr als den Körper (Unschärfe, Haare, Sohle); Abzug geschätzt, nicht gemessen
 DEPTH_CALM = 36000.0  # Gewicht der Ruhe in Blickrichtung: Schwankungen des Abstands schneller als rund 0,3 Hz gelten als Rauschen
 OUT_FPS = 25
-BALL_GAP = 2.0        # s: so lange Lücken der eigenen Ballspur werden gerade überbrückt
-BALL_REACH = 0.9      # m: so nah an einer Fußspitze gilt der Ball als am Fuß
-BALL_AT_FOOT = 0.13   # m: Abstand Ballmitte zur Fußspitze bei Ballkontakt
 POSE_SCALE, MISSING, CHUNK_FRAMES = 0.001, -32768, 1500
 
 
@@ -289,100 +291,7 @@ def resample_keypoints(kp, lens, n_out, ratio):
     return out, lens_out
 
 
-def own_ball(found, n_out, ratio):
-    """Ballspur aus dem Video (Videobilder, NaN = nicht gefunden) im Takt der Ausgabe. Lücken bis BALL_GAP werden
-    gerade überbrückt (der Ball rollt zwischen zwei Berührungen geradeaus; am Fuß zieht ihn später
-    attach_ball heran), längere Lücken und Anfang und Ende halten die nächste bekannte Lage."""
-    out = resample(found, n_out, ratio)
-    seen = np.flatnonzero(~np.isnan(out[:, 0]))
-    if not len(seen):
-        return out
-    idx = np.arange(n_out)
-    filled = np.column_stack([np.interp(idx, seen, out[seen, a]) for a in range(2)])
-    gap_len = np.zeros(n_out)
-    for a, b in segments(np.isnan(out[:, 0]), 1):
-        gap_len[a:b] = b - a if a > 0 and b < n_out else np.inf
-    long = (gap_len > BALL_GAP * OUT_FPS) & np.isnan(out[:, 0])
-    for a, b in segments(long, 1):   # lange Lücke: in der ersten Hälfte die letzte, in der zweiten die nächste Lage halten
-        before = out[a - 1] if a > 0 else out[b] if b < n_out else filled[a]
-        after = out[b] if b < n_out else before
-        mid = (a + b) // 2
-        filled[a:mid], filled[mid:b] = before, after
-    return filled
-
-
-def attach_ball(ball_xy, feet, fps):
-    """Zieht den Ball an den Fuß, wenn er in Reichweite liegt: Die Ballspur ist in Blickrichtung auf rund einen halben Meter
-    genau, ein geführter Ball lag deshalb oft neben dem Spieler. feet: (T, F, 2) Fußspitzen aller Spieler (NaN = keiner)."""
-    T = len(ball_xy)
-    shift = np.zeros((T, 2))
-    for t in range(T):
-        if np.isnan(ball_xy[t, 0]):
-            continue
-        d = np.linalg.norm(feet[t] - ball_xy[t], axis=1)
-        if np.isnan(d).all():
-            continue
-        k = int(np.nanargmin(d))
-        if d[k] >= BALL_REACH:
-            continue
-        toward = (ball_xy[t] - feet[t, k]) / max(d[k], 1e-6)
-        target = feet[t, k] + toward * BALL_AT_FOOT
-        w = np.clip((BALL_REACH - d[k]) / (BALL_REACH - BALL_AT_FOOT), 0, 1)
-        shift[t] = (target - ball_xy[t]) * (w * w * (3 - 2 * w))
-    kernel = np.hanning(7)[1:-1]
-    kernel /= kernel.sum()
-    shift = np.column_stack([np.convolve(shift[:, a], kernel, "same") for a in range(2)])   # nicht von Bild zu Bild springen
-    return ball_xy + shift
-
-
-TEAM_OF_COLOUR = {0: "own", 1: "opponent", 2: "referee"}   # Trikotfarben des Heimspiels (tools/veo_colors.py): rot = wir
-KEEPER_INSIDE = 1.5   # m: so weit innerhalb der Linien muss eine solche Spur im Mittel liegen (Trainer, Betreuer stehen an der Linie)
-KEEPER_MIN = 5.0      # s: so lange muss eine Spur in unbekannter Farbe auf dem Platz sein, um als Torwart zu gelten
-MIN_APPEARANCE = 0.5  # s: kürzere Auftritte einer Figur entfallen
-OWN_SAME = 0.6        # m: zwei eigene Spuren derselben Mannschaft näher als das sind dieselbe Person
-OWN_GAP = 1.0         # s: so lange Lücken einer eigenen Spur werden überbrückt
-OWN_ID = 1000         # Spuren ohne Rückennummer: Nummern ab hier (nur intern, nicht auf dem Trikot)
-
-
-def own_identities(det, cam, n, video):
-    """Eigenes Tracking statt Veo (tools/track_players.py): Spuren auf dem Platz mit Mannschaft und Name.
-
-    Personen, die meist außerhalb der Linien stehen (Auswechselspieler, Trainer, Zuschauer), zählen nicht, ebenso
-    Spuren in Leibchen, die im Farbton deutlich vom Trikot ihrer Farbklasse abweichen (tools/track_players.split_bibs).
-    Eine Spur in unbekannter Farbe, die lange auf dem Platz ist, gilt als Torwart; er gehört zu der Mannschaft,
-    deren Feldspieler im Mittel näher an seinem Tor stehen. Rückgabe: {(Mannschaft, Nummer): (Farbe, Torwart,
-    {Bild: Zeile})}."""
-    L, W = cam["pitch"]["length"], cam["pitch"]["width"]
-    fps = det["fps"]
-    kept, centre = [], {}
-    result = track_players.track(det, cam)
-    team = track_players.split_bibs(result, track_players.track_hues(video, result), fps)   # Leibchen der Auswechselspieler zählen nicht
-    for tr in (t for t, ok in zip(result, team) if ok):
-        fs = sorted(tr["frames"])
-        pts = np.array([tr["frames"][f][:2] for f in fs])
-        mid = np.median(pts, axis=0)
-        inside = KEEPER_INSIDE if tr["colour"] < 0 else 0.0   # ohne Trikotfarbe: nicht die Leute an der Seitenlinie
-        if abs(mid[0]) > L / 2 - inside or abs(mid[1]) > W / 2 - inside:
-            continue
-        if tr["colour"] < 0 and (fs[-1] - fs[0]) / fps < KEEPER_MIN:
-            continue
-        kept.append((fs[0], tr, mid))
-        if tr["colour"] in (0, 1):
-            centre.setdefault(tr["colour"], []).append(pts[:, 0])
-    mean_x = {c: float(np.mean(np.concatenate(v))) for c, v in centre.items()}
-    out, count = {}, Counter()
-    for _, tr, mid in sorted(kept, key=lambda k: k[0]):
-        colour, keeper = tr["colour"], tr["colour"] < 0
-        if keeper:   # Torwart: Mannschaft, die im Mittel näher an seinem Tor steht
-            goal = math.copysign(L / 2, mid[0])
-            colour = min(mean_x, key=lambda c: abs(mean_x[c] - goal)) if mean_x else 0
-        team = TEAM_OF_COLOUR.get(colour, "opponent")
-        count[team] += 1
-        out[(team, OWN_ID + count[team])] = (colour, keeper, tr["frames"])
-    return out
-
-
-def main(veo_dir, camera_path, align_path, video, start, det_path, base_dir, out_dir):
+def main(veo_dir, camera_path, align_path, video, start, det_path, base_dir, out_dir, squad=None):
     began = time.time()
 
     def clock(label):
@@ -458,6 +367,9 @@ def main(veo_dir, camera_path, align_path, video, start, det_path, base_dir, out
         # Eigene Spuren: Zuordnung Box -> Spieler direkt aus dem Tracking; „where“ ist die eigene Spur, über
         # Lücken gerade verbunden (dort wird wie bisher in vergrößerten Ausschnitten nach Liegenden gesucht).
         identities = own_identities(det, cam, n, video)
+        clock("Eigene Spuren")
+        identities = with_numbers(identities, det, video, det_path, squad, cam=cam)
+        clock("Rückennummern gelesen")
         own_kit, keepers = {}, set()
         where = [{} for _ in range(n)]
         for key, (colour, keeper, items) in identities.items():
@@ -483,24 +395,7 @@ def main(veo_dir, camera_path, align_path, video, start, det_path, base_dir, out
                     bridged[a:b] = True
             for fi in np.flatnonzero(bridged):
                 where[fi][key] = np.array([np.interp(fi, seen, rows[seen, 5]), np.interp(fi, seen, rows[seen, 6])])
-        # Zwei Spuren derselben Mannschaft an derselben Stelle sind eine Person: In dem Bild weicht die nur
-        # überbrückte Spur, sind beide gemessen, die kürzere.
-        removed = 0
-        length = {key: int((~np.isnan(rows[:, 0])).sum()) for key, rows in obs.items()}
-        for fi in range(n):
-            keys = list(where[fi])
-            for a in range(len(keys)):
-                for b in range(a + 1, len(keys)):
-                    ka, kb = keys[a], keys[b]
-                    if ka[0] != kb[0] or ka not in where[fi] or kb not in where[fi]:
-                        continue
-                    if np.linalg.norm(where[fi][ka] - where[fi][kb]) >= OWN_SAME:
-                        continue
-                    measured_a, measured_b = not np.isnan(obs[ka][fi, 0]), not np.isnan(obs[kb][fi, 0])
-                    loser = kb if (measured_a, length[ka]) >= (measured_b, length[kb]) else ka
-                    del where[fi][loser]
-                    obs[loser][fi] = np.nan
-                    removed += 1
+        removed = drop_same_place(obs, where)   # zwei Spuren an derselben Stelle sind eine Person
         total_boxes = int(sum((~np.isnan(b[:, 0])).sum() for b in obs.values()))
         print(f"Doppelte Spuren an derselben Stelle: {removed} Spieler-Bilder entfernt", flush=True)
         print(f"Eigenes Tracking: {len(obs)} Spuren auf dem Platz ({dict(Counter(k[0] for k in obs))}, davon {len(keepers)} Torwart), "
@@ -608,7 +503,8 @@ def main(veo_dir, camera_path, align_path, video, start, det_path, base_dir, out
 
     #    Bilder ohne Box, in denen Veo die Position weiterführt: im vergrößerten Ausschnitt nach einer Person
     #    im eigenen Trikot suchen (für Spieler am Boden). Das ist teuer und wird neben den Erkennungen gemerkt.
-    stamp = [Path(x).stat().st_mtime for x in (det_path, camera_path) + (() if no_veo else (align_path,))] + [float(total_boxes), CACHE_VERSION, float(no_veo)]
+    stamp = [Path(x).stat().st_mtime for x in (det_path, camera_path) + (() if no_veo else (align_path,))] + [float(total_boxes), CACHE_VERSION, float(no_veo),
+             float(zlib.crc32(repr(sorted(obs)).encode()))]   # Spielernamen: ändern sich mit gelesenen Rückennummern
     # je Bild und Linse: wo jeder Spieler im Bild erwartet wird (Unterkante seiner Box oder Veo-Position)
     expected = [({}, {}) for _ in range(n)]
     for key, b in obs.items():
@@ -747,21 +643,23 @@ def main(veo_dir, camera_path, align_path, video, start, det_path, base_dir, out
         floor[key] = g
         print(f"{key[0]}-{key[1]}: Bodenphase über {int(s['floor'].sum())} Bilder ({int(s['down'].sum())} liegend), Gelenke erkannt in {found}", flush=True)
 
-    # Spielstand der Szene aus dem Basisspiel (Veo-Positionen, 25 Hz)
+    # Spielstand der Szene aus dem Basisspiel. Mit Veo: Veo-Positionen (25 Hz). Ohne Veo genügt ein eigener Spielordner
+    # (tools/own_match.py): nur Spielabschnitte, Uhr, Platz, Mannschaften; Bewegungsdaten werden nicht gelesen.
     base_dir, out_dir = Path(base_dir), Path(out_dir)
     base = json.loads((base_dir / "meta.json").read_text())
     E = len(base["entities"])
-    period = next(p for p in base["periods"] if p["videoStartS"] <= start <= p["videoStartS"] + (p["endFrame"] - p["startFrame"]) / base["fps"])
-    first = period["startFrame"] + round((start - period["videoStartS"]) * base["fps"])
+    period, clock_start = period_at(base["periods"], start)
     total = int(n / fps * OUT_FPS)
     ratio = fps / OUT_FPS
-    data = array("h")
-    with open(base_dir / base["tracks"]["file"], "rb") as f:
-        f.seek(first * E * 3 * 2)
-        data.fromfile(f, total * E * 3)
     tscale = base["tracks"]["scale"]
-    xy = np.array(data, float).reshape(total, E, 3)
-    xy = np.where(xy == base["tracks"]["missing"], np.nan, xy * tscale)[:, :, :2]
+    if not no_veo:
+        first = period["startFrame"] + round((start - period["videoStartS"]) * base["fps"])
+        data = array("h")
+        with open(base_dir / base["tracks"]["file"], "rb") as f:
+            f.seek(first * E * 3 * 2)
+            data.fromfile(f, total * E * 3)
+        xy = np.array(data, float).reshape(total, E, 3)
+        xy = np.where(xy == base["tracks"]["missing"], np.nan, xy * tscale)[:, :, :2]
     if no_veo:
         # Ohne Veo: Spieler sind die eigenen Spuren, ihre Lage die eigene Spur (Lücken gerade verbunden); dazu der Ball.
         # Vom Basisspiel bleiben nur Platz, Kulisse, Mannschaftsnamen und Uhr.
@@ -769,10 +667,7 @@ def main(veo_dir, camera_path, align_path, video, start, det_path, base_dir, out
         names = Counter()
         for key in sorted(obs, key=lambda k: (k[0], k[1])):
             names[key[0]] += 1
-            entity = {"id": f"{key[0]}-{key[1]}", "kind": "player", "team": key[0], "label": "TW" if key in keepers else f"S{names[key[0]]}"}
-            if key in keepers:
-                entity["role"] = "goalkeeper"
-            entities.append(entity)
+            entities.append(player_entity(key, key in keepers, names[key[0]]))
         entities.append({"id": "ball", "kind": "ball"})
         base["entities"] = entities
         E = len(entities)
@@ -788,7 +683,7 @@ def main(veo_dir, camera_path, align_path, video, start, det_path, base_dir, out
     ball = next((i for i, e in enumerate(base["entities"]) if e["kind"] == "ball"), None)
     ball_source = "Veo"
     if ball is not None and Path(f"{det_path}.ball.npz").exists():   # eigener Ball aus dem Video (tools/veo_ball.py) statt Veos
-        xy[:, ball] = own_ball(np.load(f"{det_path}.ball.npz")["pos"], total, ratio)
+        xy[:, ball] = own_ball(resample(np.load(f"{det_path}.ball.npz")["pos"], total, ratio), BALL_GAP * OUT_FPS)
         ball_source = "Video"
 
     # 2b. Eigene Position: Fußpunkt am Boden. Veo füllt die Lücken, verschoben um den zuletzt
@@ -953,10 +848,9 @@ def main(veo_dir, camera_path, align_path, video, start, det_path, base_dir, out
     meta = dict(base)
     meta.update({
         "frames": total,
-        "periods": [{"id": period["id"], "startFrame": 0, "endFrame": total - 1,
-                     "clockStartS": period.get("clockStartS", 0) + (start - period["videoStartS"])}],
+        "periods": [{"id": period["id"], "startFrame": 0, "endFrame": total - 1, "clockStartS": clock_start}],
         "source": {"name": f"{base['source']['name']}, Szene ab Videosekunde {start:.0f}",
-                   "notes": ("Positionen und Spuren aus dem Panorama gemessen (eigenes Tracking, ohne Veo), Spieler ohne Rückennummer. " if no_veo else
+                   "notes": ("Positionen und Spuren aus dem Panorama gemessen (eigenes Tracking, ohne Veo), Rückennummern selbst aus dem Video gelesen (tools/jersey_reader.py), unlesbare bleiben unbekannt. " if no_veo else
                              "Positionen aus dem Panorama gemessen (Fußpunkt am Boden), Rückennummern und Lücken aus Veo. ") +
                             "Körperhaltung im Kamerabild an die erkannten Gelenkpunkte angepasst (ein Blickwinkel); "
                             "Tiefe, verdeckte Gelenke und Lücken folgen einer natürlichen Bewegung im Takt der Schritte."},
@@ -994,6 +888,15 @@ def main(veo_dir, camera_path, align_path, video, start, det_path, base_dir, out
 
 
 if __name__ == "__main__":
-    if len(sys.argv) != 9:
+    args = sys.argv[1:]
+    squad = None
+    if "--kader" in args:   # optional: Nummern, die die Mannschaften tragen (nur ohne Veo)
+        i = args.index("--kader")
+        try:
+            squad = jersey_identity.load_squad(args[i + 1])
+        except (IndexError, jersey_identity.SquadError) as err:
+            sys.exit(f"Kader: {err}")
+        del args[i:i + 2]
+    if len(args) != 8:
         sys.exit(__doc__)
-    main(*sys.argv[1:])
+    main(*args, squad=squad)

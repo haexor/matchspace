@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MatchSpace – strittige Stellen</title>
+<link rel="stylesheet" href="review.css">
+</head>
+<body>
+<header>
+  <strong id="scene">Szene</strong>
+  <span id="progress"></span>
+  <label title="Zweites Entscheiden zur Prüfung der Wiederholbarkeit (zählt nicht für die Referenz)">
+    <input type="checkbox" id="repeat"> Wiederholung</label>
+</header>
+<main>
+  <nav><ol id="list"></ol></nav>
+  <section>
+    <div id="stage">
+      <canvas id="view" width="1600" height="1000"></canvas>
+      <div id="phase"></div>
+    </div>
+    <div id="timeline"><div id="mark"></div><div id="head"></div></div>
+    <div id="question"></div>
+    <p id="hint">Die Buchstaben sind die <em>Boxen der Auswertung</em>, nicht die echten Spieler. Frage für jede Box nach der Marke:
+      Auf wem sitzt sie jetzt, und welche Box saß vorher auf ihm? Beispiel: Box B springt zum Spieler, den vorher Box A hatte
+      (Box A hat dann keine Person mehr) → bei „Box B nachher“ wählen: <em>Box A vorher</em>. Die Linie zeigt den Weg jeder
+      Box. Eine Lücke (keine Box für ein paar Bilder) ist kein Fehler, ein Sprung auf eine andere Person ist einer. Nicht
+      erkennbar: <kbd>U</kbd>.</p>
+    <div id="choices"></div>
+    <div id="mapping"></div>
+    <div id="numbers"></div>
+    <div id="message" role="status"></div>
+    <p class="keys">
+      <kbd>Enter</kbd> stimmt · <kbd>V</kbd> vertauscht · <kbd>N</kbd> andere Person (eine Spur) · <kbd>U</kbd> unklar ·
+      <kbd>←</kbd>/<kbd>→</kbd> blättern · <kbd>Leertaste</kbd> Pause · <kbd>,</kbd>/<kbd>.</kbd> Bild zurück/vor ·
+      <kbd>+</kbd>/<kbd>−</kbd> Zoom · <kbd>S</kbd> langsam
+    </p>
+  </section>
+</main>
+<video id="video" src="/video" preload="auto" muted playsinline></video>
+<script src="review.js"></script>
+</body>
+</html>

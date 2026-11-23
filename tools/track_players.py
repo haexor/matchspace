@@ -294,6 +294,22 @@ def split_bibs(result, hues, fps, apart=3.5, clear=0.6):
     return keep
 
 
+REFERENCE_GATE = 1.5   # m: so nah muss eine Referenzposition liegen, um zu einer Spur zu gehören
+
+
+def match_reference(positions, truth, gate=REFERENCE_GATE):
+    """Nur zum Prüfen: Je Spur und Bild die nächste Referenzidentität näher als gate, sonst None.
+    positions: {Spur: {Bild: (x, y)}}; truth: je Bild {Identität: (x, y)}. Rückgabe {Spur: {Bild: Identität}}."""
+    out = {}
+    for name, frames in positions.items():
+        seen = {}
+        for f, p in frames.items():
+            near = [(float(np.hypot(*(np.asarray(p, float) - q))), k) for k, q in truth[f].items()] if f < len(truth) else []
+            seen[f] = min(near)[1] if near and min(near)[0] < gate else None
+        out[name] = seen
+    return out
+
+
 def compare_veo(result, det, veo_dir, align_path, start):
     """Nur zum Prüfen: Welche Veo-Identität steckt in jeder Spur, wie viel der Veo-Spieler ist abgedeckt?"""
     import veo_tracks
@@ -305,13 +321,10 @@ def compare_veo(result, det, veo_dir, align_path, start):
         people = veo_tracks.positions_at(tracks, float(start) + fr["t"] + align["timeOffsetS"])
         truth.append({(tracks[t]["team"], tracks[t]["jersey"]): p for t, p in people if tracks[t]["jersey"] >= 0})
     switches, purity, covered = 0, [], {}
-    for tr in result:
-        seq = []
-        for f in sorted(tr["frames"]):
-            p = tr["frames"][f][:2]
-            near = [(np.hypot(*(p - q)), k) for k, q in truth[f].items()]
-            k = min(near)[1] if near and min(near)[0] < 1.5 else None
-            seq.append(k)
+    matched = match_reference({k: {f: r[:2] for f, r in tr["frames"].items()} for k, tr in enumerate(result)}, truth)
+    for k_tr in range(len(result)):
+        seq = [k for _, k in sorted(matched[k_tr].items())]
+        for f, k in matched[k_tr].items():
             if k is not None:
                 covered.setdefault(k, set()).add(f)
         known = [k for k in seq if k is not None]
