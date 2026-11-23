@@ -258,7 +258,7 @@ und die Uhr stimmt.
   - `git grep -nE "/home/|~/" -- . ':!specs'` leer;
   - neue Module unter 400 Zeilen;
   - die Seite lädt nichts von außen (`grep -n "http" web/review/*`).
-- [ ] T031 [quickstart.md](quickstart.md) durchgehen.
+- [X] T031 [quickstart.md](quickstart.md) durchgehen (Ergebnis und verfehlte Ziele: research.md R16).
   - Messwerte und verfehlte Ziele in [research.md](research.md) und am Ende dieser Datei festhalten.
   - Commit `docs: record own reference results`.
 

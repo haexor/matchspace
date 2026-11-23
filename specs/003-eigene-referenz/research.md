@@ -346,3 +346,24 @@ Kennzahlen (`jersey_eval.py`, gleiche Werte unter `own` mit und ohne `--veo`):
   keine belastbare Zahl.
 - Offen: Kontrollstellen (5 je Szene) und Nummernstellen sind nie automatisch; ohne Handantworten gibt es daher keine
   Schätzung für Fehler außerhalb der Stellen und keine Wiederholungsprobe (SC-004).
+
+## R16 Quickstart durchgegangen (T031)
+
+| Schritt | Ergebnis |
+|---|---|
+| 0 Tests | 176 grün |
+| 1 Kamera und Spielordner ohne Veo | erreicht: Kamera 0,000 m und 0,000° neben `camera.json` (17 s), Spielordner ohne Bewegungsdaten |
+| 2 Szenen ohne Veo | erreicht: Prüflauf ohne Veo-Zugriff, Ergebnis mit derselben Kamera bitgleich |
+| 3 Stellen entscheiden | **anders gelöst**: klare Stellen beantwortet die Auswertung (R14); Handarbeit freiwillig |
+| 4 Messen | erreicht (R15); `reference.open` ist **nicht** 0: 27 (705) und 73 (722) |
+| 5 Lage an Platzlinien | erreicht: 218 und 176 Linienstellen, die Szene liegt an den mittleren Linien auf 0,1–0,4 m genau (R5) |
+| 6 Datenschutz | erreicht: nichts unter `data/` eingecheckt; die Referenz enthält nur `scene`, `identityStamp`, `spots`, `answers`, `seed` |
+
+**Verfehlte Ziele:**
+- SC-001 (höchstens 10 Minuten Markieren je Szene): nicht gemessen. 77 und 103 Stellen waren zu viel, deshalb der Wechsel
+  zu automatischen Antworten; der Nutzer wollte nicht zuordnen.
+- SC-004 (Wiederholbarkeit der Antworten von Hand): nicht gemessen, es gibt keine Wiederholungen.
+- Schätzung der Fehler außerhalb der Stellen aus den Kontrollstellen: nicht möglich, die 5 Kontrollstellen je Szene sind
+  offen.
+- Anstoßzeiten (T023): die Werte in `spiel.json` sind noch die von Veo (126 s und 3434 s), vom Nutzer nicht bestätigt; das
+  Panoramavideo beginnt in den Rohdaten erst bei Sekunde 600.
