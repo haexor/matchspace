@@ -24,8 +24,8 @@ Boden, Sprünge gehen verloren.
 
 Aufruf:
     .venv/bin/python tools/veo_scene.py VEO_ORDNER KAMERA.json VEO_ALIGN.json VIDEO START_S DETEKTIONEN.json BASIS_SPIEL AUSGABE_SPIEL
-Ohne Veo (eigenes Spielertracking aus tools/track_players.py, Spieler ohne Rückennummer): VEO_ORDNER und
-VEO_ALIGN.json als "-". Vom BASIS_SPIEL werden dann nur Platz, Kulisse, Mannschaften und Uhr übernommen.
+Ohne Veo (eigenes Spielertracking aus tools/track_players.py, Rückennummern selbst aus dem Video gelesen): VEO_ORDNER und
+VEO_ALIGN.json als "-", optional am Ende --kader KADER.json (erlaubte Nummern je Mannschaft). Vom BASIS_SPIEL werden dann nur Platz, Kulisse, Mannschaften und Uhr übernommen.
 Die Teile ohne Veo (Spuren, Ball) stehen in tools/own_scene.py.
 """
 import json
@@ -34,6 +34,7 @@ import os
 import shutil
 import sys
 import time
+import zlib
 from array import array
 from collections import Counter
 from pathlib import Path
@@ -53,8 +54,9 @@ import track_limits  # noqa: E402
 import veo_keypoints  # noqa: E402
 import veo_tracks  # noqa: E402
 from veo_keypoints import torso_colour  # noqa: E402
+import jersey_identity  # noqa: E402
 from own_scene import (BALL_GAP, BALL_REACH, MIN_APPEARANCE, OWN_GAP, attach_ball, drop_same_place, own_ball,  # noqa: E402
-                       own_identities)
+                       own_identities, player_entity, with_numbers)
 from synth_poses import BONES, JOINTS, NAMES  # noqa: E402
 
 LENSES = ("left", "right")
@@ -75,7 +77,7 @@ DOWN_CONF = 0.3       # Mindestsicherheit eines Gelenkpunkts am Boden
 HOLD = 60             # Bilder, über die die letzte erkannte Haltung am Boden gehalten wird
 MIN_DOWN = 8          # Bilder am Stück, die ein Spieler liegen muss, damit es als Sturz gilt
 AROUND = 45           # Bilder vor und nach dem Liegen, die noch zur Bodenphase gehören (fallen, aufstehen)
-CACHE_VERSION = 6.0
+CACHE_VERSION = 7.0
 BOX_TO_BODY = 0.93    # Boxen umfassen etwas mehr als den Körper (Unschärfe, Haare, Sohle); Abzug geschätzt, nicht gemessen
 DEPTH_CALM = 36000.0  # Gewicht der Ruhe in Blickrichtung: Schwankungen des Abstands schneller als rund 0,3 Hz gelten als Rauschen
 OUT_FPS = 25
@@ -288,7 +290,7 @@ def resample_keypoints(kp, lens, n_out, ratio):
     return out, lens_out
 
 
-def main(veo_dir, camera_path, align_path, video, start, det_path, base_dir, out_dir):
+def main(veo_dir, camera_path, align_path, video, start, det_path, base_dir, out_dir, squad=None):
     began = time.time()
 
     def clock(label):
@@ -364,6 +366,9 @@ def main(veo_dir, camera_path, align_path, video, start, det_path, base_dir, out
         # Eigene Spuren: Zuordnung Box -> Spieler direkt aus dem Tracking; „where“ ist die eigene Spur, über
         # Lücken gerade verbunden (dort wird wie bisher in vergrößerten Ausschnitten nach Liegenden gesucht).
         identities = own_identities(det, cam, n, video)
+        clock("Eigene Spuren")
+        identities = with_numbers(identities, det, video, det_path, squad)
+        clock("Rückennummern gelesen")
         own_kit, keepers = {}, set()
         where = [{} for _ in range(n)]
         for key, (colour, keeper, items) in identities.items():
@@ -497,7 +502,8 @@ def main(veo_dir, camera_path, align_path, video, start, det_path, base_dir, out
 
     #    Bilder ohne Box, in denen Veo die Position weiterführt: im vergrößerten Ausschnitt nach einer Person
     #    im eigenen Trikot suchen (für Spieler am Boden). Das ist teuer und wird neben den Erkennungen gemerkt.
-    stamp = [Path(x).stat().st_mtime for x in (det_path, camera_path) + (() if no_veo else (align_path,))] + [float(total_boxes), CACHE_VERSION, float(no_veo)]
+    stamp = [Path(x).stat().st_mtime for x in (det_path, camera_path) + (() if no_veo else (align_path,))] + [float(total_boxes), CACHE_VERSION, float(no_veo),
+             float(zlib.crc32(repr(sorted(obs)).encode()))]   # Spielernamen: ändern sich mit gelesenen Rückennummern
     # je Bild und Linse: wo jeder Spieler im Bild erwartet wird (Unterkante seiner Box oder Veo-Position)
     expected = [({}, {}) for _ in range(n)]
     for key, b in obs.items():
@@ -658,10 +664,7 @@ def main(veo_dir, camera_path, align_path, video, start, det_path, base_dir, out
         names = Counter()
         for key in sorted(obs, key=lambda k: (k[0], k[1])):
             names[key[0]] += 1
-            entity = {"id": f"{key[0]}-{key[1]}", "kind": "player", "team": key[0], "label": "TW" if key in keepers else f"S{names[key[0]]}"}
-            if key in keepers:
-                entity["role"] = "goalkeeper"
-            entities.append(entity)
+            entities.append(player_entity(key, key in keepers, names[key[0]]))
         entities.append({"id": "ball", "kind": "ball"})
         base["entities"] = entities
         E = len(entities)
@@ -845,7 +848,7 @@ def main(veo_dir, camera_path, align_path, video, start, det_path, base_dir, out
         "periods": [{"id": period["id"], "startFrame": 0, "endFrame": total - 1,
                      "clockStartS": period.get("clockStartS", 0) + (start - period["videoStartS"])}],
         "source": {"name": f"{base['source']['name']}, Szene ab Videosekunde {start:.0f}",
-                   "notes": ("Positionen und Spuren aus dem Panorama gemessen (eigenes Tracking, ohne Veo), Spieler ohne Rückennummer. " if no_veo else
+                   "notes": ("Positionen und Spuren aus dem Panorama gemessen (eigenes Tracking, ohne Veo), Rückennummern selbst aus dem Video gelesen (tools/jersey_reader.py), unlesbare bleiben unbekannt. " if no_veo else
                              "Positionen aus dem Panorama gemessen (Fußpunkt am Boden), Rückennummern und Lücken aus Veo. ") +
                             "Körperhaltung im Kamerabild an die erkannten Gelenkpunkte angepasst (ein Blickwinkel); "
                             "Tiefe, verdeckte Gelenke und Lücken folgen einer natürlichen Bewegung im Takt der Schritte."},
@@ -883,6 +886,15 @@ def main(veo_dir, camera_path, align_path, video, start, det_path, base_dir, out
 
 
 if __name__ == "__main__":
-    if len(sys.argv) != 9:
+    args = sys.argv[1:]
+    squad = None
+    if "--kader" in args:   # optional: Nummern, die die Mannschaften tragen (nur ohne Veo)
+        i = args.index("--kader")
+        try:
+            squad = jersey_identity.load_squad(args[i + 1])
+        except (IndexError, jersey_identity.SquadError) as err:
+            sys.exit(f"Kader: {err}")
+        del args[i:i + 2]
+    if len(args) != 8:
         sys.exit(__doc__)
-    main(*sys.argv[1:])
+    main(*args, squad=squad)

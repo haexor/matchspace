@@ -1,7 +1,8 @@
-"""Szenenauswertung ohne Veo: eigene Spuren mit Mannschaft und Name, eigener Ball.
+"""Szenenauswertung ohne Veo: eigene Spuren mit Mannschaft, Rückennummer oder Name, eigener Ball.
 
 Wird von tools/veo_scene.py aufgerufen, wenn statt Veo-Angaben "-" übergeben wird. Grundlage sind das eigene
-Spielertracking (tools/track_players.py) und die eigene Ballspur (tools/veo_ball.py).
+Spielertracking (tools/track_players.py), die selbst gelesenen Rückennummern (tools/jersey_reader.py,
+tools/jersey_identity.py) und die eigene Ballspur (tools/veo_ball.py).
 """
 import math
 import sys
@@ -11,6 +12,7 @@ from pathlib import Path
 import numpy as np
 
 sys.path.insert(0, str(Path(__file__).parent))
+import jersey_identity  # noqa: E402
 import track_players  # noqa: E402
 
 BALL_GAP = 2.0        # s: so lange Lücken der eigenen Ballspur werden gerade überbrückt
@@ -136,3 +138,55 @@ def drop_same_place(obs: dict, where: list[dict]) -> int:
                 obs[loser][fi] = np.nan
                 removed += 1
     return removed
+
+
+def with_numbers(identities: dict, det: dict, video: str, det_path: str,
+                 squad: dict[str, frozenset[int]] | None = None, model_path: str | Path | None = None) -> dict:
+    """Rückennummern aus dem Video: Spuren mit gestützter Nummer heißen (Mannschaft, Nummer), Stücke mit derselben
+    Nummer werden ein Spieler. Ohne Nummernleser (models/jersey-digits.pt) bleibt alles wie es ist."""
+    import jersey_reader   # erst hier: lädt Torch
+    model_path = Path(model_path or jersey_reader.MODEL)
+    if not model_path.exists():
+        print(f"Hinweis: kein Nummernleser ({model_path.name}), alle Spieler ohne Rückennummer. "
+              "Trainieren mit tools/jersey_reader.py train", flush=True)
+        return identities
+    fps = det["fps"]
+    keys = {f"{key[0]}-{key[1]}": key for key in identities}
+    tracks = {name: identities[key][2] for name, key in keys.items()}
+    teams = {name: key[0] for name, key in keys.items()}
+    scene = jersey_reader.read_scene(video, det_path, model_path)
+    votes = jersey_identity.vote(jersey_reader.readings_for_tracks(scene, tracks), teams, fps, squad)
+    positions = {name: {f: r[:2] for f, r in fr.items()} for name, fr in tracks.items()}
+    numbers = jersey_identity.assign(votes, {name: set(fr) for name, fr in tracks.items()}, fps)
+    players = jersey_identity.merge_by_number(numbers, votes, positions, teams, fps)
+    out = {}
+    for p in players:
+        if p.number is None:
+            out[keys[p.id]] = identities[keys[p.id]]
+            continue
+        frames, keeper = {}, False
+        for name in p.tracks:
+            _, is_keeper, fr = identities[keys[name]]
+            frames.update(fr)
+            keeper |= is_keeper
+        out[(p.team, p.number)] = (identities[keys[p.id]][0], keeper, frames)
+    numbered = Counter(p.team for p in players if p.number is not None)
+    print(f"Rückennummern aus dem Video: {len(scene.frame)} Rücken gelesen; Spieler mit Nummer {dict(numbered)}, "
+          f"aus {sum(len(p.tracks) for p in players if p.number is not None)} Spuren; "
+          f"ohne Nummer {sum(1 for p in players if p.number is None)} Spuren", flush=True)
+    return out
+
+
+def player_entity(key: tuple[str, int], keeper: bool, name_index: int) -> dict:
+    """Spieler für den Viewer (specs/001-rueckennummern/contracts/viewer-entities.md): mit Nummer nur number,
+    ohne Nummer der Spurname als label (S…, Torwart TW). Nummern 1–99 und interne Namen ab OWN_ID überschneiden
+    sich nicht."""
+    team, number = key
+    entity = {"id": f"{team}-{number}", "kind": "player", "team": team}
+    if number < OWN_ID:
+        entity["number"] = number
+    else:
+        entity["label"] = "TW" if keeper else f"S{name_index}"
+    if keeper:
+        entity["role"] = "goalkeeper"
+    return entity

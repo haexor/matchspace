@@ -77,5 +77,30 @@ class DropSamePlaceTest(unittest.TestCase):
         self.assertEqual(own_scene.drop_same_place(obs, where), 0)
 
 
+class PlayerEntityTest(unittest.TestCase):
+    def test_known_number(self):
+        self.assertEqual(own_scene.player_entity(("own", 15), False, 1),
+                         {"id": "own-15", "kind": "player", "team": "own", "number": 15})
+
+    def test_unknown_number_keeps_track_name(self):
+        e = own_scene.player_entity(("own", own_scene.OWN_ID + 4), False, 4)
+        self.assertEqual(e, {"id": "own-1004", "kind": "player", "team": "own", "label": "S4"})
+
+    def test_unknown_keeper(self):
+        e = own_scene.player_entity(("own", own_scene.OWN_ID + 1), True, 1)
+        self.assertEqual((e["label"], e["role"]), ("TW", "goalkeeper"))
+        self.assertNotIn("number", e)
+
+    def test_ids_round_trip_without_overlap(self):
+        ids = {own_scene.player_entity(("own", k), False, 1)["id"] for k in list(range(1, 100)) + [own_scene.OWN_ID + j for j in range(1, 60)]}
+        self.assertEqual(len(ids), 99 + 59)
+        for i in ids:
+            self.assertIn(int(i.rsplit("-", 1)[1]), list(range(1, 100)) + list(range(own_scene.OWN_ID + 1, own_scene.OWN_ID + 60)))
+
+    def test_no_image_data(self):
+        e = own_scene.player_entity(("opponent", 7), False, 2)
+        self.assertTrue(set(e) <= {"id", "kind", "team", "number", "label", "role"})
+
+
 if __name__ == "__main__":
     unittest.main()
