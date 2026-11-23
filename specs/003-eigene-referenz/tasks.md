@@ -243,16 +243,16 @@ und die Uhr stimmt.
 
 ## Phase 7: Polish & Cross-Cutting
 
-- [ ] T028 [P] `docs/adr/0003-eigene-referenz.md` schreiben:
+- [X] T028 [P] `docs/adr/0003-eigene-referenz.md` schreiben:
   - Veo nur als zweite Meinung;
   - Wahrheit aus eigenen Antworten an strittigen Stellen, mit Kontrollstellen;
   - Lage aus der Platzgeometrie;
   - Linsendaten der Kamera bleiben Eingabe;
   - bewusster Tausch „nur strittige Stellen“.
-- [ ] T029 [P] `README.md`:
+- [X] T029 [P] `README.md`:
   - **Ablauf**: Markieren, Messen, Lageprüfung, Betrieb ohne Veo, `spiel.json`.
   - **Veraltete Angaben**: Messwerte „gegen Veo“ neu einordnen; Hinweis auf Veo-Startwerte und Uhr streichen.
-- [ ] T030 Prüfungen:
+- [X] T030 Prüfungen:
   - Unit-Tests grün;
   - `git ls-files` ohne neue Bilddateien;
   - `git grep -nE "/home/|~/" -- . ':!specs'` leer;

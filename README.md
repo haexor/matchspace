@@ -52,7 +52,7 @@ und bleiben lokal.
 ```sh
 V=data/raw/veo/2026-11-01; W=data/work/veo-2026-11-01
 # 1. Kamera an den Platzlinien kalibrieren, Platz ausmessen (je Aufzeichnung: anderer Platz, anderer Standort)
-#    Statt $W/landmarks.json geht auch "-": Start aus den vier in Veo angeklickten Ecken, ohne Handarbeit
+#    Handpunkte $W/landmarks.json sind nötig; aus camera_alignment.json werden nur die Linsendaten der Kamera gelesen
 .venv/bin/python tools/veo_camera.py $V/panorama_600_900.mp4 $W/landmarks.json $V/camera_alignment.json $W/camera.json $W/camera_check.jpg
 # 2. Personen und Trikotfarben erkennen (1 Bild/s reicht für Schritt 3)
 .venv/bin/python tools/veo_detect.py $V/panorama_600_900.mp4 $W/detections.json 1
@@ -78,8 +78,15 @@ python3 tools/convert_veo.py $V/export.json web/data/veo-2026-11-01 $W/veo_align
 #    .venv/bin/python tools/jersey_reader.py train --negatives $W/scene_705.det.json $W/scene_722.det.json --out models/jersey-digits-synth.pt
 #    .venv/bin/python tools/jersey_reader.py train --init models/jersey-digits-synth.pt --samples 150000 --epochs 4 \
 #        --negatives $W/scene_705.det.json $W/scene_722.det.json --pseudo $W/scene_705.det.json --camera $W/camera.json
-#    nur zum Prüfen: Nummern gegen Veo messen (schreibt nichts in die Szene; Bericht nur unter data/work/)
-#    .venv/bin/python tools/jersey_eval.py web/data/veo-szene-705-eigen $W/scene_705.det.json $W/camera.json $V $W/veo_align.json 705
+#    ganz ohne Veo: eigener Spielordner aus spiel.json (Anstoß je Halbzeit im Video, Mannschaften; keine Namen)
+#    .venv/bin/python tools/own_match.py $W/spiel.json $W/camera.json web/data/spiel-2026-11-01   # dann veo_ground/veo_backdrop dorthin
+#    .venv/bin/python tools/no_veo_check.py --verbiete web/data/veo-2026-11-01 tools/veo_scene.py - $W/camera.json - $W/scene_705.mp4 705 \
+#        $W/scene_705.det.json web/data/spiel-2026-11-01 web/data/veo-szene-705-eigen
+#    nur zum Prüfen: strittige Stellen selbst entscheiden, dann gegen die eigene Referenz messen (Veo nur mit --veo)
+#    .venv/bin/python tools/review_spots.py $W/scene_705.det.json $W/camera.json
+#    .venv/bin/python tools/review_server.py $W/scene_705.mp4 $W/scene_705.det.json   # Browser: http://127.0.0.1:8766/
+#    .venv/bin/python tools/jersey_eval.py $W/scene_705.det.json $W/camera.json [--veo $V $W/veo_align.json 705]
+#    .venv/bin/python tools/line_check.py $W/scene_705.mp4 $W/scene_705.det.json $W/camera.json web/data/veo-szene-705-eigen
 # 6. Aussehen je Spieler aus dem Video (rund 4 Minuten je Szene); nach jeder neuen Haltung wiederholen
 .venv/bin/python tools/veo_looks.py $W/scene_705.mp4 $W/scene_705.det.json $W/camera.json $W/background.png web/data/veo-szene-705
 # dann http://localhost:8765/?match=veo-2026-11-01 oder ?match=veo-szene-705
@@ -90,10 +97,10 @@ python3 tools/convert_veo.py $V/export.json web/data/veo-2026-11-01 $W/veo_align
   Kamera steht anders. Jede Linie des Normplatzes wird im Bild verfolgt und bleibt ihrer Normlinie fest
   zugeordnet. Den Maßstab liefern Tor (7,32 × 2,44 m), Mittelkreis, Strafraum und Torraum; ohne diese
   genormten Markierungen funktioniert es so nicht. Das Kontrollbild zeigt die Normlinien über dem Video.
-  Als Start reichen die vier Ecken, die in Veo angeklickt wurden (Handpunkte `-`); das Werkzeug probiert dann
-  Platzlängen von 80 bis 120 m durch. Sicherer ist eine `landmarks.json` mit etwa 19 von Hand abgelesenen
-  Punkten je Bildhälfte. Am Ende meldet das Werkzeug, ob es alle Linien gefunden hat. Geprüft ist der Weg
-  ohne Handpunkte bisher nur an der einen Aufzeichnung vom 2026-11-01.
+  Als Start braucht es eine `landmarks.json` mit etwa 19 von Hand abgelesenen Punkten je Bildhälfte; die
+  Kameralage startet aus einem Raster möglicher Standorte hinter der Seitenlinie, ohne Veos Kameralage oder Veos
+  Ecken. Am Ende meldet das Werkzeug, ob es alle Linien gefunden hat. Für die Aufzeichnung vom 2026-11-01 ergibt
+  das dieselbe Kamera wie vorher mit Veo-Start.
 - Annahmen der Liniensuche: weiße Linien auf grünem Rasen (gelbe Kleinfeldlinien werden übergangen), Maße von
   Strafraum, Torraum und Mittelkreis nach Norm für Großfeld. Hinter den Außenlinien darf ein heller Randstein
   liegen: Gezählt wird die erste Linie von innen.
@@ -210,8 +217,8 @@ python3 tools/convert_veo.py $V/export.json web/data/veo-2026-11-01 $W/veo_align
   - **Nummern je Spieler**: Danach stimmen die Lesungen aller Stücke eines Spielers gemeinsam ab.
   - **Prüfen**: `.venv/bin/python tools/identity_link.py $W/scene_705.mp4 $W/scene_705.det.json $W/camera.json`
     listet Kontakte, getrennte Stücke, Verbindungen und knapp getrennt gelassene Enden.
-  - **Gemessen gegen Veo** (`jersey_eval.py`, ein fester Tiefenversatz der Szene zu Veo von rund 0,9 m wird
-    herausgerechnet):
+  - **Gemessen gegen Veo** (Feature 002, noch mit herausgerechnetem Tiefenversatz; die Lageprüfung hat später
+    gezeigt, dass der Versatz überwiegend Veos Fehler ist):
     - Falsch zugeordnete Spielerzeit in Szene 705 von 6,9 % auf 5,8 %, in Szene 722 von 5,7 % auf 2,9 %.
     - Wechsel der Person innerhalb eines Spielers von 9 auf 7 und von 5 auf 1.
     - Identitäten je Spieler unverändert rund 2,2: Die Figur endet lieber, als zur falschen Person zu springen.
@@ -219,9 +226,25 @@ python3 tools/convert_veo.py $V/export.json web/data/veo-2026-11-01 $W/veo_align
       55 s für die Bildmerkmale.
   - **Grenzen**: Wechsel zwischen zwei Mitspielern ohne lesbare Nummer bleiben unerkannt. Abhilfe bringen erst
     schärfere Bilder und mehrere Blickwinkel (eigene Kameras).
-- Abhängigkeit von Veo: Das eigene Kamerasystem wird keine Veo-Daten liefern. Im Modus ohne Veo bleiben
-  davon nur die Startwerte der Kalibrierung (Ecken aus Veo, `veo_camera.py`; mit Handpunkten entbehrlich)
-  und die Uhr aus dem Basisspiel.
+- Eigene Referenz statt Veo (`review_spots.py`, `review_server.py`, `reference.py`, `jersey_eval.py`, Entscheidung
+  in `docs/adr/0003-eigene-referenz.md`):
+  - **Strittige Stellen**: Verdeckungen, Spurenden mitten auf dem Platz, Trennungen und Verbindungen, Nummern,
+    Widersprüche zu Veo; dazu 5 zufällige Kontrollstellen. Rund 60 Stellen je 25-Sekunden-Szene, meist 3 s Video.
+  - **Markierwerkzeug**: lokal (`127.0.0.1`), ohne fremde Ressourcen. Je Stelle läuft ein Ausschnitt in Schleife, die
+    Beteiligten tragen Buchstaben. `Enter` stimmt, `V` vertauscht, `N` andere Person, `U` unklar, Nummern eintippen.
+    Jede Antwort wird sofort gespeichert (`*.det.json.reference.json`, ohne Bilder und Namen).
+  - **Messen**: je Erkennung gegen die Personen der Referenz. Veo nur mit `--veo` als zweite Spalte und Liste der
+    Widersprüche. Unauffällige Stellen folgen der eigenen Auswertung; die Kontrollstellen schätzen, was dort
+    unentdeckt bleibt.
+- Lage am Boden ohne Veo (`line_check.py`): Steht ein Fuß auf einer Platzlinie, ist die wahre Lage bekannt.
+  - **Ergebnis**: Die fertige Szene liegt an den mittleren Linien auf 0,1–0,4 m genau. Boxunterkante und Veo
+    setzen die Spieler rund 1 m zu nah an die Kamera, weil die Box 4–5 Pixel unter den Fuß reicht.
+  - **Ferne Seitenlinie**: 1 Pixel entspricht dort rund 0,5 m in der Tiefe.
+- Abhängigkeit von Veo: Im Betrieb ohne Veo wird keine Veo-Datei mehr gelesen (`no_veo_check.py` weist das nach).
+  - **Spielordner**: Spielabschnitte, Uhr und Mannschaften kommen aus `spiel.json` (`own_match.py`).
+  - **Kalibrierung**: Sie startet aus einem Raster möglicher Kameralagen und braucht nur Handpunkte.
+  - **Bleibt**: Die Linsendaten der Kamera (`camera_alignment.json`) sind Eigenschaften der Kamera und bleiben
+    Eingabe. Eigene Kameras brauchen eine eigene Linsenkalibrierung.
 - `veo_looks.py` holt das Aussehen jedes Spielers aus dem Video: Jede Stelle der Körperoberfläche wird
   mit der gerechneten Haltung ins Kamerabild gelegt (jedes Körperteil an seinen erkannten Gelenkpunkten
   nachgerichtet, Verdeckung über einen Tiefenpuffer aller Spieler) und ihre Farbe über alle Bilder der Szene
