@@ -287,3 +287,19 @@ Je Linie (die fernen Linien haben gröbere Pixel in der Tiefe):
 - **Entscheidung**: Das wird nicht weiter nachgestellt. Der Platz und die Perspektive sind eine einzige; mit Kameras aus
   anderen Blickwinkeln fallen Verdeckungen und Kontakte weg oder lassen sich über die zweite Sicht auflösen. Was
   übrig bleibt, entscheidet die eigene Referenz (Markieren).
+
+## R13 Aussehen gegen die Antworten von Hand; automatischer Tausch-Schritt verworfen
+
+- **Messung**: An 57 Zuordnungen aus den ersten 29 Antworten (Szene 705, Verdeckungen mit mindestens zwei Beteiligten
+  vorher) wurde geprüft, welche Box von vorher dem Aussehen einer Box nachher am ähnlichsten ist. Das Spielmerkmal
+  (R11) traf die Antwort in 51 Fällen (89 %), bei Lernen und Prüfen auf getrennten Szenenhälften in 52 (91 %), bei
+  einem Abstand zwischen bestem und zweitbestem Kandidaten ab 0,3 in 32 von 32. Die Bildmerkmale wie bisher trafen in 47
+  (82 %).
+- **Versuch**: `split_by_look`, ein Schritt, der zwei Mitspieler an einem Kontakt oder einer Bildverdeckung trennt, wenn
+  beide nachher der anderen vorher ähnlicher sehen. Er fand in 705 bei 39 Begegnungen keinen einzigen Tausch und
+  änderte die Übereinstimmung mit den Antworten nicht (55 stimmen, 14 nicht). Verworfen, der Code ist nicht
+  übernommen.
+- **Was bleibt unklar**: Ein Teil der 14 Abweichungen liegt dort, wo ein Spieler für über eine Sekunde gar keine Box
+  hat; andere stammen aus der Zeit der missverständlichen Fragestellung (Boxen statt Personen).
+- **Vorsicht**: Das Spielmerkmal liefert zugleich die Verbindungen und könnte die Referenz vorbelegen. Dann prüft die
+  Referenz nicht mehr unabhängig, was das Merkmal leistet.
