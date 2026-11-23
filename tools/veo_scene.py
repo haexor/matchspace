@@ -55,6 +55,7 @@ import veo_keypoints  # noqa: E402
 import veo_tracks  # noqa: E402
 from veo_keypoints import torso_colour  # noqa: E402
 import jersey_identity  # noqa: E402
+from own_match import period_at  # noqa: E402
 from own_scene import (BALL_GAP, BALL_REACH, MIN_APPEARANCE, OWN_GAP, attach_ball, drop_same_place, own_ball,  # noqa: E402
                        own_identities, player_entity, with_numbers)
 from synth_poses import BONES, JOINTS, NAMES  # noqa: E402
@@ -642,21 +643,23 @@ def main(veo_dir, camera_path, align_path, video, start, det_path, base_dir, out
         floor[key] = g
         print(f"{key[0]}-{key[1]}: Bodenphase über {int(s['floor'].sum())} Bilder ({int(s['down'].sum())} liegend), Gelenke erkannt in {found}", flush=True)
 
-    # Spielstand der Szene aus dem Basisspiel (Veo-Positionen, 25 Hz)
+    # Spielstand der Szene aus dem Basisspiel. Mit Veo: Veo-Positionen (25 Hz). Ohne Veo genügt ein eigener Spielordner
+    # (tools/own_match.py): nur Spielabschnitte, Uhr, Platz, Mannschaften; Bewegungsdaten werden nicht gelesen.
     base_dir, out_dir = Path(base_dir), Path(out_dir)
     base = json.loads((base_dir / "meta.json").read_text())
     E = len(base["entities"])
-    period = next(p for p in base["periods"] if p["videoStartS"] <= start <= p["videoStartS"] + (p["endFrame"] - p["startFrame"]) / base["fps"])
-    first = period["startFrame"] + round((start - period["videoStartS"]) * base["fps"])
+    period, clock_start = period_at(base["periods"], start)
     total = int(n / fps * OUT_FPS)
     ratio = fps / OUT_FPS
-    data = array("h")
-    with open(base_dir / base["tracks"]["file"], "rb") as f:
-        f.seek(first * E * 3 * 2)
-        data.fromfile(f, total * E * 3)
     tscale = base["tracks"]["scale"]
-    xy = np.array(data, float).reshape(total, E, 3)
-    xy = np.where(xy == base["tracks"]["missing"], np.nan, xy * tscale)[:, :, :2]
+    if not no_veo:
+        first = period["startFrame"] + round((start - period["videoStartS"]) * base["fps"])
+        data = array("h")
+        with open(base_dir / base["tracks"]["file"], "rb") as f:
+            f.seek(first * E * 3 * 2)
+            data.fromfile(f, total * E * 3)
+        xy = np.array(data, float).reshape(total, E, 3)
+        xy = np.where(xy == base["tracks"]["missing"], np.nan, xy * tscale)[:, :, :2]
     if no_veo:
         # Ohne Veo: Spieler sind die eigenen Spuren, ihre Lage die eigene Spur (Lücken gerade verbunden); dazu der Ball.
         # Vom Basisspiel bleiben nur Platz, Kulisse, Mannschaftsnamen und Uhr.
@@ -845,8 +848,7 @@ def main(veo_dir, camera_path, align_path, video, start, det_path, base_dir, out
     meta = dict(base)
     meta.update({
         "frames": total,
-        "periods": [{"id": period["id"], "startFrame": 0, "endFrame": total - 1,
-                     "clockStartS": period.get("clockStartS", 0) + (start - period["videoStartS"])}],
+        "periods": [{"id": period["id"], "startFrame": 0, "endFrame": total - 1, "clockStartS": clock_start}],
         "source": {"name": f"{base['source']['name']}, Szene ab Videosekunde {start:.0f}",
                    "notes": ("Positionen und Spuren aus dem Panorama gemessen (eigenes Tracking, ohne Veo), Rückennummern selbst aus dem Video gelesen (tools/jersey_reader.py), unlesbare bleiben unbekannt. " if no_veo else
                              "Positionen aus dem Panorama gemessen (Fußpunkt am Boden), Rückennummern und Lücken aus Veo. ") +

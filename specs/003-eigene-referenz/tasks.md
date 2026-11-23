@@ -207,26 +207,26 @@ je Quelle.
 **Independent Test**: Der Prüflauf unter `no_veo_check.py` läuft für beide Szenen durch. `tracks.bin` ist gleich,
 und die Uhr stimmt.
 
-- [ ] T021 [P] [US4] `tests/test_own_match.py`:
+- [X] T021 [P] [US4] `tests/test_own_match.py`:
   - **Spielordner**: Eine Spielbeschreibung ergibt `meta.json` mit Abschnitten samt `videoStartS`, Platzmaßen aus
     der Kamera, Mannschaften und ohne Bewegungsdaten.
   - **Ablehnung**: ungültige Farbe, absteigende Abschnitte, Personennamen in Feldern, die keine haben dürfen
     (nur `name`, `teams.*.name`).
   - **Uhr**: Die Uhr einer Szene ab Videosekunde 705 ist `clockStartS + (705 − videoStartS)`.
-- [ ] T022 [P] [US4] `tests/test_no_veo_check.py`:
+- [X] T022 [P] [US4] `tests/test_no_veo_check.py`:
   - Ein Kindprozess, der eine Datei in einem verbotenen Ordner öffnet, bricht mit Fehler ab.
   - Eine ausdrücklich freigegebene Datei darf gelesen werden.
   - Ausgabeordner mit `veo-` im Namen sind nicht betroffen.
 - [ ] T023 [US4] `tools/own_match.py` nach [contracts/match-description.md](contracts/match-description.md).
   - Dazu `data/work/veo-2026-11-01/spiel.json` anlegen.
   - Die Anstoßzeiten bestätigt der Nutzer am Video; bis dahin als unbestätigt markieren.
-- [ ] T024 [US4] `tools/veo_scene.py`:
+- [X] T024 [US4] `tools/veo_scene.py`:
   - Im Betrieb ohne Veo nur Spielabschnitte, Uhr, Platz, Mannschaften und Quelle aus dem Spielordner lesen, keine
     Bewegungsdaten.
   - Den Abschnitt über den letzten Anstoß vor der Szene bestimmen.
-- [ ] T025 [US4] `tools/no_veo_check.py` nach [contracts/cli.md](contracts/cli.md) (`sys.addaudithook`,
+- [X] T025 [US4] `tools/no_veo_check.py` nach [contracts/cli.md](contracts/cli.md) (`sys.addaudithook`,
   `--verbiete`, `--erlaube`, führt das Werkzeug mit `runpy` aus).
-- [ ] T026 [US4] `tools/veo_camera.py`:
+- [X] T026 [US4] `tools/veo_camera.py`:
   - **Start**: aus einem Gitter von Kameralagen (Höhe 4–15 m, 2–20 m hinter der Seitenlinie, entlang der Linie, Blick
     zur Mitte); die beste nach Handpunkt-Fehler.
   - **Ohne Veo**: `read_veo` nur noch für die Linsendaten; `-` statt Handpunkten bricht mit klarer Meldung ab.

@@ -27,7 +27,8 @@
 ## Eigener Spielordner (`web/data/<spiel>/meta.json`, Ausgabe von `own_match.py`)
 
 - Gleiches Format `matchspace-track` Version 1 wie bisher, mit drei Unterschieden:
-  - **Bewegungsdaten**: keine (`frames: 0`, keine `entities` außer dem Ball, kein `tracks`-Eintrag).
+  - **Bewegungsdaten**: keine (`frames: 0`, keine `entities` außer dem Ball). `tracks` beschreibt nur das Format
+    der Szenen, eine `tracks.bin` gibt es im Spielordner nicht.
   - **Platz**: Maße aus `camera.json`.
   - **Quelle**: `source.name` aus `spiel.json`.
 - `periods` erhält zusätzlich `videoStartS`, wie im Veo-Basisspiel.
