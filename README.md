@@ -193,8 +193,32 @@ python3 tools/convert_veo.py $V/export.json web/data/veo-2026-11-01 $W/veo_align
     - Gegnerische 15 und 11 schwanken noch zwischen ähnlichen Lesarten (75, 71, 37) und bleiben deshalb
       unbekannt.
     - Ferne Spieler und reine Vorderansichten bekommen keine Nummer.
-    - Die Zerstückelung in Spuren (rund 2,2 Identitäten je Spieler) beheben Nummern allein nicht: Die meisten
-      Stücke zeigen nie lesbar den Rücken; dafür braucht es noch das Zusammenführen über Aussehen und Weg.
+    - Die Zerstückelung in Spuren beheben Nummern allein nicht: Die meisten Stücke zeigen nie lesbar den
+      Rücken (siehe nächster Punkt).
+- Identität ohne Veo (`identity_link.py`, `appearance.py`, Entscheidung in
+  `docs/adr/0002-identitaet-ohne-fremddaten.md`):
+  - **Befund**: Echte Lücken sind selten. Meist folgt eine Spur im Gedränge erst einem Spieler und dann einem
+    anderen, oft über die Mannschaftsgrenze hinweg.
+  - **Trennen**: Trägt eine Spur mindestens 1 s lang das Trikot der anderen Mannschaft, wird sie dort
+    getrennt; der Abschnitt wird ein Stück der anderen Mannschaft, außer dort läuft schon eine Spur dieser
+    Mannschaft. Verschiedene sichere Rückennummern vor und nach einem Kontakt zweier Mitspieler trennen
+    ebenfalls.
+  - **Verbinden**: Stücke werden über den Laufweg verbunden (erreichbar, nahe an der erwarteten Lage),
+    dieselbe sichere Nummer zählt stark, verschiedene verbieten. Aussehen (Bildmerkmale aus DINOv2-small,
+    lokal unter `models/hf`, nur Merkmalsvektoren in `*.det.json.appearance.npz`) und Körpergröße entscheiden
+    nur mit. Verbunden wird nur, wenn der beste Kandidat deutlich günstiger ist als der zweitbeste.
+  - **Nummern je Spieler**: Danach stimmen die Lesungen aller Stücke eines Spielers gemeinsam ab.
+  - **Prüfen**: `.venv/bin/python tools/identity_link.py $W/scene_705.mp4 $W/scene_705.det.json $W/camera.json`
+    listet Kontakte, getrennte Stücke, Verbindungen und knapp getrennt gelassene Enden.
+  - **Gemessen gegen Veo** (`jersey_eval.py`, ein fester Tiefenversatz der Szene zu Veo von rund 0,9 m wird
+    herausgerechnet):
+    - Falsch zugeordnete Spielerzeit in Szene 705 von 6,9 % auf 5,8 %, in Szene 722 von 5,7 % auf 2,9 %.
+    - Wechsel der Person innerhalb eines Spielers von 9 auf 7 und von 5 auf 1.
+    - Identitäten je Spieler unverändert rund 2,2: Die Figur endet lieber, als zur falschen Person zu springen.
+    - Nummern wie vorher (je 7, keine falsch); rund 30 s mehr Rechenzeit je Szene, beim ersten Mal dazu rund
+      55 s für die Bildmerkmale.
+  - **Grenzen**: Wechsel zwischen zwei Mitspielern ohne lesbare Nummer bleiben unerkannt. Abhilfe bringen erst
+    schärfere Bilder und mehrere Blickwinkel (eigene Kameras).
 - Abhängigkeit von Veo: Das eigene Kamerasystem wird keine Veo-Daten liefern. Im Modus ohne Veo bleiben
   davon nur die Startwerte der Kalibrierung (Ecken aus Veo, `veo_camera.py`; mit Handpunkten entbehrlich)
   und die Uhr aus dem Basisspiel.
@@ -224,8 +248,9 @@ python3 tools/convert_veo.py $V/export.json web/data/veo-2026-11-01 $W/veo_align
   fünfmal länger; die Punkte beider Modelle liegen im Mittel 0,5 Pixel auseinander, die fertigen Haltungen
   im Mittel 2 cm (jedes zehnte Gelenk mehr als 10 cm). `veo_scene.py` ist für kurze Szenen gebaut; eine ganze
   Halbzeit müsste in Abschnitten gerechnet und zusammengesetzt werden, das gibt es noch nicht.
-- Lizenzen vor einer Weitergabe prüfen: Ultralytics YOLO steht unter AGPL-3.0. ViTPose steht unter
-  Apache-2.0. Das Körpermodell der Figuren (`web/models/player/player.glb`, Quaternius „Universal Base
+- Lizenzen vor einer Weitergabe prüfen: Ultralytics YOLO (Personen und Ball, `veo_detect.py`, `veo_ball.py`)
+  steht unter AGPL-3.0; wer das Werkzeug weitergibt oder als Dienst anbietet, muss den Quelltext offenlegen.
+  ViTPose und DINOv2 (Aussehen, `appearance.py`) stehen unter Apache-2.0. Das Körpermodell der Figuren (`web/models/player/player.glb`, Quaternius „Universal Base
   Characters“) ist CC0. Die Bewegungsvorlagen (Stehen, Gehen, Laufen) liest `motion_clips.py` weiter aus
   `web/models/Xbot.glb`; sie stammen aus den Beispielen von three.js und ursprünglich von Mixamo (Adobe),
   die Bedingungen für eine Weitergabe sind nicht geprüft.

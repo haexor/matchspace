@@ -41,12 +41,14 @@ done
 
 **Erwartet** je Szene:
 
-| Ziel | Wert | heute |
-|------|------|-------|
-| SC-001 Identitäten je Spieler | ≤ 1,5 | 2,24 und 2,17 |
-| SC-002 falsch zugeordnete Zeit | ≤ 3 % | 6,5 % und 5,7 % |
-| SC-003 Spieler mit richtiger Nummer | ≥ 7, falsch ≤ 5 % | 7, 0 falsch |
-| SC-005 Mehrzeit | ≤ 5 min | |
+| Ziel | Wert | vor dem Feature (705 / 722) | danach |
+|------|------|-------|-------|
+| SC-001 Identitäten je Spieler | ≤ 1,5 | 2,22 / 2,11 | 2,22 / 2,22 |
+| SC-002 falsch zugeordnete Zeit | ≤ 3 % | 6,9 % / 5,7 % | 5,8 % / 2,9 % |
+| SC-003 Spieler mit richtiger Nummer | ≥ 7, falsch ≤ 5 % | 7, 0 falsch | 7, 0 falsch |
+| SC-005 Mehrzeit | ≤ 5 min | | rund 30 s, beim ersten Lauf dazu 55 s |
+
+Die Messung rechnet einen festen Tiefenversatz der Szene zu Veo heraus (`depthOffsetM`, rund 0,9 m).
 
 Dazu muss `meta.json` vor und nach der Messung dieselbe Prüfsumme haben.
 

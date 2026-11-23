@@ -199,3 +199,32 @@ Gemessen mit `tools/jersey_eval.py`, Veo nur als Referenz:
 - Lesezeit (SC-005).
 
 SC-004 wird am Viewer stichprobenartig geprüft (10 frühere Bruchstellen je Szene).
+
+## R9 Ergebnis (T015–T018)
+
+An der fertigen Szene, `jersey_eval.py`, Tiefenversatz herausgerechnet:
+
+| Szene | falsch zugeordnete Zeit | Wechsel ≥ 1 s | Identitäten je Spieler | Nummern |
+|---|---|---|---|---|
+| 705 | 6,9 % → 5,8 % | 9 → 7 | 2,22 → 2,22 | 7, keine falsch |
+| 722 | 5,7 % → 2,9 % | 5 → 1 | 2,11 → 2,22 | 7, keine falsch |
+
+| Ziel | Stand |
+|---|---|
+| SC-001 Identitäten ≤ 1,5 | verfehlt: 2,22 in beiden Szenen |
+| SC-002 falsche Zeit ≤ 3 % | 722 erreicht (2,9 %), 705 verfehlt (5,8 %) |
+| SC-003 ≥ 7 richtige Nummern, ≤ 5 % falsch | erreicht: je 7, keine falsch |
+| SC-004 8 von 10 Stichproben | verfehlt: 705 rund 5–6, 722 4 von 10 |
+| SC-005 ≤ 5 min mehr | erreicht: rund 30 s, beim ersten Lauf dazu 55 s Bildmerkmale |
+| SC-006 keine neuen Bilddaten | erreicht |
+
+- **Stichproben (SC-004)**: Je Szene 10 frühere Bruchstellen der rohen Spuren, Bildausschnitte des Spielers 1 s
+  vorher und nachher, am Video angesehen. In 705 sicher gleich bei 4, plausibel bei 2, verloren bei 2, fraglich
+  bei 2. In 722 gleich bei 4, bei 6 endet die Figur. Ein Sprung auf eine falsche Person war nicht dabei.
+- **Warum die Identitäten nicht sinken**: Das Trennen an fremden Trikots macht aus 38 und 44 Spuren 40 und 51
+  Spieler. Verbunden werden nur 2 und 0 Lücken, weil der zweitbeste Kandidat fast immer nah dran ist. Das ist
+  die gewollte Vorsicht (SC-002 vor SC-001), bei 55 Pixeln Spielerhöhe aber zu wenig Unterscheidung.
+- **Nächste Hebel**:
+  - eigene Kameras (Auflösung, mehrere Blickwinkel), siehe ADR 0002;
+  - das Aussehen schon beim Tracking nutzen;
+  - Selbsttraining eines Wiedererkennungsmerkmals an sicheren Stücken (wie beim Nummernleser).

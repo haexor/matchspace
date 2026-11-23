@@ -169,13 +169,13 @@ Zeit steigt nicht über den Stand aus T003.
 
 **Independent Test**: Die richtigen Nummern je Szene sind mindestens 7, die falschen höchstens 5 %.
 
-- [ ] T016 [P] [US3] `tests/test_jersey_identity.py` erweitern: Ein Spieler aus drei Stücken mit je zwei
+- [X] T016 [P] [US3] `tests/test_jersey_identity.py` erweitern: Ein Spieler aus drei Stücken mit je zwei
   Fenstern derselben Nummer bekommt die Nummer, jedes Stück allein nicht (Szenario P3/1).
-- [ ] T017 [US3] `tools/own_scene.py` und `tools/jersey_identity.py`: Die Lesungen eines Spielers werden
+- [X] T017 [US3] `tools/own_scene.py` und `tools/jersey_identity.py`: Die Lesungen eines Spielers werden
   unter einem Namen zusammengefasst, dann laufen `vote`, `assign` und `merge_by_number` auf
   Spielerebene. Kein neuer Abstimmungscode: Die Zuordnung Lesung → Spieler geschieht über
   `readings_for_tracks` mit dem Spielernamen.
-- [ ] T018 [US3] Szenen auswerten, `veo_looks.py` laufen lassen und messen. Danach die Stichproben im
+- [X] T018 [US3] Szenen auswerten, `veo_looks.py` laufen lassen und messen. Danach die Stichproben im
   Viewer: 10 frühere Bruchstellen je Szene (SC-004), Bildschirmfotos nur im Scratchpad. Commit
   `feat(identity): vote jersey numbers over all pieces of a player`.
 
@@ -183,19 +183,19 @@ Zeit steigt nicht über den Stand aus T003.
 
 ## Phase 6: Polish & Cross-Cutting
 
-- [ ] T019 [P] `docs/adr/0002-identitaet-ohne-fremddaten.md` schreiben:
+- [X] T019 [P] `docs/adr/0002-identitaet-ohne-fremddaten.md` schreiben:
   - Weg und Nummer vor Aussehen;
   - Bildmerkmale nur lokal und je Szene;
   - Messwerte aus R1 und T011;
   - Ausblick auf mehrere Kameras (Kreuzpeilung, höhere Auflösung).
-- [ ] T020 [P] `README.md`: Abschnitt „Identität ohne Veo“ mit Ablauf, CLI, Messwerten und Grenzen;
+- [X] T020 [P] `README.md`: Abschnitt „Identität ohne Veo“ mit Ablauf, CLI, Messwerten und Grenzen;
   dazu der Lizenzhinweis zu Ultralytics YOLO (AGPL-3.0) bei den Werkzeugen.
-- [ ] T021 Prüfungen:
+- [X] T021 Prüfungen:
   - Unit-Tests grün;
   - `git ls-files` ohne neue Bilddateien;
   - `git grep -nE "/home/|~/" -- . ':!specs'` leer;
   - neue Module unter 400 Zeilen.
-- [ ] T022 [quickstart.md](quickstart.md) durchgehen. Messwerte und verfehlte Ziele in
+- [X] T022 [quickstart.md](quickstart.md) durchgehen. Messwerte und verfehlte Ziele in
   [research.md](research.md) und am Ende dieser Datei festhalten. Commit `docs: record identity results`.
 
 ---
@@ -225,3 +225,21 @@ Zeit steigt nicht über den Stand aus T003.
 - **Danach US2**: der Messpunkt T011 zuerst. Fällt er negativ aus, wird nur mit Nummernbeleg getrennt,
   und SC-002 wird offen als verfehlt berichtet.
 - **Danach US3**: Nummern je Spieler, dann Viewer-Stichproben.
+
+---
+
+## Ergebnis
+
+Abweichungen vom Plan:
+- **Messung**: `jersey_eval.py` rechnet einen festen Tiefenversatz der Szene zu Veo heraus (rund 0,9 m), sonst
+  zählten Nachbarn im Gedränge als Vertauschung. Ausgangsstand damit 6,9 % und 5,7 % falsche Zeit (R0).
+- **Messpunkt T011**: Kein Beleg erfüllte das Kriterium. Getrennt wird an fremder Trikotfarbe je Erkennung
+  (nicht im Plan, aber schon vorhanden) und an verschiedenen sicheren Nummern; Aussehen und Bewegung prüfen
+  keine Wechsel (R3).
+- **Nummern je Spieler (T017)**: kam ohne eigenen Schritt mit T014, weil die Abstimmung nach dem Verbinden über
+  die Bilder des ganzen Spielers läuft; T016 sichert das mit einem Test ab.
+- **`veo_scene.py`**: eine Zeile geändert (Kamera an `with_numbers`), für die Größe in Metern.
+
+Messwerte und verfehlte Ziele: [research.md](research.md) R9. Kurz: falsche Zeit 6,9 → 5,8 % (705) und
+5,7 → 2,9 % (722); Identitäten bleiben bei 2,2 (SC-001 verfehlt); SC-004 verfehlt (4–6 von 10); Nummern
+unverändert richtig.
