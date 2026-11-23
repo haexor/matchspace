@@ -1,0 +1,1 @@
+{"step": "check", "invocation": 1, "phase": "initial", "raw_output": "<<<SPAEX-COMPOSER-BEGIN>>>\n{\"type\": \"no_findings\"}\n<<<SPAEX-COMPOSER-END>>>\n", "outcome": "no_findings"}
