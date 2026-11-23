@@ -6,41 +6,48 @@
 
 **Status**: Draft
 
-**Input**: User description: "Eigene Referenz statt Veo: Messungen (Identität je Spieler, falsch zugeordnete Zeit, Spurwechsel, Rückennummern, Lage am Boden) sollen gegen eine selbst erstellte Referenz laufen, Veo nur noch als zweite Meinung daneben. Dazu ein lokales Markierwerkzeug im Browser: zeigt Videobilder einer Szene in Stichproben (etwa alle 2 s) mit den erkannten Boxen, schlägt unsere Zuordnung (Spieler, Mannschaft, Nummer) vor, der Nutzer korrigiert nur; rund 10–15 Minuten je Szene. Die Lage am Boden wird ohne Veo über die Platzgeometrie geprüft (Fußpunkte an Platzlinien), um zu klären, ob der Tiefenversatz von rund 0,9 m zwischen Szene und Veo ein Fehler der Szene ist. Bilder Minderjähriger bleiben lokal, Markierungen enthalten keine Namen. Außerdem die letzten Veo-Abhängigkeiten im Betrieb ohne Veo entfernen: Startwerte der Kamerakalibrierung (Ecken aus Veo) und Spieluhr aus dem Veo-Basisspiel."
+**Input**: User description (ergänzt nach Rückmeldung: nur strittige oder unklare Stellen, etwa Verdeckungen,
+von Hand nacharbeiten): "Eigene Referenz statt Veo: Messungen (Identität je Spieler, falsch zugeordnete Zeit, Spurwechsel, Rückennummern, Lage am Boden) sollen gegen eine selbst erstellte Referenz laufen, Veo nur noch als zweite Meinung daneben. Dazu ein lokales Markierwerkzeug im Browser: zeigt Videobilder einer Szene in Stichproben (etwa alle 2 s) mit den erkannten Boxen, schlägt unsere Zuordnung (Spieler, Mannschaft, Nummer) vor, der Nutzer korrigiert nur; rund 10–15 Minuten je Szene. Die Lage am Boden wird ohne Veo über die Platzgeometrie geprüft (Fußpunkte an Platzlinien), um zu klären, ob der Tiefenversatz von rund 0,9 m zwischen Szene und Veo ein Fehler der Szene ist. Bilder Minderjähriger bleiben lokal, Markierungen enthalten keine Namen. Außerdem die letzten Veo-Abhängigkeiten im Betrieb ohne Veo entfernen: Startwerte der Kamerakalibrierung (Ecken aus Veo) und Spieluhr aus dem Veo-Basisspiel."
 
 ## User Scenarios & Testing *(mandatory)*
 
-### User Story 1 - Eine Szene selbst markieren (Priority: P1)
+### User Story 1 - Strittige Stellen selbst entscheiden (Priority: P1)
 
 Der Trainer öffnet eine ausgewertete Szene im Markierwerkzeug auf seinem eigenen Rechner. Das Werkzeug zeigt
-Stichprobenbilder aus dem Video, etwa alle 2 Sekunden, mit allen erkannten Personen auf dem Platz. Zu jeder
-Person schlägt es vor, wer sie ist: Mannschaft, Spieler der Szene und Rückennummer, soweit bekannt. Der
-Trainer bestätigt richtige Vorschläge mit einem Klick und korrigiert falsche. Zwischen zwei Stichproben kann
-er das Video abspielen, um einem Spieler mit den Augen zu folgen. Am Ende liegt eine eigene Referenz der
-Szene vor: Wer war wann wo.
+ihm nicht die ganze Szene, sondern nur die Stellen, an denen die Zuordnung strittig oder unklar ist. Das sind
+vor allem Verdeckungen und Zweikämpfe, aber auch Spuren, die mitten auf dem Platz beginnen oder enden, und
+Stellen, an denen Veo als zweite Meinung etwas anderes sieht. Zu jeder Stelle spielt es einen kurzen
+Ausschnitt ab, in dem die beteiligten Personen vorher und nachher hervorgehoben sind. Der Trainer beantwortet
+nur eine Frage: Wer ist nach der Stelle wer? Mögliche Antworten sind „wie vorgeschlagen“, „vertauscht“,
+„andere Person“ und „unklar“. Wo eine Nummer lesbar ist, kann er sie angeben.
+
+Damit die Auswahl nichts Wichtiges übersieht, zeigt das Werkzeug zusätzlich einige zufällige unauffällige
+Stellen zur Kontrolle.
 
 **Why this priority**: Ohne eigene Referenz lässt sich nicht sagen, ob eine Änderung an Tracking, Nummern
 oder Identität wirklich besser ist oder nur besser zu Veo passt. Veo ist nicht immer zuverlässig und kennt
-nur Spieler, denen es selbst eine Nummer gegeben hat. Alle weiteren Verbesserungen hängen an dieser
-Grundlage.
+nur Spieler, denen es selbst eine Nummer gegeben hat. Die Fehler entstehen fast nur an Verdeckungen; dort
+lohnt der Blick eines Menschen, überall sonst nicht.
 
-**Independent Test**: Eine der beiden Referenzszenen vollständig markieren und dabei die Zeit stoppen.
-Danach prüfen, dass jede Person auf dem Platz in jeder Stichprobe eine Angabe hat (Person oder „unklar“)
-und dass die Referenz ohne Bilder und ohne Namen gespeichert ist.
+**Independent Test**: Für eine Referenzszene alle strittigen Stellen und die Kontrollstellen entscheiden und
+dabei die Zeit stoppen. Danach prüfen, dass jede Stelle eine Antwort hat und dass die Referenz ohne Bilder
+und ohne Namen gespeichert ist.
 
 **Acceptance Scenarios**:
 
 1. **Given** eine ausgewertete Szene, **When** der Trainer das Markierwerkzeug öffnet, **Then** sieht er die
-   erste Stichprobe mit allen erkannten Personen auf dem Platz und je einem Vorschlag.
-2. **Given** ein Vorschlag ist richtig, **When** der Trainer ihn bestätigt, **Then** ist die Person markiert,
-   ohne dass er etwas eintippen muss.
-3. **Given** das Tracking hat zwei Spieler vertauscht, **When** der Trainer in der nächsten Stichprobe die
-   Person umbenennt, **Then** gilt die Korrektur nur für diese Person ab dieser Stichprobe; spätere Vorschläge
-   übernehmen die Korrektur.
-4. **Given** eine Person ist auf dem Bild nicht sicher zu erkennen, **When** der Trainer „unklar“ wählt,
-   **Then** zählt diese Stelle bei der Messung nicht.
+   Liste der strittigen Stellen mit Zeit und Grund und kann die erste abspielen.
+2. **Given** die Auswertung hat an einer Stelle richtig zugeordnet, **When** der Trainer „wie vorgeschlagen“
+   wählt, **Then** ist die Stelle entschieden, ohne dass er etwas eintippen muss.
+3. **Given** das Tracking hat zwei Spieler bei einem Zweikampf vertauscht, **When** der Trainer „vertauscht“
+   wählt, **Then** hält die Referenz fest, dass die beiden Spuren ab dieser Stelle die jeweils andere Person
+   zeigen.
+4. **Given** an einer Stelle ist nicht zu erkennen, wer wer ist, **When** der Trainer „unklar“ wählt, **Then**
+   zählt diese Stelle bei der Messung nicht.
 5. **Given** der Trainer unterbricht die Arbeit, **When** er das Werkzeug später wieder öffnet, **Then** sind
-   alle bisherigen Markierungen erhalten, und er macht dort weiter.
+   alle bisherigen Antworten erhalten, und er macht bei der nächsten offenen Stelle weiter.
+6. **Given** eine Szene ist neu ausgewertet worden, **When** der Trainer das Werkzeug öffnet, **Then** sind
+   schon entschiedene Stellen weiter gültig, und nur neue strittige Stellen sind offen.
 
 ---
 
@@ -71,8 +78,10 @@ Referenz. Fehlen die Veo-Daten ganz, entsteht derselbe Bericht ohne die Veo-Spal
    Veo-Spalte.
 4. **Given** eine Person, die Veo nicht kennt (ohne Veo-Nummer), **When** sie markiert ist, **Then** zählt sie
    in der Messung mit.
-5. **Given** eine Szene ist nur teilweise markiert, **When** die Messung läuft, **Then** werden nur markierte
-   Stichproben gezählt, und der Bericht nennt den Anteil.
+5. **Given** nicht alle strittigen Stellen sind entschieden, **When** die Messung läuft, **Then** nennt der
+   Bericht, wie viele offen sind, und zählt offene Stellen nicht als richtig.
+6. **Given** die Kontrollstellen sind entschieden, **When** die Messung läuft, **Then** schätzt der Bericht, wie
+   viele Fehler außerhalb der strittigen Stellen unentdeckt bleiben.
 
 ---
 
@@ -126,21 +135,25 @@ auswerten. Das Ergebnis entspricht dem bisherigen, und die Uhr im Viewer zeigt d
 
 ### Edge Cases
 
-- **Person ohne Box:** Ein Spieler ist auf dem Bild zu sehen, aber nicht erkannt (verdeckt, liegend). Er kann
-  als „fehlt“ markiert werden; das zählt als verpasste Erkennung, nicht als falsche Identität.
-- **Box mit zwei Personen:** Eine Box umfasst zwei Spieler im Zweikampf. Sie wird als „zwei Personen“
-  markiert und zählt nicht für die Identität.
+- **Viele Beteiligte:** Im Gedränge sind drei oder mehr Spieler an einer Stelle beteiligt. Der Trainer ordnet
+  dann jede Spur nach der Stelle einer Person vor der Stelle zu, oder „andere Person“, oder „unklar“.
+- **Stellen dicht hintereinander:** Folgen zwei strittige Stellen derselben Spieler innerhalb weniger Sekunden,
+  werden sie zu einer Stelle zusammengefasst.
+- **Person ohne Box:** Ein Spieler ist im Ausschnitt zu sehen, aber nicht erkannt (verdeckt, liegend). Das zählt
+  als verpasste Erkennung, nicht als falsche Identität.
 - **Unbekannte Personen:** Ohne lesbare Nummer bekommt eine Person eine neutrale Kennung (etwa „Wir A“,
-  „Gegner C“). Dieselbe Person behält ihre Kennung über alle Stichproben der Szene.
+  „Gegner C“), die nur innerhalb der Szene gilt.
+- **Fehler an unauffälliger Stelle:** Eine Spur wechselt die Person, ohne dass ein Grund für „strittig“
+  vorliegt. Die Kontrollstellen schätzen, wie oft das vorkommt; einzelne solche Fehler können unentdeckt
+  bleiben.
 - **Torhüter und Schiedsrichter:** werden als eigene Rollen markiert.
 - **Auswechslung in der Szene:** Ein Spieler geht, ein anderer kommt. Das sind zwei Personen, auch bei
   ähnlichem Aussehen.
-- **Widerspruch in der eigenen Referenz:** Dieselbe Kennung steht in einer Stichprobe an zwei Stellen, oder
-  zwei Personen derselben Mannschaft tragen dieselbe Nummer. Das Werkzeug weist darauf hin, bevor gespeichert
-  wird.
-- **Neue Auswertung nach dem Markieren:** Nach einer Änderung an Tracking oder Identität passen die
-  Vorschläge nicht mehr zur alten Referenz. Die Referenz bleibt gültig, weil sie an Bild und Box hängt, nicht
-  an Spielernamen der Auswertung.
+- **Widerspruch in der eigenen Referenz:** Zwei Antworten ergeben, dass dieselbe Person zur selben Zeit an zwei
+  Orten ist, oder zwei Personen derselben Mannschaft tragen dieselbe Nummer. Das Werkzeug weist darauf hin.
+- **Neue Auswertung nach dem Entscheiden:** Nach einer Änderung an Tracking oder Identität heißen die Spieler
+  der Auswertung anders. Die Antworten bleiben gültig, weil sie an Zeit und Lage im Bild hängen, nicht an
+  Spielernamen der Auswertung.
 - **Andere Erkennung:** Werden die Personen neu erkannt und die Boxen ändern sich, bleibt die Referenz über
   die Lage im Bild zuordenbar. Was nicht mehr zuordenbar ist, wird gemeldet.
 - **Fuß knapp neben der Linie:** Nur Stellen, an denen der Fuß sichtbar auf der Linie steht, zählen für die
@@ -152,27 +165,34 @@ auswerten. Das Ergebnis entspricht dem bisherigen, und die Uhr im Viewer zeigt d
 
 ### Functional Requirements
 
-- **FR-001**: Das System MUST ein Markierwerkzeug bereitstellen, das lokal auf dem Rechner des Nutzers läuft
-  und Stichprobenbilder einer Szene mit den erkannten Personen auf dem Platz zeigt. Der Abstand der
-  Stichproben ist einstellbar, voreingestellt sind 2 Sekunden.
-- **FR-002**: Das Werkzeug MUST zu jeder Person einen Vorschlag aus der Auswertung zeigen (Mannschaft oder
-  Rolle, Kennung, Nummer). Ein richtiger Vorschlag MUST sich mit einer Handlung bestätigen lassen.
-- **FR-003**: Das Werkzeug MUST erlauben, eine Person umzubenennen, als „unklar“, „zwei Personen“ oder „fehlt“
-  zu markieren und ihr eine Nummer zu geben. Eine Korrektur MUST in den folgenden Stichproben als Vorschlag
-  übernommen werden.
-- **FR-004**: Das Werkzeug MUST das Video zwischen zwei Stichproben abspielen können, damit der Nutzer einer
-  Person mit den Augen folgen kann.
-- **FR-005**: Markierungen MUST laufend gespeichert werden und nach einer Unterbrechung erhalten bleiben.
-- **FR-006**: Die Referenz MUST an Bild und Lage im Bild hängen, nicht an Namen der Auswertung, damit sie nach
-  einer neuen Auswertung gültig bleibt.
+- **FR-001**: Das System MUST strittige Stellen einer Szene selbst finden, mindestens:
+  - Verdeckungen und enge Kontakte von Personen;
+  - Spuren, die mitten auf dem Platz beginnen oder enden;
+  - Stellen, an denen die Auswertung getrennt oder verbunden hat;
+  - Spieler, deren Nummer unsicher ist oder sich widerspricht;
+  - Stellen, an denen Veo als zweite Meinung, falls vorhanden, eine andere Person sieht.
+
+  Jede Stelle hat Zeit, beteiligte Personen und Grund.
+- **FR-002**: Das System MUST je Szene zusätzlich einige zufällig gewählte unauffällige Stellen zur Kontrolle
+  vorlegen, voreingestellt 5.
+- **FR-003**: Ein Markierwerkzeug, das lokal auf dem Rechner des Nutzers läuft, MUST zu jeder Stelle einen
+  kurzen Videoausschnitt abspielen, in dem die beteiligten Personen vorher und nachher hervorgehoben sind,
+  zusammen mit dem Vorschlag der Auswertung.
+- **FR-004**: Der Nutzer MUST je Stelle mit einer Handlung antworten können: „wie vorgeschlagen“,
+  „vertauscht“, „andere Person“ (je Spur) oder „unklar“. Optional gibt er eine lesbare Nummer an.
+- **FR-005**: Antworten MUST laufend gespeichert werden und nach einer Unterbrechung erhalten bleiben.
+- **FR-006**: Die Referenz MUST an Zeit und Lage im Bild hängen, nicht an Namen der Auswertung, damit
+  entschiedene Stellen nach einer neuen Auswertung gültig bleiben. Nur neue strittige Stellen sind dann offen.
 - **FR-007**: Die Referenz MUST NOT Bilder, Bildausschnitte, Namen oder andere Angaben enthalten, die eine
-  Person außerhalb der Szene erkennbar machen. Sie enthält nur Bild, Lage, Rolle, neutrale Kennung und
-  Nummer. Sie bleibt lokal bei den Rohdaten.
+  Person außerhalb der Szene erkennbar machen. Sie enthält nur Zeit, Lage, Rolle, neutrale Kennung,
+  Nummer und Antwort. Sie bleibt lokal bei den Rohdaten.
 - **FR-008**: Bilder und Video MUST den Rechner nicht verlassen. Das Werkzeug lädt nichts aus dem Netz nach,
   das Bilder sehen könnte, und sendet nichts.
 - **FR-009**: Die Messung MUST Identitäten je Person, falsch zugeordnete Zeit, Personenwechsel innerhalb eines
-  Spielers und richtige, falsche und fehlende Nummern gegen die eigene Referenz bestimmen. Sie zählt auch
-  Personen, die Veo nicht kennt.
+  Spielers und richtige, falsche und fehlende Nummern gegen die eigene Referenz bestimmen. Die Referenz ist die
+  Zuordnung der Auswertung, korrigiert an allen entschiedenen Stellen. Die Messung zählt auch Personen, die Veo
+  nicht kennt, und nennt, wie viele Stellen offen oder unklar sind und wie viele Fehler die Kontrollstellen
+  außerhalb der strittigen Stellen erwarten lassen.
 - **FR-010**: Die Messung MUST ohne Veo-Daten laufen. Liegen Veo-Daten vor, MUST sie die Veo-Werte als zweite
   Spalte zeigen und Stellen auflisten, an denen Veo und die eigene Referenz verschiedene Personen sehen.
 - **FR-011**: Das System MUST die Lage am Boden an Stellen prüfen, an denen ein Fuß sichtbar auf einer bekannten
@@ -184,17 +204,18 @@ auswerten. Das Ergebnis entspricht dem bisherigen, und die Uhr im Viewer zeigt d
   Platzmaße, Mannschaftsnamen und -farben für den Viewer kommen aus einer eigenen Spielbeschreibung.
 - **FR-014**: Die Kamerakalibrierung MUST ohne Veos angeklickte Ecken starten können, allein aus eigenen
   Platzpunkten im Bild.
-- **FR-015**: Das Werkzeug MUST auf Widersprüche hinweisen: dieselbe Kennung zweimal in einer Stichprobe,
-  dieselbe Nummer bei zwei Personen einer Mannschaft, eine Kennung in zwei Mannschaften.
+- **FR-015**: Das Werkzeug MUST auf Widersprüche hinweisen: dieselbe Person zur selben Zeit an zwei Orten,
+  dieselbe Nummer bei zwei Personen einer Mannschaft, eine Person in zwei Mannschaften.
 
 ### Key Entities *(include if feature involves data)*
 
-- **Stichprobe**: ein Bild der Szene, in dem alle Personen auf dem Platz markiert werden.
-- **Markierung**: eine Person in einer Stichprobe. Sie hat Lage im Bild, Rolle (Feldspieler, Torhüter,
-  Schiedsrichter), Mannschaft, neutrale Kennung, Nummer (oder unbekannt) und einen Zustand (bestätigt,
-  korrigiert, unklar, zwei Personen, fehlt).
-- **Referenz einer Szene**: alle Markierungen einer Szene, mit Stand der Bearbeitung. Gehört zu Video und
-  Erkennungen dieser Szene.
+- **Strittige Stelle**: ein kurzer Zeitraum mit beteiligten Personen, Grund (Verdeckung, Spurbeginn oder -ende,
+  Trennung, Verbindung, Nummer, Widerspruch zu Veo) und Vorschlag der Auswertung.
+- **Kontrollstelle**: eine zufällig gewählte unauffällige Stelle, gleich aufgebaut.
+- **Antwort**: die Entscheidung des Nutzers zu einer Stelle („wie vorgeschlagen“, „vertauscht“, „andere
+  Person“, „unklar“), optional mit Nummer; hängt an Zeit und Lage im Bild.
+- **Referenz einer Szene**: alle Antworten einer Szene mit Stand der Bearbeitung, zusammen mit der Zuordnung
+  der Auswertung, auf die sie sich beziehen.
 - **Linienstelle**: ein Fuß, der sichtbar auf einer bekannten Platzlinie steht, mit der gerechneten Lage aus
   jeder Quelle.
 - **Spielbeschreibung**: Spielabschnitte mit Anstoßzeit im Video, Platzmaße, Mannschaften mit Namen und Farbe
@@ -206,13 +227,14 @@ auswerten. Das Ergebnis entspricht dem bisherigen, und die Uhr im Viewer zeigt d
 
 ### Measurable Outcomes
 
-- **SC-001**: Eine 25-Sekunden-Szene ist in höchstens 15 Minuten vollständig markiert.
-- **SC-002**: In einer vollständig markierten Szene hat jede erkannte Person auf dem Platz in jeder Stichprobe
-  eine Angabe; höchstens 10 % der Markierungen sind „unklar“.
-- **SC-003**: Beide Referenzszenen (705 und 722) sind markiert, und für beide liegt ein Messbericht mit allen
+- **SC-001**: Alle strittigen Stellen und Kontrollstellen einer 25-Sekunden-Szene sind in höchstens 10 Minuten
+  entschieden.
+- **SC-002**: Die Auswahl findet die Fehler: Mindestens 90 % der Personenwechsel, die beim Entscheiden oder an
+  den Kontrollstellen auffallen, liegen an einer strittigen Stelle. Höchstens 15 % der Antworten sind „unklar“.
+- **SC-003**: In beiden Referenzszenen (705 und 722) sind alle strittigen Stellen entschieden, und für beide liegt ein Messbericht mit allen
   Kennzahlen aus eigener Referenz vor, mit und ohne Veo-Daten.
-- **SC-004**: Ein zweites Markieren von 3 Stichproben je Szene durch dieselbe Person stimmt in mindestens 95 %
-  der Markierungen mit dem ersten überein. Die Referenz ist also wiederholbar.
+- **SC-004**: Ein zweites Entscheiden von 5 Stellen je Szene durch dieselbe Person stimmt über beide Szenen in mindestens 9 von 10
+  Fällen mit dem ersten überein. Die Referenz ist also wiederholbar.
 - **SC-005**: Die Lageprüfung findet je Szene mindestens 20 Linienstellen und nennt für jede Lagequelle den
   mittleren Tiefenfehler. Die Frage, ob der Versatz von rund 0,9 m ein Fehler der Szene ist, ist beantwortet.
 - **SC-006**: Mit unzugänglichen Veo-Daten läuft die Auswertung beider Szenen durch. Lage, Spieler und Nummern
@@ -226,8 +248,10 @@ auswerten. Das Ergebnis entspricht dem bisherigen, und die Uhr im Viewer zeigt d
   Verbinden, gelesene Nummern.
 - **Wer markiert:** Der Trainer oder ein Helfer aus dem Verein, der die Mannschaften kennt. Er markiert am
   eigenen Rechner. Mehrere Bearbeiter gleichzeitig sind nicht nötig.
-- **Stichproben statt jedes Bild:** Alle 2 Sekunden genügen, weil Identitätsfehler mehrere Sekunden dauern. Was
-  zwischen zwei Stichproben passiert, zeigt die Messung nicht; das Abspielen hilft nur beim Markieren.
+- **Nur strittige Stellen (Wunsch des Nutzers):** Von Hand entschieden wird nur, wo die Zuordnung strittig
+  ist. Überall sonst gilt die Zuordnung der Auswertung als Referenz. Fehler an unauffälligen Stellen kann die
+  Messung deshalb nicht vollständig sehen; die Kontrollstellen schätzen ihren Umfang. Das ist ein bewusster
+  Tausch: wenig Handarbeit gegen eine Referenz, die an unauffälligen Stellen der eigenen Auswertung folgt.
 - **Neutrale Kennungen:** Personen ohne lesbare Nummer heißen nur innerhalb der Szene „Wir A“, „Gegner B“ usw.
   Es werden keine Namen erfasst.
 - **Linsendaten der Veo-Kamera:** Brennweite, Verzeichnung und Lage der beiden Linsen sind Eigenschaften der

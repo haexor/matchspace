@@ -36,3 +36,6 @@
   Linsenkalibrierung als eigenes Feature.
 - „Markierwerkzeug im Browser“ aus der Beschreibung steht in der Spec als „lokal laufendes Markierwerkzeug“; die
   Technik entscheidet der Plan.
+- Nach Rückmeldung (2026-11-23): Von Hand werden nur strittige oder unklare Stellen entschieden (Verdeckungen
+  u. a.), nicht jede Stichprobe. Dazu wenige zufällige Kontrollstellen, damit die Messung schätzen kann, wie viele
+  Fehler außerhalb der strittigen Stellen unentdeckt bleiben. Erneut geprüft: alle Punkte erfüllt.
