@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { OrbitControls } from './vendor/OrbitControls.js';
-import { loadAvatars } from './avatar.js?v=12';
+import { loadAvatars } from './avatar.js?v=13';
 
 const $ = (id) => document.getElementById(id);
 const query = new URLSearchParams(location.search);
@@ -474,7 +474,7 @@ const actors = ENTITIES.map((e, index) => {
     body = new THREE.Mesh(bodyGeo, new THREE.MeshStandardMaterial({ color, roughness: 0.8 }));
     body.position.y = 0.88;
     body.userData.entity = index;
-    label = numberSprite(e.label ?? String(e.number), color);
+    label = numberSprite(e.number == null ? '?' : e.label ?? String(e.number), color);   // ohne gelesene Rückennummer: ?
     label.visible = MARKS;
     group.add(label);
   }
@@ -646,7 +646,8 @@ $('speed').addEventListener('change', (e) => { speed = Number(e.target.value); }
 $('mode').addEventListener('change', (e) => setMode(e.target.value));
 for (const [i, e] of ENTITIES.entries()) {
   if (e.kind !== 'player') continue;
-  $('player').add(new Option(`${meta.teams[e.team].name} ${e.label ?? e.number}`, String(i)));   // ohne Rückennummer: Name der Spur
+  const name = e.number == null ? `? (${e.label})` : e.label ?? e.number;   // ohne gelesene Rückennummer: ? und Name der Spur
+  $('player').add(new Option(`${meta.teams[e.team].name} ${name}`, String(i)));
 }
 $('player').addEventListener('change', (e) => {
   select(Number(e.target.value));
