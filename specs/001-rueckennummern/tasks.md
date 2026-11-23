@@ -36,8 +36,8 @@ jede Story Testaufgaben.
 
 **Purpose**: Testgerüst und Aufräumen, bevor Code entsteht
 
-- [ ] T001 `__pycache__/` in `.gitignore` aufnehmen. Commit `chore: ignore python bytecode caches`.
-- [ ] T002 Ordner `tests/` mit `tests/__init__.py` (leer) und `tests/helpers.py` anlegen.
+- [X] T001 `__pycache__/` in `.gitignore` aufnehmen. Commit `chore: ignore python bytecode caches`.
+- [X] T002 Ordner `tests/` mit `tests/__init__.py` (leer) und `tests/helpers.py` anlegen.
   - `helpers.py` fügt `tools/` relativ zur eigenen Datei in `sys.path` ein, mit `Path(__file__).parent`,
     ohne absoluten Pfad.
   - Danach prüfen: `.venv/bin/python -m unittest discover -s tests` findet 0 Tests und endet mit Exit 0.
@@ -50,21 +50,21 @@ jede Story Testaufgaben.
 **Purpose**: Teile ohne Veo aus `veo_scene.py` lösen (Umbau ohne Verhaltensänderung), damit die Nummern dort
 einhängen können und `veo_scene.py` nicht weiter wächst
 
-- [ ] T003 Vergleichsstand sichern: Szene 705 ohne Veo laut README Schritt 5 mit `-` auswerten.
+- [X] T003 Vergleichsstand sichern: Szene 705 ohne Veo laut README Schritt 5 mit `-` auswerten.
   - Ziel ist ein Ordner unter `data/work/` außerhalb von `web/data`.
   - Davon `sha256sum` von `meta.json` und `tracks.bin` notieren, lokal und nicht eingecheckt.
-- [ ] T004 `tools/own_scene.py` anlegen und aus `tools/veo_scene.py` unverändert hineinverschieben:
+- [X] T004 `tools/own_scene.py` anlegen und aus `tools/veo_scene.py` unverändert hineinverschieben:
   - die Funktionen `own_ball`, `attach_ball`, `own_identities`;
   - die Konstanten `BALL_GAP`, `BALL_REACH`, `BALL_AT_FOOT`, `TEAM_OF_COLOUR`, `KEEPER_INSIDE`, `KEEPER_MIN`,
     `MIN_APPEARANCE`, `OWN_SAME`, `OWN_GAP`, `OWN_ID`.
 
   `veo_scene.py` importiert sie von dort. Die Docstrings von `veo_scene.py` und `own_scene.py` auf die neue
   Lage anpassen.
-- [ ] T005 [P] `tests/test_own_scene.py`:
+- [X] T005 [P] `tests/test_own_scene.py`:
   - `attach_ball` mit einer synthetischen Fuß- und Ballspur: Ball innerhalb `BALL_REACH` rückt auf
     `BALL_AT_FOOT` an die Fußspitze, weiter weg bleibt er unverändert.
   - `own_ball`: Lücke ≤ `BALL_GAP` wird gerade überbrückt, längere nicht.
-- [ ] T006 Szene 705 erneut wie in T003 auswerten. Die Prüfsummen von `meta.json` und `tracks.bin` müssen
+- [X] T006 Szene 705 erneut wie in T003 auswerten. Die Prüfsummen von `meta.json` und `tracks.bin` müssen
   gleich sein. Danach Commit `refactor(scene): move veo-free scene parts to own_scene`.
 
 **Checkpoint**: Szene ohne Veo unverändert, Tests grün; die Stories können beginnen.
@@ -80,20 +80,20 @@ beste Nummer und Sicherheit; Stichproben am Video stimmen. Spuren ohne lesbaren 
 
 ### Tests für User Story 1
 
-- [ ] T007 [P] [US1] `tests/test_jersey_synth.py`:
+- [X] T007 [P] [US1] `tests/test_jersey_synth.py`:
   - `make_sample(number, rng)` liefert `uint8[32, 40]`.
   - Gleicher Startwert ergibt gleiche Pixel.
   - Die Klasse 0 („keine Nummer“) ist möglich.
   - Fehlt eine Schrift, kommt eine eigene Ausnahme `FontNotFound` statt eines leeren Bildes. Dazu `fc-match`
     per `unittest.mock` ersetzen.
-- [ ] T008 [P] [US1] `tests/test_jersey_reader.py`, je ein Test für:
+- [X] T008 [P] [US1] `tests/test_jersey_reader.py`, je ein Test für:
   - `is_back_view(kp)`: wahr bei `lShoulder.x < rShoulder.x − 2`, Nasen-Sicherheit < 0,5 und Schultern sowie
     Hüften ≥ 0,3; falsch bei Vorderansicht, sicherer Nase oder unsicheren Hüften.
   - `back_quad(kp)`: liefert ein Viereck von der Schulterlinie bis 65 % zur Hüftlinie, Breite 1,15 ×
     Schulterbreite.
   - `back_height(kp)`: unter 24 px gibt es keinen Ausschnitt.
   - `reading_weight(height_px)`: 24 px → 0,3, ≥ 32 px → 1, dazwischen linear.
-- [ ] T009 [P] [US1] `tests/test_jersey_identity.py` (Abstimmung, Kader):
+- [X] T009 [P] [US1] `tests/test_jersey_identity.py` (Abstimmung, Kader):
   - **Klare Mehrheit**: Eine Spur mit vielen klaren Lesungen 15 bekommt 15.
   - **Ähnliche Ziffern**: Lesungen, die sich auf 6 und 9 verteilen, ergeben unbekannt (FR-003, Szenario 3).
   - **Abhängige Lesungen**: Nur Lesungen in einem einzigen 0,4-s-Fenster ergeben unbekannt (≥ 3 Fenster
@@ -104,7 +104,7 @@ beste Nummer und Sicherheit; Stichproben am Video stimmen. Spuren ohne lesbaren 
 
 ### Implementation für User Story 1
 
-- [ ] T010 [P] [US1] `tools/jersey_synth.py`: synthetische Rückenausschnitte nach [research.md](research.md)
+- [X] T010 [P] [US1] `tools/jersey_synth.py`: synthetische Rückenausschnitte nach [research.md](research.md)
   R2.
   - **Schriften**: `find_fonts()` sucht über `fc-match` fette serifenlose Schriften (DejaVu Sans Bold,
     Liberation Sans Bold, DejaVu Sans Condensed Bold) und wirft `FontNotFound`, wenn keine da ist.
@@ -119,7 +119,7 @@ beste Nummer und Sicherheit; Stichproben am Video stimmen. Spuren ohne lesbaren 
   - **Ausgabe**: Graustufe 32×40 mit normiertem Kontrast.
   - **Batch**: `batch(n, rng) -> (x, y)` zum Trainieren.
   - Unter 400 Zeilen.
-- [ ] T011 [US1] `tools/jersey_reader.py`, Teil Netz und Training (CLI siehe [contracts/cli.md](contracts/cli.md)):
+- [X] T011 [US1] `tools/jersey_reader.py`, Teil Netz und Training (CLI siehe [contracts/cli.md](contracts/cli.md)):
   - **Netz**: kleines CNN mit 100 Ausgängen (0 = keine, n = Nummer n), Eingabe 1×32×40, rund 0,2–0,5 Mio.
     Gewichte.
   - **Training**: `train` mit festem `--seed`, Batches aus `jersey_synth.batch`.
@@ -128,7 +128,7 @@ beste Nummer und Sicherheit; Stichproben am Video stimmen. Spuren ohne lesbaren 
   - **Ergebnis**: Ausgabe der Trefferquote auf einem zurückgehaltenen synthetischen Satz. Speichern nach
     `models/jersey-digits.pt` (Standard, relativ zum Repo).
   - GPU, wenn vorhanden, sonst CPU.
-- [ ] T012 [US1] `tools/jersey_reader.py`, Teil Ausschnitte:
+- [X] T012 [US1] `tools/jersey_reader.py`, Teil Ausschnitte:
   - **Funktionen**: `is_back_view`, `back_quad`, `back_height`, `reading_weight` wie in T008.
   - **Ausschnitt**: `crop_back(frame, quad) -> uint8[32, 40]` mit perspektivischer Entzerrung, Graustufe und
     normiertem Kontrast.
@@ -136,7 +136,7 @@ beste Nummer und Sicherheit; Stichproben am Video stimmen. Spuren ohne lesbaren 
     `row[8]` der Spurzeile (`track_players.detections`, Spalte 8). Linse ist Spalte 3.
   - **Bildzugriff**: wie in `track_players.track_hues` bzw. `tools/veo_looks.py`. Das Video wird einmal
     geöffnet, jedes zweite Bild gelesen.
-- [ ] T013 [US1] `tools/jersey_reader.py`, Teil Lesen:
+- [X] T013 [US1] `tools/jersey_reader.py`, Teil Lesen:
   - **Funktion**: `read_tracks(video, det, keypoints, tracks, model_path) -> list[Reading]`. `Reading` ist
     eine `dataclass` mit den Feldern `track: str`, `frame: int`, `probs: float[100]` („Summe 1“) und
     `weight: float` („0,3 bis 1“).
@@ -149,7 +149,7 @@ beste Nummer und Sicherheit; Stichproben am Video stimmen. Spuren ohne lesbaren 
     - gibt je Spur beste Nummer und Sicherheit aus;
     - `--crops ORDNER` schreibt Prüfausschnitte nur, wenn der Ordner unter `data/work/` liegt, sonst Abbruch
       mit Meldung (FR-009).
-- [ ] T014 [US1] `tools/jersey_identity.py`, Abstimmung (reine Logik, ohne Datei- oder Videozugriff):
+- [X] T014 [US1] `tools/jersey_identity.py`, Abstimmung (reine Logik, ohne Datei- oder Videozugriff):
   - **Datentyp**: `TrackNumber` als `dataclass` mit `track`, `ranked: list[tuple[int, float]]`, `windows`
     und `span_s`.
   - **Funktion**: `vote(readings, fps, squad=None) -> dict[str, TrackNumber]`.
@@ -158,12 +158,12 @@ beste Nummer und Sicherheit; Stichproben am Video stimmen. Spuren ohne lesbaren 
     entfernt, dann normiert.
   - **Gestützt**: Sicherheit ≥ 0,9, `windows` ≥ 3 und `span_s` ≥ 1. Die Schwellen sind Modulkonstanten mit
     Kommentar.
-- [ ] T015 [US1] `tools/jersey_identity.py`: `load_squad(path) -> dict[str, frozenset[int]]` nach
+- [X] T015 [US1] `tools/jersey_identity.py`: `load_squad(path) -> dict[str, frozenset[int]]` nach
   [contracts/squad-list.md](contracts/squad-list.md).
   - **Erlaubt**: Schlüssel nur `own` und `opponent`; Werte ganze Zahlen 1–99 ohne Doppelte.
   - **Fehler**: Bei Verstoß kommt eine eigene Ausnahme `SquadError` mit Meldung.
   - **Fehlender Schlüssel oder leere Liste**: alle Nummern erlaubt.
-- [ ] T016 [US1] Einbindung in `tools/own_scene.py`:
+- [X] T016 [US1] Einbindung in `tools/own_scene.py`:
   - **Ablauf**: Nach dem Filtern der Spuren in `own_identities` werden `jersey_reader.read_tracks` und
     `jersey_identity.vote` aufgerufen.
   - **Schlüssel**: Spuren mit gestützter Nummer bekommen `(Mannschaft, Nummer)`, sonst wie bisher
@@ -172,12 +172,12 @@ beste Nummer und Sicherheit; Stichproben am Video stimmen. Spuren ohne lesbaren 
     sicherere bekommt die Nummer), bis US2 die Vergabe übernimmt.
   - **Ohne Modell**: Fehlt `models/jersey-digits.pt`, gibt es einen Hinweis, und alle Spuren sind unbekannt
     wie heute.
-- [ ] T017 [US1] `tools/veo_scene.py`:
+- [X] T017 [US1] `tools/veo_scene.py`:
   - **Option**: `--kader KADER.json` annehmen. Sie wird vor der Auswertung mit `load_squad` geprüft und bei
     `SquadError` mit Exit ≠ 0 abgebrochen. Weitergereicht wird sie an `own_identities`.
   - **Uhr**: Die Zeit für das Lesen wird über die vorhandene `clock()` gesondert ausgegeben (SC-005).
   - **Cache-Stempel**: `CACHE_VERSION` erhöhen.
-- [ ] T018 [US1] Modell trainieren: `.venv/bin/python tools/jersey_reader.py train --negatives …705… …722…`.
+- [X] T018 [US1] Modell trainieren: `.venv/bin/python tools/jersey_reader.py train --negatives …705… …722…`.
   - Synthetische Trefferquote ≥ 95 %.
   - Dann `read` für beide Szenen laufen lassen und 10 Spuren am Video stichprobenartig prüfen, mit
     `--crops` unter `data/work/`.
@@ -198,7 +198,7 @@ zerfallen. Kein Bild hat eine doppelte Nummer je Mannschaft.
 
 ### Tests für User Story 2
 
-- [ ] T019 [P] [US2] `tests/test_jersey_identity.py` erweitern (Vergabe, Zusammenführen):
+- [X] T019 [P] [US2] `tests/test_jersey_identity.py` erweitern (Vergabe, Zusammenführen):
   - **Überlappung**: Zwei zeitlich überlappende Spuren mit derselben besten Nummer → die sicherere behält
     sie. Die andere bekommt ihre zweitbeste nur, wenn auch die gestützt ist, sonst unbekannt (FR-004,
     Szenario 2).
@@ -212,23 +212,23 @@ zerfallen. Kein Bild hat eine doppelte Nummer je Mannschaft.
 
 ### Implementation für User Story 2
 
-- [ ] T020 [US2] `tools/jersey_identity.py`: `Player` als `dataclass` mit `id`, `team`, `tracks`,
+- [X] T020 [US2] `tools/jersey_identity.py`: `Player` als `dataclass` mit `id`, `team`, `tracks`,
   `number: int | None` und `confidence`, dazu `assign(track_numbers, spans, positions) -> list[Player]`.
   - **Vergabe**: je Mannschaft gierig nach Sicherheit absteigend. Konflikt heißt zeitliche Überlappung mit
     einer Spur, die die Nummer schon trägt; dann die zweitbeste, falls gestützt, sonst `None`.
   - **Kommentar**: `ponytail:` mit Ceiling: gierig statt optimaler Zuordnung, Upgrade wäre ganzzahlige
     Optimierung.
-- [ ] T021 [US2] `tools/jersey_identity.py`: `merge_by_number(players, positions, fps) -> list[Player]`.
+- [X] T021 [US2] `tools/jersey_identity.py`: `merge_by_number(players, positions, fps) -> list[Player]`.
   - **Wann**: gleiche Mannschaft und Nummer, keine Überlappung, Abstand vom Ende zum Anfang ÷ Lücke ≤ 8 m/s
     (Konstante `MERGE_SPEED`).
   - **Ergebnis**: `id` ist die der ersten Spur. `stitch` in `track_players.py` bleibt unverändert.
-- [ ] T022 [US2] `tools/own_scene.py`: `assign` und `merge_by_number` statt der vorläufigen Regel aus T016
+- [X] T022 [US2] `tools/own_scene.py`: `assign` und `merge_by_number` statt der vorläufigen Regel aus T016
   verwenden.
   - **Rückgabe**: Ein Spieler mit mehreren Stücken liefert seine Bilder zusammengeführt unter einem Schlüssel
     `(Mannschaft, Nummer)`.
   - **Lücken**: Überbrückt werden sie weiter nur bis `OWN_GAP`. Die vorhandene Entfernung doppelter Spuren
     (`OWN_SAME`) bleibt vor der Vergabe.
-- [ ] T023 [US2] Szene 705 und 722 auswerten.
+- [X] T023 [US2] Szene 705 und 722 auswerten.
   - Prüfen, dass sich keine Nummer je Mannschaft in einem Bild doppelt.
   - Identitäten je Spieler grob gegen den Stand vor US2 vergleichen (Anzahl der Entitäten).
   - Commit `feat(numbers): keep one identity per jersey number`.
@@ -246,7 +246,7 @@ Stellen, ein unbekannter erscheint als `Wir ? (S4)` ohne Nummer auf dem Trikot.
 
 ### Tests für User Story 3
 
-- [ ] T024 [P] [US3] `tests/test_own_scene.py` erweitern: Die Funktion, die eine Entität baut (aus T025),
+- [X] T024 [P] [US3] `tests/test_own_scene.py` erweitern: Die Funktion, die eine Entität baut (aus T025),
   liefert:
   - **Nummer bekannt**: `{"id": "own-15", "kind": "player", "team": "own", "number": 15}` ohne `label`.
   - **Nummer unbekannt**: `{"id": "own-1004", …, "label": "S4"}` ohne `number`; Torwart `label: "TW"`.
@@ -255,18 +255,18 @@ Stellen, ein unbekannter erscheint als `Wir ? (S4)` ohne Nummer auf dem Trikot.
 
 ### Implementation für User Story 3
 
-- [ ] T025 [US3] `tools/own_scene.py`: `player_entity(key, keeper, name_index) -> dict` nach
+- [X] T025 [US3] `tools/own_scene.py`: `player_entity(key, keeper, name_index) -> dict` nach
   [contracts/viewer-entities.md](contracts/viewer-entities.md). In `tools/veo_scene.py` (Stelle mit
   `"label": "TW" if key in keepers else f"S{…}"`) diese Funktion verwenden. Prüfen, dass der Rückweg
   `key = (e["team"], int(e["id"].rsplit("-", 1)[1]))` für beide ID-Arten stimmt.
-- [ ] T026 [US3] `web/main.js`:
+- [X] T026 [US3] `web/main.js`:
   - **Auswahl**: Spieler ohne `number` zeigen `${team} ? (${label})`, mit Nummer `${team} ${number}`.
   - **Schild**: `numberSprite` bekommt bei fehlender Nummer `?`.
   - **Trikot**: bleibt wie bisher, `create(kit, e.label ? null : e.number, …)`; ohne Nummer also keine Zahl
     auf dem Rücken.
   - **Cache-Version**: In `web/index.html` und den Importen von `?v=12` auf `?v=13` erhöhen.
   - Nur diese wenigen Zeilen, kein Umbau von `main.js`.
-- [ ] T027 [US3] Szene 705 und 722 neu auswerten, dann `tools/veo_looks.py` erneut laufen lassen, damit die
+- [X] T027 [US3] Szene 705 und 722 neu auswerten, dann `tools/veo_looks.py` erneut laufen lassen, damit die
   IDs passen.
   - Im Viewer prüfen: einen Spieler mit Nummer, einen ohne, und einem Spieler über die Szene folgen.
   - Ein Bildschirmfoto nur in den Scratchpad, nicht ins Repo.
@@ -286,7 +286,7 @@ und nachher dieselbe Prüfsumme.
 
 ### Tests für User Story 4
 
-- [ ] T028 [P] [US4] `tests/test_jersey_eval.py` mit kleinen künstlichen Spuren und Referenzen:
+- [X] T028 [P] [US4] `tests/test_jersey_eval.py` mit kleinen künstlichen Spuren und Referenzen:
   - Zählung von `correct`, `wrong`, `unknown` je Mannschaft.
   - `visible` zählt nur Referenzspieler mit gut sichtbarem Rücken.
   - `identitiesPerPlayer` zählt eigene Spieler ab 1 s Zuordnung.
@@ -295,13 +295,13 @@ und nachher dieselbe Prüfsumme.
 
 ### Implementation für User Story 4
 
-- [ ] T029 [US4] `tools/track_players.py`: Die Zuordnung aus `compare_veo` wird zu
+- [X] T029 [US4] `tools/track_players.py`: Die Zuordnung aus `compare_veo` wird zu
   `match_reference(positions_by_track, truth) -> dict[str, list[tuple[key, int]]]` (Spur → Referenz je
   Bild).
   - Sie gibt zurück statt zu drucken. `compare_veo` nutzt sie und druckt wie bisher; die Ausgabe bleibt
     gleich.
   - Testfall in `tests/test_jersey_eval.py` oder einer eigenen `tests/test_track_players.py`.
-- [ ] T030 [US4] `tools/jersey_eval.py` nach [contracts/cli.md](contracts/cli.md) und
+- [X] T030 [US4] `tools/jersey_eval.py` nach [contracts/cli.md](contracts/cli.md) und
   [contracts/eval-report.md](contracts/eval-report.md).
   - **Eingaben**: `meta.json` und `tracks.bin` der fertigen Szene, den Zwischenspeicher `{det}.numbers.npz`
     für die Rückenhöhen und Veo über `veo_tracks` (nur hier importiert).
@@ -309,7 +309,7 @@ und nachher dieselbe Prüfsumme.
   - **Ausgabe**: Konsole, optional `--bericht` nur unter `data/work/`. Es wird nie in den Szenenordner
     geschrieben.
   - **Lesezeit**: `readSeconds` aus einer Log-Zeile von `veo_scene` oder als Angabe `--lesezeit`.
-- [ ] T031 [US4] Messen für Szene 705 und 722. Die Prüfsumme von `meta.json` muss vor und nach der Messung
+- [X] T031 [US4] Messen für Szene 705 und 722. Die Prüfsumme von `meta.json` muss vor und nach der Messung
   gleich sein (FR-008). Commit `feat(numbers): measure jersey number accuracy against a reference`.
 
 **Checkpoint**: Alle Stories umgesetzt und messbar.
@@ -320,12 +320,12 @@ und nachher dieselbe Prüfsumme.
 
 **Purpose**: Ziele erreichen, dokumentieren, Verfassung einhalten
 
-- [ ] T032 Schwellen aus [research.md](research.md) R4 nur an Szene 705 einstellen und an Szene 722 prüfen.
+- [X] T032 Schwellen aus [research.md](research.md) R4 nur an Szene 705 einstellen und an Szene 722 prüfen.
   - Ziele: SC-001 ≥ 80 % richtig, SC-002 ≤ 5 % falsch, SC-003 ≤ 1,3 Identitäten, SC-004 0 doppelte Bilder,
     SC-005 ≤ 5 min mehr.
   - Bei Lücken die Rückfallebenen aus R9 in Reihenfolge nehmen; jede Stufe mit Messwerten im Commit-Text.
   - Verfehlte Ziele offen nennen.
-- [ ] T033 [P] `docs/adr/0001-rueckennummern-ohne-fremddaten.md` schreiben, mit Kontext, Entscheidung,
+- [X] T033 [P] `docs/adr/0001-rueckennummern-ohne-fremddaten.md` schreiben, mit Kontext, Entscheidung,
   Folgen und verworfenen Alternativen:
   - eigener Erkenner, nur synthetisch und mit Bildern aus den eigenen Videos trainiert;
   - Veo nur als Referenz in getrenntem Werkzeug;
@@ -333,20 +333,20 @@ und nachher dieselbe Prüfsumme.
   - keine Namen.
 
   Commit `docs(adr): record jersey numbers without third-party data`.
-- [ ] T034 [P] `README.md` ergänzen:
+- [X] T034 [P] `README.md` ergänzen:
   - Schritte Training, Lesen, `--kader` und Messen mit `$W`-Variablen wie die vorhandenen Beispiele;
   - Messergebnisse beider Szenen;
   - Grenzen (kleine Rücken, Vorderansichten, Abhängigkeit von unreinen Spuren);
   - Hinweis, dass Modell und Lesungen lokal bleiben.
 
   Den Satz „Spieler ohne Rückennummer“ in Aufrufzeile und Docstring von `tools/veo_scene.py` anpassen.
-- [ ] T035 Prüfen, ob eingecheckte Dateien Bilder enthalten: `git diff --stat main...` und `git ls-files`
+- [X] T035 Prüfen, ob eingecheckte Dateien Bilder enthalten: `git diff --stat main...` und `git ls-files`
   dürfen keine neuen Bilddateien zeigen. Außerdem auf absolute Pfade prüfen:
   `git grep -nE "/home/|~/" -- . ':!specs'` darf nichts finden.
-- [ ] T036 Zeilenzahlen prüfen (`wc -l tools/*.py web/*.js`): Neue Module bleiben unter 400 Zeilen,
+- [X] T036 Zeilenzahlen prüfen (`wc -l tools/*.py web/*.js`): Neue Module bleiben unter 400 Zeilen,
   `veo_scene.py` ist kleiner als vorher. Weicht etwas ab, Complexity Tracking in [plan.md](plan.md)
   nachführen.
-- [ ] T037 [quickstart.md](quickstart.md) vollständig durchgehen (Schritte 0–6). Alle Unit-Tests müssen
+- [X] T037 [quickstart.md](quickstart.md) vollständig durchgehen (Schritte 0–6). Alle Unit-Tests müssen
   grün sein. Ergebnisse für den späteren PR-Text sammeln.
 
 ---
@@ -418,3 +418,22 @@ Story ein Commit; der PR geht nach main, sobald ein Remote existiert.
 - Prüfausschnitte und Berichte nur unter `data/work/`. Bildschirmfotos nur im Scratchpad.
 - Veo-Code (`veo_tracks`) wird ausschließlich in `tools/jersey_eval.py` und dem vorhandenen
   `track_players.compare_veo` importiert.
+
+## Umsetzungsstand (2026-11-23)
+
+Alle Aufgaben sind bearbeitet.
+
+**Abweichungen vom Text oben** (nachgetragen in research.md, data-model.md und contracts/):
+- **Rücken-Erkennung (T008, T012)**: nur über die Schulterlage, ohne Nase.
+- **Ausschnitt**: hochkant 40×32 statt 32×40.
+- **Mindestgröße**: 18 statt 24 px; volles Gewicht ab 28 statt 32 px.
+- **Zwischenspeicher (T013)**: Lesungen je Erkennung statt je Spur.
+- **Synthetische Trefferquote (T018)**: 92,7 % statt ≥ 95 %. Der Prüfsatz enthält absichtlich unlesbare
+  Beispiele; maßgeblich ist die Messung an den echten Szenen.
+- **Ziele (T032)**:
+  - erreicht: SC-002, SC-004, SC-005, SC-006;
+  - verfehlt: SC-001 (67 % statt 80 %) und SC-003 (2,2 statt 1,3), Gründe und nächste Schritte in research.md.
+- **Zusätzlich**:
+  - Selbsttraining an sicheren eigenen Lesungen (R9 Stufe 1, `train --pseudo`);
+  - Anschluss schwächerer Stücke an sicher erkannte Spieler;
+  - Stempel des `.virtual_own.npz`-Zwischenspeichers über die Spielernamen.

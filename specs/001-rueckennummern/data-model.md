@@ -23,8 +23,8 @@ Eine Spur kommt aus `tools/track_players.py` und wird in `own_identities` gefilt
 |------|-----|-------|
 | `track` | str | Spur-ID |
 | `frame` | int | Bild der Szene |
-| `height_px` | float | Abstand Schulter- zu Hüftmitte; ≥ 24 px, sonst kein Ausschnitt |
-| `pixels` | uint8[32, 40] | entzerrter Graustufenausschnitt |
+| `height_px` | float | Abstand Schulter- zu Hüftmitte; ≥ 18 px, sonst kein Ausschnitt |
+| `pixels` | uint8[40, 32] | entzerrter Graustufenausschnitt (Höhe × Breite) |
 
 Ausschnitte werden nie gespeichert. Ausnahme ist ein ausdrücklicher Prüfschalter: Dann gehen sie nach
 `data/work/…/crops_numbers/`, also nicht eingecheckt und nicht in `web/data` (FR-009, SC-006).
@@ -38,7 +38,9 @@ Ausschnitte werden nie gespeichert. Ausnahme ist ein ausdrücklicher Prüfschalt
 | `probs` | float[100] | Index 0 = keine Nummer, Index n = Nummer n; Summe 1 |
 | `weight` | float | 0,3 bis 1, aus `height_px` (R4) |
 
-Gespeichert als `{det}.numbers.npz` (siehe [contracts/numbers-cache.md](contracts/numbers-cache.md)).
+Gespeichert werden die Lesungen je Erkennung (Bild, Linse, Box) in `{det}.numbers.npz` (siehe
+[contracts/numbers-cache.md](contracts/numbers-cache.md)); erst beim Abstimmen werden sie den Spuren zugeordnet.
+So hängt der Zwischenspeicher nicht von der Spurbildung ab.
 
 ## Spurnummer (`TrackNumber`, Zwischenergebnis der Abstimmung)
 
@@ -46,13 +48,15 @@ Gespeichert als `{det}.numbers.npz` (siehe [contracts/numbers-cache.md](contract
 |------|-----|-------|
 | `track` | str | Spur-ID |
 | `ranked` | list[(int, float)] | Nummern mit normierter Sicherheit, absteigend, nach Kaderfilter |
-| `windows` | int | Zeitfenster (0,4 s) mit zählender Lesung |
+| `windows` | int | Zeitfenster (0,4 s), deren beste Lesung die beste Nummer ist |
+| `agreement` | float | Anteil dieser Fenster an allen zählenden Fenstern |
 | `span_s` | float | Abstand des ersten zum letzten zählenden Fenster |
 
-Eine Nummer gilt als **gestützt**, wenn alle drei Bedingungen gelten:
+Eine Nummer gilt als **gestützt**, wenn alle vier Bedingungen gelten:
 - Sicherheit ≥ 0,9;
 - `windows` ≥ 3;
-- `span_s` ≥ 1.
+- `span_s` ≥ 1;
+- `agreement` ≥ 0,6.
 
 ## Spieler (`Player`)
 

@@ -7,7 +7,7 @@ Szenen 705 und 722 (lokal, nicht eingecheckt) und der vorhandene Code.
 
 ## R1 Erkenner: eigenes kleines Netz statt fertiger Texterkennung
 
-- **Decision**: Ein kleines Faltungsnetz (rund 0,2–0,5 Mio. Gewichte) klassifiziert einen entzerrten
+- **Decision**: Ein kleines Faltungsnetz (rund 0,6 Mio. Gewichte) klassifiziert einen entzerrten
   Rückenausschnitt in 100 Klassen: die Nummern 1–99 und „keine Nummer lesbar“. Es läuft mit Torch auf der
   vorhandenen GPU (RTX A2000), notfalls auf der CPU.
 - **Rationale**: Die Ziffern sind im Veo-Video nur rund 12–20 Pixel hoch. Fertige Texterkennung ist auf
@@ -26,14 +26,16 @@ Szenen 705 und 722 (lokal, nicht eingecheckt) und der vorhandene Code.
 
 - **Decision**: Trainiert wird auf künstlich erzeugten Rückenausschnitten. Nummern werden in fetten
   serifenlosen Schriften gezeichnet, die das System schon mitbringt (DejaVu Sans Bold, Liberation Sans Bold,
-  Condensed-Varianten; gefunden zur Laufzeit über `fc-match`, kein Pfad im Code). Dazu kommen:
+  Noto Sans Bold, Condensed-Varianten von DejaVu und Open Sans; gefunden zur Laufzeit über `fc-match`, kein
+  Pfad im Code). Die Ziffern werden einzeln gesetzt, oft schmal und hoch (Breite 0,45–1,1), wie auf
+  Trikots. Dazu kommen:
   - zufällige Trikot- und Nummernfarben mit Mindestkontrast, auch dunkle Nummern auf hellem Stoff (FR-010);
   - Stofffalten als Helligkeitswellen, Schräglage und Perspektive (±25°), Drehung, Lage und Größe auf dem
     Rücken;
-  - Verkleinern auf 10–26 Pixel Ziffernhöhe und wieder Vergrößern, Bewegungsunschärfe, Rauschen und
-    JPEG-Kompression (Qualität 25–80) wie im Videostrom;
-  - Verdeckung durch Arm- oder Körperstreifen, abgeschnittene Ziffern (aus 66 wird nur noch eine 6 sichtbar,
-    Ziel: „keine Nummer“ oder geringe Sicherheit);
+  - Verkleinern auf 20–44 Pixel Ausschnitthöhe (so groß sind echte gelesene Rücken), wieder Vergrößern,
+    Bewegungsunschärfe, Rauschen und JPEG-Kompression (Qualität 25–80) wie im Videostrom;
+  - Verdeckung durch Arm- oder Körperstreifen und abgeschnittene Ziffern. Ist weniger als 80 % der Nummer zu
+    sehen (aus 66 wird nur noch eine 6), heißt das Beispiel „keine Nummer“: Das Netz soll nicht raten;
   - Beispiele für „keine Nummer“: leere Trikotflächen, Vorderseiten und Rasenränder. Sie kommen auch aus den
     eigenen Videos: Ausschnitte von Spielern, die der Kamera zugewandt sind. Das erkennen die Gelenkpunkte,
     Veo wird dafür nicht gebraucht.
@@ -53,15 +55,20 @@ Szenen 705 und 722 (lokal, nicht eingecheckt) und der vorhandene Code.
 
 - **Decision**: Die Ausschnitte kommen aus den Gelenkpunkten, die es je Erkennung schon gibt
   (`{det}.keypoints.npz`, ViTPose, COCO-17).
-  - **Rücken zur Kamera**, wenn alle drei Bedingungen gelten:
+  - **Rücken zur Kamera**, wenn beide Bedingungen gelten:
     - die linke Schulter liegt im Bild links der rechten (`lShoulder.x < rShoulder.x − 2 px`);
-    - die Nase ist unsicher (Sicherheit < 0,5);
     - Schultern und Hüften sind sicher (≥ 0,3).
-  - **Ausschnitt**: das Viereck von der Schulterlinie bis 65 % zur Hüftlinie, 1,15-fache Schulterbreite. Es
-    wird perspektivisch auf 32×40 Pixel (Höhe × Breite) entzerrt, als Graustufe, und der Kontrast je Ausschnitt
-    normiert.
-  - **Mindestgröße**: Schulter–Hüfte ≥ 24 Pixel. Darunter wird nicht gelesen; zwischen 24 und 28 Pixel zählt
-    die Lesung weniger (R4).
+
+    Die zunächst geplante Bedingung „Nase unsicher“ entfällt: ViTPose meldet die Nase auch von hinten mit
+    hoher Sicherheit (Median 0,78). Die Schulterlage allein trennt sicher, wie Ausschnittbögen beider Szenen
+    zeigen: Rücken mit Nummer auf der einen, Vorderseiten ohne auf der anderen Seite.
+  - **Ausschnitt**: entlang der Rumpfachse von 15 % der Rumpfhöhe über der Schulterlinie bis 5 % unter der
+    Hüftlinie. Die halbe Breite ist der größere Wert aus 0,7 × Schulterabstand und 0,45 × Rumpfhöhe. Die
+    Nummer sitzt im unteren Teil des Rückens, deshalb reicht der Ausschnitt bis zur Hüfte. Er wird hochkant
+    auf 40×32 Pixel (Höhe × Breite) entzerrt, als Graustufe, und der Kontrast je Ausschnitt normiert.
+  - **Mindestgröße**: Schulter–Hüfte ≥ 18 Pixel. Darunter wird nicht gelesen; zwischen 18 und 28 Pixel zählt
+    die Lesung weniger (R4). Gemessen an den Gelenkpunkten liegt die Rumpfhöhe der Rücken meist bei 10–23
+    Pixeln. Ab 18 Pixeln gibt es je Szene rund 3500–4000 Rücken, ab 24 Pixeln nur noch rund 1300–1700.
   - **Bilder**: Jedes zweite Bild der Szene wird gelesen. Das Video wird dabei nur einmal geöffnet.
     Linsengeometrie und Bildzugriff kommen aus `tools/veo_looks.py` und `track_players.track_hues`.
 - **Rationale**: Im Vorversuch waren Nummern ab etwa 28 Pixel Rückenhöhe mit dem Auge lesbar. Die
@@ -79,12 +86,15 @@ Szenen 705 und 722 (lokal, nicht eingecheckt) und der vorhandene Code.
   - **Abhängige Lesungen**: Nachbarbilder sind kaum unabhängig. Deshalb zählt je Zeitfenster von 0,4 s nur
     die beste Lesung.
   - **Spurwert je Nummer**: k = Σ w · log(p_k + 0,01). Das Gewicht w steigt mit der Rückenhöhe
-    (24 px → 0,3; ≥ 32 px → 1).
+    (18 px → 0,3; ≥ 28 px → 1).
   - **Kader**: Ist er angegeben, entfallen Nummern außerhalb des Kaders vor dem Normieren (FR-012).
-  - **Vergabe**: Eine Nummer wird nur vergeben, wenn alle drei Bedingungen gelten:
+  - **Vergabe**: Eine Nummer wird nur vergeben, wenn alle vier Bedingungen gelten:
     - die normierte Sicherheit der besten Nummer ist ≥ 0,9;
-    - sie stützt sich auf mindestens 3 Fenster;
-    - mindestens 2 davon liegen ≥ 1 s auseinander.
+    - in mindestens 3 Fenstern ist sie die beste Lesung;
+    - zwischen dem ersten und letzten dieser Fenster liegt ≥ 1 s;
+    - sie ist in mindestens 60 % der zählenden Fenster die beste Lesung (Einigkeit). Die Summe der
+      Logarithmen allein wird bei vielen Lesungen sehr sicher, auch wenn jede dritte Lesung etwas anderes
+      sagt (66 gegen 6, 15 gegen 5).
 
     Sonst bleibt die Nummer unbekannt (FR-003, SC-002).
   - **Einstellen und Prüfen**: Die Schwellen werden an Szene 705 eingestellt und an Szene 722 geprüft, damit
@@ -188,3 +198,44 @@ Reihenfolge, nur bei gemessener Lücke:
 4. **SC-005 verfehlt**: nur jedes dritte Bild lesen, Ausschnitte stapelweise auf der GPU.
 
 Die Ergebnisse jedes Schritts kommen in den Bericht der Messung.
+
+## Stand nach der Umsetzung (2026-11-23)
+
+Gemessen mit `tools/jersey_eval.py` gegen Veo, nur als Referenz.
+
+**Vorgehen:**
+- **Training**: zuerst nur künstlich. Mit drei Anpassungen an die echten Rücken stieg die Zahl richtiger
+  Nummern deutlich, und es blieben keine falschen:
+  - schmale Ziffern;
+  - Trikot-1 mit Anstrich;
+  - Ausschnitte so groß wie im Video.
+- **Nachtrainieren (R9 Stufe 1)**: an den eigenen sicheren Lesungen aus Szene 705. Szene 722 blieb dabei
+  ungesehen.
+- **Schwellen (an 705 eingestellt)**:
+  - Einigkeit 70 %;
+  - mindestens 5 Fenster.
+- **Überlappung und Erreichbarkeit**:
+  - Zwei Stücke gelten erst als gleichzeitig, wenn sie länger als 0,5 s zusammen zu sehen sind (Übergabe im
+    Tracking).
+  - Erreichbarkeit wird an jedem Wechsel geprüft (8 m/s plus 1,5 m Messrauschen).
+  - Schwächere Stücke schließen sich einem schon sicher erkannten Spieler an.
+
+**Ergebnis (je Szene):**
+
+| Ziel | 705 | 722 |
+|---|---|---|
+| SC-001 richtig bei gut sichtbarem Rücken | 4/6 (67 %) | 4/6 (67 %) |
+| SC-002 falsche Nummern | 0 | 0 |
+| SC-003 Identitäten je Spieler | 2,24 | 2,17 |
+| SC-004 Bilder mit doppelter Nummer | 0 | 0 |
+| SC-005 Zeit fürs Lesen | 5 s | 6 s |
+
+**Verfehlt:**
+- **SC-001**: Die gegnerische 15 und 11 schwanken zwischen ähnlichen Lesarten (75, 71, 37) und bleiben unbekannt.
+- **SC-003**: Die meisten Spurstücke zeigen nie lesbar den Rücken; Nummern allein können sie nicht
+  verbinden.
+
+**Nächste Schritte:**
+- R9 Stufe 1 mit beiden Szenen und einer weiteren Runde;
+- R9 Stufe 2 (einige Rücken von Hand beschriften);
+- für SC-003 Stufe 3 (Zusammenführen über Aussehen und Weg) als eigenes Feature.

@@ -11,7 +11,8 @@ Alle Aufrufe aus dem Wurzelverzeichnis des Repos, Python aus `.venv`. Pfade in d
 - Erzeugt synthetische Ausschnitte (tools/jersey_synth.py) und trainiert das Netz.
 - `--negatives`: optionale Szenen, aus denen Ausschnitte von Spielern, die der Kamera zugewandt sind, als
   „keine Nummer“ dienen. Sie werden nur im Speicher gehalten.
-- Gibt am Ende die Trefferquote auf einem zurückgehaltenen synthetischen Satz aus.
+- Gibt am Ende die Trefferquote auf einem zurückgehaltenen synthetischen Satz aus. Darin sind absichtlich
+  viele kaum lesbare Beispiele; die Zahl dient dem Vergleich zwischen Trainingsläufen, nicht als Ziel.
 - Exit 0 bei Erfolg; Exit ≠ 0 mit Meldung, wenn keine passende Schrift gefunden wird (`fc-match`).
 
 ## Nummern einer Szene lesen (Prüfung einzeln)
@@ -39,7 +40,7 @@ Alle Aufrufe aus dem Wurzelverzeichnis des Repos, Python aus `.venv`. Pfade in d
 ## Messen gegen eine Referenz (nur zum Prüfen)
 
 ```text
-.venv/bin/python tools/jersey_eval.py AUSGABE_SPIEL DETEKTIONEN.json VEO_ORDNER VEO_ALIGN.json START_S [--bericht BERICHT.json]
+.venv/bin/python tools/jersey_eval.py AUSGABE_SPIEL DETEKTIONEN.json KAMERA.json VEO_ORDNER VEO_ALIGN.json START_S [--bericht BERICHT.json] [--lesezeit S]
 ```
 
 - Liest die fertige Szene und Veo-Daten; schreibt nie in `AUSGABE_SPIEL`.

@@ -16,7 +16,7 @@ Konsole und optional JSON unter `data/work/`. Nur Zahlen und IDs, keine Bilder, 
 }
 ```
 
-- `visible`: Referenzspieler mit mindestens einem gut sichtbaren Rücken (≥ 28 px, Rücken zur Kamera).
+- `visible`: Referenzspieler mit mindestens einem gut sichtbaren Rücken (Schulter bis Hüfte ≥ 28 px, Rücken zur Kamera).
 - `correct`: Der eigene Spieler mit der meisten gemeinsamen Zeit trägt die Referenznummer.
 - `wrong`: trägt eine andere Nummer.
 - `unknown`: trägt keine Nummer.

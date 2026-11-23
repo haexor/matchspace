@@ -69,7 +69,7 @@ unausgefüllte Vorlage und gilt nicht.
 | Conventional Commits (MUST) | ✅ | `docs(specs): …`, geplant `refactor:`, `feat:`, `test:`, `chore:` |
 | Keine Agenten-Selbstreferenz (MUST) | ✅ | keine Trailer, keine Hinweise in Code oder Doku |
 | Tests in eigenen Dateien, Tests mit Verhaltensänderung (MUST) | ✅ | `tests/test_jersey_*.py`, `tests/test_own_scene.py`; `unittest` |
-| Dateien über 500 Zeilen aufteilen oder begründen und planen (MUST) | ⚠️ begründet | neue Module je < 400 Zeilen; Bestand siehe Complexity Tracking |
+| Dateien über 500 Zeilen aufteilen oder begründen und planen (MUST) | ⚠️ begründet | neue Module je < 500 Zeilen (größtes: `jersey_reader.py` mit 435); `veo_scene.py` von 999 auf 900; Bestand siehe Complexity Tracking |
 | Umbau getrennt von Verhaltensänderung (SHOULD) | ✅ | Auslagern aus `veo_scene.py` als eigener `refactor:`-Commit vor dem Feature |
 | ADR für grundsätzliche Entscheidungen (MUST) | ✅ geplant | `docs/adr/0001-rueckennummern-ohne-fremddaten.md`: eigener Erkenner, nur synthetisch trainiert, Veo nur als Referenz, alles lokal |
 | Keine absoluten lokalen Pfade (MUST NOT) | ✅ | Schriften über `fc-match` zur Laufzeit, Modell relativ zum Repo; Doku mit relativen Pfaden |

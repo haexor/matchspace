@@ -71,8 +71,15 @@ python3 tools/convert_veo.py $V/export.json web/data/veo-2026-11-01 $W/veo_align
 .venv/bin/python tools/veo_scene.py $V $W/camera.json $W/veo_align.json $W/scene_705.mp4 705 $W/scene_705.det.json web/data/veo-2026-11-01 web/data/veo-szene-705
 #    vorher den Ball selbst im Video suchen (rund 3 Minuten; ohne Veo, die letzten beiden Angaben nur zum Vergleich)
 #    .venv/bin/python tools/veo_ball.py $W/scene_705.mp4 $W/scene_705.det.json $W/camera.json web/data/veo-2026-11-01 705
-#    ohne Veo (eigenes Spielertracking, Spieler ohne Rückennummer): VEO_ORDNER und VEO_ALIGN.json als "-"
+#    ohne Veo (eigenes Spielertracking, Rückennummern selbst gelesen): VEO_ORDNER und VEO_ALIGN.json als "-",
+#    optional --kader KADER.json ({"own": [1, 7, 15], "opponent": []}, nur Nummern)
 #    .venv/bin/python tools/veo_scene.py - $W/camera.json - $W/scene_705.mp4 705 $W/scene_705.det.json web/data/veo-2026-11-01 web/data/veo-szene-705-eigen
+#    vorher einmal den Nummernleser trainieren (rund 12 Minuten, GPU) und an seinen sicheren Lesungen nachtrainieren:
+#    .venv/bin/python tools/jersey_reader.py train --negatives $W/scene_705.det.json $W/scene_722.det.json --out models/jersey-digits-synth.pt
+#    .venv/bin/python tools/jersey_reader.py train --init models/jersey-digits-synth.pt --samples 150000 --epochs 4 \
+#        --negatives $W/scene_705.det.json $W/scene_722.det.json --pseudo $W/scene_705.det.json --camera $W/camera.json
+#    nur zum Prüfen: Nummern gegen Veo messen (schreibt nichts in die Szene; Bericht nur unter data/work/)
+#    .venv/bin/python tools/jersey_eval.py web/data/veo-szene-705-eigen $W/scene_705.det.json $W/camera.json $V $W/veo_align.json 705
 # 6. Aussehen je Spieler aus dem Video (rund 4 Minuten je Szene); nach jeder neuen Haltung wiederholen
 .venv/bin/python tools/veo_looks.py $W/scene_705.mp4 $W/scene_705.det.json $W/camera.json $W/background.png web/data/veo-szene-705
 # dann http://localhost:8765/?match=veo-2026-11-01 oder ?match=veo-szene-705
@@ -160,9 +167,34 @@ python3 tools/convert_veo.py $V/export.json web/data/veo-2026-11-01 $W/veo_align
   wenn sie mindestens 1,5 m innerhalb liegen und lange auf dem Platz sind (Torwart). Leibchen der
   Auswechselspieler erkennt `split_bibs` am Farbton (zum Beispiel orange gegen rot), ohne festen Schwellwert.
   Gegen Veos Identitäten geprüft: Veo-Spieler zu 91–95 % ihrer Bilder abgedeckt, Spuren zu rund 90 % rein.
-  Grenzen: Rückennummern fehlen (Spieler heißen S1, S2 ...; TW für den Torwart), ein Spieler zerfällt im
-  Mittel in rund zwei Spuren (die Figur verschwindet dann kurz und erscheint als andere Spur), die
-  Trikotfarben-Klassen in `veo_colors.py` sind noch fest auf Rot, Grün und Gelb eingestellt.
+  Grenzen: ein Spieler zerfällt im Mittel in rund zwei Spuren (die Figur verschwindet dann kurz und erscheint
+  als andere Spur), die Trikotfarben-Klassen in `veo_colors.py` sind noch fest auf Rot, Grün und Gelb
+  eingestellt.
+- Rückennummern ohne Veo (`jersey_reader.py`, `jersey_identity.py`, Entscheidung in
+  `docs/adr/0001-rueckennummern-ohne-fremddaten.md`):
+  - **Lesen**: Zeigt ein Spieler der Kamera den Rücken (linke Schulter im Bild links der rechten), wird der
+    Rücken aus den Gelenkpunkten geschnitten (Schulterlinie bis Hüfte, ab 18 Pixel Rumpfhöhe). Ein kleines
+    Netz liest ihn: keine Nummer oder 1–99.
+  - **Training**: nur künstliche Trikotrücken (`jersey_synth.py`) und Vorderansichten aus den eigenen
+    Videos, danach Nachtrainieren an den eigenen sehr sicheren Lesungen. Veo fließt nirgends ein. Modell
+    und Lesungen (`*.det.json.numbers.npz`, nur Wahrscheinlichkeiten) bleiben lokal; kein Bild verlässt den
+    Rechner.
+  - **Vergabe**: Je Spur stimmen die Lesungen ab. Eine Nummer gibt es nur bei klarer, über mindestens fünf
+    Zeitfenster und eine Sekunde wiederholter Lesung mit 70 % Einigkeit; sonst bleibt der Spieler unbekannt
+    (Viewer: `?`, in der Auswahl `Wir ? (S4)`).
+  - **Eindeutig**: Je Mannschaft trägt eine Nummer nie zwei Spieler zugleich; Stücke mit derselben Nummer
+    werden ein Spieler, wenn der Wechsel körperlich machbar ist.
+  - **Gemessen gegen Veo**:
+    - In den Szenen 705 und 722 tragen je 7 Spieler eine Nummer, keine falsch.
+    - Von den Spielern mit gut sichtbarem Rücken (ab 28 Pixel) sind in Szene 705 4 von 6 richtig, in Szene
+      722 ebenfalls 4 von 6, der Rest ist unbekannt.
+    - Das Lesen kostet rund 6 s je Szene.
+  - **Grenzen**:
+    - Gegnerische 15 und 11 schwanken noch zwischen ähnlichen Lesarten (75, 71, 37) und bleiben deshalb
+      unbekannt.
+    - Ferne Spieler und reine Vorderansichten bekommen keine Nummer.
+    - Die Zerstückelung in Spuren (rund 2,2 Identitäten je Spieler) beheben Nummern allein nicht: Die meisten
+      Stücke zeigen nie lesbar den Rücken; dafür braucht es noch das Zusammenführen über Aussehen und Weg.
 - Abhängigkeit von Veo: Das eigene Kamerasystem wird keine Veo-Daten liefern. Im Modus ohne Veo bleiben
   davon nur die Startwerte der Kalibrierung (Ecken aus Veo, `veo_camera.py`; mit Handpunkten entbehrlich)
   und die Uhr aus dem Basisspiel.
@@ -173,7 +205,7 @@ python3 tools/convert_veo.py $V/export.json web/data/veo-2026-11-01 $W/veo_align
   abheben, zählen mehr. Nie gesehene Stellen kommen von der Gegenseite oder aus der Mannschaft; Spieler,
   die im Video nicht zu sehen sind, tragen das Mittel ihrer Mannschaft. Ergebnis: `looks.png` (eine Kachel
   mit 128 × 128 Texeln je Spieler) und `looks` in `meta.json`. Grob, weil die Spieler im Video nur 50 bis 120
-  Pixel hoch sind: Gesichter und Rückennummern sind nicht zu erkennen (die Nummer druckt der Viewer auf),
+  Pixel hoch sind: Gesichter und Rückennummern sind in der Textur nicht zu erkennen (die gelesene Nummer druckt der Viewer auf),
   das Licht des Spieltags steckt in den Farben.
 - Zwischenergebnisse liegen neben den Erkennungen: `*.det.json.keypoints.npz` (Gelenkpunkte je Box),
   `*.det.json.virtual.npz` (Suche nach Spielern ohne Box) und `*.det.json.players.npz` (Gelenkpunkte,

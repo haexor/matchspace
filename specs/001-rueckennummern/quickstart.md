@@ -32,7 +32,8 @@ W=data/work/veo-2026-11-01
 
 **Erwartet**:
 - `models/jersey-digits.pt` entsteht.
-- Die Trefferquote auf dem zurückgehaltenen synthetischen Satz ist ≥ 95 %.
+- Die Trefferquote auf dem zurückgehaltenen synthetischen Satz wird ausgegeben (zum Vergleich zwischen
+  Läufen; der Satz enthält absichtlich viele kaum lesbare Beispiele).
 - Während des Trainings geht keine Verbindung nach außen. Dafür optional ohne Netz laufen lassen, etwa mit
   `unshare -n`.
 
@@ -60,7 +61,7 @@ done
 
 ```sh
 for S in 705 722; do
-  .venv/bin/python tools/jersey_eval.py web/data/veo-szene-$S-eigen $W/scene_$S.det.json $V $W/veo_align.json $S \
+  .venv/bin/python tools/jersey_eval.py web/data/veo-szene-$S-eigen $W/scene_$S.det.json $W/camera.json $V $W/veo_align.json $S \
        --bericht $W/scene_$S.numbers-report.json
 done
 ```
