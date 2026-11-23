@@ -39,6 +39,22 @@ zusammengefasst):
 - **Erwartung**: 30–50 Stellen je Szene. Bei 10 Minuten bleiben 12–20 s je Stelle. Das reicht, wenn eine
   Bestätigung ein Tastendruck ist. Wird SC-001 verfehlt, kommen die Stellen nach Risiko sortiert, und die
   Messung nennt, was offen bleibt.
+- **Gemessen (T008)** nach dem Bau von `review_spots.py`:
+
+  | Szene | Stellen | davon Verdeckung / Spurende oder -beginn / Trennung oder Verbindung / Nummer / Veo / Kontrolle | Beteiligte je Stelle | Ausschnitte zusammen |
+  |---|---|---|---|---|
+  | 705 | 57 | 37 / 17 / 6 / 10 / 4 / 5 | 1–2: 41, 3–6: 16 | 200 s |
+  | 722 | 62 | 44 / 32 / 5 / 8 / – / 5 | 1–2: 38, 3–6: 24 | 232 s |
+
+  Mehrere Gründe können auf eine Stelle fallen. Nachgeschärft gegenüber dem ersten Entwurf:
+  - Zusammengefasst wird nur bis 6 s Länge und 6 Beteiligte; sonst wuchsen Gedränge zu Stellen mit über 20
+    Spielern.
+  - An Spurenden zählen nur Spuren, die nahebei selbst beginnen oder enden. Wer weiterläuft, hätte bei einem Tausch
+    eine Verdeckung.
+  - Stellen ohne Beteiligte vorher oder nachher entfallen, weil es dort nichts zuzuordnen gibt.
+
+  Mit rund 60 Stellen ist SC-001 (10 Minuten) knapp. Die Schwelle der Verdeckung ist einstellbar (`OCCLUDE`), bei
+  0,5 wären es rund ein Drittel weniger Verdeckungsstellen.
 - **Kontrollstellen**: 5 je Szene, zufällig über Zeit und Spieler aus Abschnitten ohne Grund, mit festem
   Startwert (wiederholbar). Die Frage lautet: Ist das dieselbe Person wie 1,5 s vorher?
 - **Alternatives considered**:

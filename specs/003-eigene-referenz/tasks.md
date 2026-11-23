@@ -60,7 +60,7 @@ Referenzdatei enthält keine Bilder und keine Namen.
 
 ### Tests für User Story 1
 
-- [ ] T004 [P] [US1] `tests/test_reference.py` (reine Logik), mit künstlichen Spielern aus Erkennungen:
+- [X] T004 [P] [US1] `tests/test_reference.py` (reine Logik), mit künstlichen Spielern aus Erkennungen:
   - **Abschnitte**: Eine Stelle schneidet die Beteiligten in vorher und nachher.
   - **Antworten**:
     - „wie vorgeschlagen“: jeder bleibt seine Person;
@@ -75,7 +75,7 @@ Referenzdatei enthält keine Bilder und keine Namen.
   - **Widersprüche (FR-015)**: dieselbe Person zur selben Zeit an zwei Orten, dieselbe Nummer bei zwei Personen
     einer Mannschaft, eine Person in zwei Mannschaften.
   - **Wiederholung**: Antworten mit `repeat` zählen nicht für die Referenz.
-- [ ] T005 [P] [US1] `tests/test_review_spots.py`, mit künstlichen Zuordnungen:
+- [X] T005 [P] [US1] `tests/test_review_spots.py`, mit künstlichen Zuordnungen:
   - **Verdeckung**: Boxen derselben Linse überlappen um mehr als 30 % der kleineren Box, dann gibt es eine Stelle.
     Bei 20 % oder in verschiedenen Linsen nicht.
   - **Spurende**: ein Ende mehr als 1 m innerhalb der Linien gibt eine Stelle. Am Rand des Platzes und am Anfang
@@ -90,17 +90,17 @@ Referenzdatei enthält keine Bilder und keine Namen.
 
 ### Implementation für User Story 1
 
-- [ ] T006 [US1] `tools/reference.py` (reine Logik) nach [data-model.md](data-model.md):
+- [X] T006 [US1] `tools/reference.py` (reine Logik) nach [data-model.md](data-model.md):
   - `Spot`, `Answer` und `Person` als `dataclass`;
   - `segments(identity, spots)`, `persons(identity, spots, answers)`;
   - `refind(answers, identity)`, `conflicts(...)`.
-- [ ] T007 [US1] `tools/review_spots.py` nach [contracts/cli.md](contracts/cli.md):
+- [X] T007 [US1] `tools/review_spots.py` nach [contracts/cli.md](contracts/cli.md):
   - `find_spots(identity, det, cam, readings, fps)` mit den Gründen aus [research.md](research.md) R1, dazu
     `control_spots(..., seed, n=5)`;
   - **CLI**: schreibt oder ergänzt `{det}.reference.json` atomar und gibt die Zahl der Stellen je Grund und offen
     aus.
   - `--veo`: zusätzlich Stellen „Veo sieht anders“. Ohne die Angabe wird nichts von Veo importiert.
-- [ ] T008 [US1] Stellen für 705 und 722 erzeugen und zählen (Erwartung 30–50 je Szene).
+- [X] T008 [US1] Stellen für 705 und 722 erzeugen und zählen (Erwartung 30–50 je Szene).
   - Liegen es deutlich mehr: Schwellen der Verdeckung in [research.md](research.md) R1 nachstellen und
     begründen.
   - Commit `feat(reference): find contested spots for manual review`.
