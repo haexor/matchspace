@@ -84,6 +84,38 @@ def build(cam, pix: np.ndarray, contacts: list, fps: float) -> Motion:
     return Motion(xyz, kind, inferred, z_sigma, segments)
 
 
+@dataclass
+class OutputTrack:
+    xy: np.ndarray         # (total, 2) Lage; NaN, wo die Bahn nichts sagt
+    z: np.ndarray          # (total,) Höhe der Ballunterseite über dem Rasen in Metern (0 am Boden)
+    inferred: np.ndarray   # (total,) erschlossen statt gesehen
+    flight: np.ndarray     # (total,) Flug
+    contacts: np.ndarray   # Ausgabebilder der Kontakte
+
+
+def sample(values: np.ndarray, total: int, ratio: float) -> np.ndarray:
+    """Werte (n, ...) auf total Bilder im Takt der Ausgabe: gemittelt, wo beide Nachbarn gültig sind, sonst das nächste; NaN, wo das nächste Quellbild leer ist."""
+    src = np.arange(total) * ratio
+    a = np.minimum(src.astype(int), len(values) - 1)
+    b = np.minimum(a + 1, len(values) - 1)
+    shape = (-1,) + (1,) * (values.ndim - 1)
+    w = (src - a).reshape(shape)
+    ok = ~np.isnan(values).reshape(len(values), -1).any(axis=1)
+    va, vb = ok[a].reshape(shape), ok[b].reshape(shape)
+    near = np.where(src - a < 0.5, a, b)   # ist das nächste Quellbild leer, bleibt das Ausgabebild leer: keine Lage erfinden
+    return np.where(ok[near].reshape(shape), np.where(va & vb, values[a] + (values[b] - values[a]) * w, values[near]), np.nan)
+
+
+def output_track(path, total: int, ratio: float) -> OutputTrack:
+    """Liest `.ball3d.npz` (tools/ball_motion.py) im Takt der Ausgabe."""
+    z = np.load(path)
+    xyz = sample(z["xyz"], total, ratio)
+    near = np.minimum(np.round(np.arange(total) * ratio).astype(int), len(z["kind"]) - 1)
+    contacts = np.unique(np.round(z["contacts"][:, 0] / ratio).astype(int)) if len(z["contacts"]) else np.zeros(0, int)
+    return OutputTrack(xyz[:, :2], np.maximum(np.nan_to_num(xyz[:, 2], nan=ball_physics.RADIUS) - ball_physics.RADIUS, 0.0), z["inferred"][near].astype(bool),
+                       z["kind"][near] == FLIGHT, contacts[(contacts >= 0) & (contacts < total)])
+
+
 def main(camera_path, det_path) -> None:
     cam = veo_camera.load(camera_path)
     z = np.load(f"{det_path}.ball.npz")

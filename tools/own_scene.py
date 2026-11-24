@@ -59,13 +59,14 @@ def own_ball(out: np.ndarray, max_gap: float) -> np.ndarray:
     return filled
 
 
-def attach_ball(ball_xy: np.ndarray, feet: np.ndarray, fps: float) -> np.ndarray:
+def attach_ball(ball_xy: np.ndarray, feet: np.ndarray, fps: float, active: np.ndarray | None = None) -> np.ndarray:
     """Zieht den Ball an den Fuß, wenn er in Reichweite liegt: Die Ballspur ist in Blickrichtung auf rund einen halben Meter
-    genau, ein geführter Ball lag deshalb oft neben dem Spieler. feet: (T, F, 2) Fußspitzen aller Spieler (NaN = keiner)."""
+    genau, ein geführter Ball lag deshalb oft neben dem Spieler. feet: (T, F, 2) Fußspitzen aller Spieler (NaN = keiner).
+    active: Bilder, in denen herangezogen wird (rund um erkannte Kontakte, tools/ball_events.py); None = überall."""
     T = len(ball_xy)
     shift = np.zeros((T, 2))
     for t in range(T):
-        if np.isnan(ball_xy[t, 0]):
+        if np.isnan(ball_xy[t, 0]) or (active is not None and not active[t]):
             continue
         d = np.linalg.norm(feet[t] - ball_xy[t], axis=1)
         if np.isnan(d).all():

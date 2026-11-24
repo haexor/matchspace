@@ -16,6 +16,7 @@ import numpy as np
 from scipy.signal import savgol_filter
 
 sys.path.insert(0, str(Path(__file__).parent))
+import ball_motion  # noqa: E402
 import track_limits  # noqa: E402
 import veo_camera  # noqa: E402
 from own_match import period_at  # noqa: E402
@@ -46,6 +47,7 @@ class Game:
     entity_of: dict
     ball: int | None
     ball_source: str
+    ball_track: object = None   # tools/ball_motion.OutputTrack: Ball mit Höhe und Kontakten, wenn `.ball3d.npz` vorliegt
 
 
 def feet_on_ground(cam, eye, kp, lens, height):
@@ -128,7 +130,11 @@ def load_game(run, observed, base_dir, out_dir) -> Game:
     if ball is not None and Path(f"{det_path}.ball.npz").exists():   # eigener Ball aus dem Video (tools/veo_ball.py) statt Veos
         xy[:, ball] = own_ball(resample(np.load(f"{det_path}.ball.npz")["pos"], total, ratio), BALL_GAP * OUT_FPS)
         ball_source = "Video"
-    return Game(base, base_dir, out_dir, period, clock_start, total, ratio, tscale, data, xy, slots, entity_of, ball, ball_source)
+    track = None
+    if ball is not None and Path(f"{det_path}.ball3d.npz").exists():   # Ball mit Höhe aus der Physik (tools/ball_motion.py)
+        track = ball_motion.output_track(f"{det_path}.ball3d.npz", total, ratio)
+        xy[:, ball] = np.where(np.isnan(track.xy[:, :1]), xy[:, ball], track.xy)
+    return Game(base, base_dir, out_dir, period, clock_start, total, ratio, tscale, data, xy, slots, entity_of, ball, ball_source, track)
 
 
 def measure_positions(run, observed, joints, floor, game: Game) -> None:

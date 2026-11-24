@@ -16,6 +16,9 @@ from scene_positions import OUT_FPS  # noqa: E402
 from synth_poses import BONES, JOINTS, NAMES  # noqa: E402
 
 
+CONTACT_PULL = 3   # Bilder vor und nach einem Kontakt, in denen der Ball an den Fuß gezogen wird
+
+
 def write_scene(run, game, result) -> None:
     """Schreibt tracks.bin, poses/, meta.json und die Bilder des Platzes nach game.out_dir, die 2D-Gelenkpunkte je Spieler
     (für tools/veo_looks.py, bleiben lokal bei den Rohdaten) neben die Erkennungen, und gibt den Bericht aus."""
@@ -24,16 +27,23 @@ def write_scene(run, game, result) -> None:
     E = len(base["entities"])
     J = len(JOINTS)
     run.clock("Haltungen")
+    track = game.ball_track
     if ball is not None and result.toes:
-        xy[:, ball] = attach_ball(xy[:, ball], np.stack(result.toes, axis=1), OUT_FPS)
-    print(f"Ball aus {ball_source}; an den Fuß gezogen, wo er in {BALL_REACH} m Reichweite einer Fußspitze lag")
+        active = None
+        if track is not None:   # mit erkannten Kontakten nur rund um diese an den Fuß ziehen, dazwischen gilt die Bahn der Physik
+            active = np.zeros(total, bool)
+            for c in track.contacts:
+                active[max(0, c - CONTACT_PULL):c + CONTACT_PULL + 1] = True
+        xy[:, ball] = attach_ball(xy[:, ball], np.stack(result.toes, axis=1), OUT_FPS, active)
+    print(f"Ball aus {ball_source}; an den Fuß gezogen, wo er in {BALL_REACH} m Reichweite einer Fußspitze lag"
+          + (f", nur rund um {len(track.contacts)} erkannte Kontakte; Höhe aus der Wurfparabel in {int(track.flight.sum())} Bildern" if track is not None else ""))
     # 2D-Gelenkpunkte je Spieler im Takt der Ausgabe, für tools/veo_looks.py (bleibt lokal bei den Rohdaten)
     np.savez_compressed(f"{det_path}.players{'_own' if run.no_veo else ''}.npz",
                         **{f"{k}.{part}": v for k, view in result.views.items() for part, v in view.items()})
     flat = np.array(game.data, np.int64).reshape(total, E, 3)
     flat[:, :, :2] = np.where(np.isnan(xy), base["tracks"]["missing"], np.round(xy / tscale))
-    if ball_source == "Video":   # Flughöhe bestimmt die eigene Ballspur noch nicht: am Boden
-        flat[:, ball, 2] = 0
+    if ball_source == "Video":   # ohne Physik (kein .ball3d.npz): am Boden
+        flat[:, ball, 2] = 0 if track is None else np.round(track.z / tscale)
     with open(out_dir / "tracks.bin", "wb") as f:
         array("h", flat.ravel().tolist()).tofile(f)
 
