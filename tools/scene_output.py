@@ -101,6 +101,7 @@ def report(result, total: int, out_dir: Path) -> None:
               f"rückwärts laufend erkannt: {result.backward_frames} Spieler-Bilder")
     print("Eingriffe der harten Gelenkgrenzen nach der Anpassung (Bilder, Summe über Spieler und Körperseiten):", dict(result.stats))
     print(f"Fallen, Liegen und Aufstehen aus Vorlagen dargestellt: {result.grounded} Spieler-Bilder")
+    print(f"Fußstellung (Ferse, Zehe) aus dem Bild gesetzt: {result.feet_from_video} Fuß-Bilder")
     print(f"Stehende Füße rutschten im Mittel mit {result.slip_before / max(1, result.slip_frames):.2f} m/s über den Rasen, "
           f"nach dem Festhalten mit {result.slip_after / max(1, result.slip_frames):.2f} m/s ({result.slip_frames} Fuß-Bilder mit Bodenkontakt)")
     print(f"-> {out_dir}")

@@ -16,11 +16,13 @@ from pathlib import Path
 import numpy as np
 
 sys.path.insert(0, str(Path(__file__).parent))
+import foot_fit  # noqa: E402
 import foot_planting  # noqa: E402
 import ground_motion  # noqa: E402
 import pose_fit  # noqa: E402
 import pose_limits  # noqa: E402
 import track_limits  # noqa: E402
+import veo_camera  # noqa: E402
 from own_scene import MIN_APPEARANCE  # noqa: E402
 from scene_positions import DEFAULT_HEIGHT, OUT_FPS, smooth_track  # noqa: E402
 from scene_util import resample_keypoints, segments  # noqa: E402
@@ -47,6 +49,7 @@ class PoseResult:
     slip_before: float = 0.0
     slip_after: float = 0.0
     slip_frames: int = 0
+    feet_from_video: int = 0   # Fuß-Bilder, deren Stellung aus dem Bild gesetzt wurde
 
 
 def fit_poses(run, observed, smooth, joints, floor, game) -> PoseResult:
@@ -74,10 +77,13 @@ def fit_poses(run, observed, smooth, joints, floor, game) -> PoseResult:
         key = (e["team"], int(e["id"].rsplit("-", 1)[1])) if no_veo else (e["team"], e["number"]) if "label" not in e else None
         lengths = pose_limits.bone_lengths(body.get(key, median_height))
         down, low, seen, h36 = np.zeros(total, bool), np.zeros(total, bool), np.zeros(total), None
+        foot_out = lens_feet = None   # Fußpunkte aus dem Bild im Takt der Ausgabe (tools/veo_feet.py), wenn vorhanden
         if key in smooth:
             low, down = smooth[key]["low"][nearest], smooth[key]["floor"][nearest]
             points = np.where(boxed[key][:, None, None], kp2d[key], np.nan)
             kp_out, lens_out = resample_keypoints(points, obs[key][:, 0], total, ratio)
+            if joints.foot2d is not None and key in joints.foot2d and (~np.isnan(joints.foot2d[key][:, 0, 0])).any():
+                foot_out, lens_feet = resample_keypoints(np.where(boxed[key][:, None, None], joints.foot2d[key], np.nan), obs[key][:, 0], total, ratio)
             target, weight = pose_fit.targets(kp_out)
             ref, A = pose_fit.linearize(cam, lens_out, pos)
             weight[down | ~present | np.isnan(ref[:, 0])] = 0
@@ -120,6 +126,9 @@ def fit_poses(run, observed, smooth, joints, floor, game) -> PoseResult:
         joint_pos, before, after, count = foot_planting.plant_feet(pose_limits.build(d, lengths), pos, OUT_FPS, lengths, skip=down)
         # Das Festhalten der Füße kann die Hüfte überdehnen: Grenzen ein letztes Mal anwenden (der Fuß gibt dann nach)
         joint_pos = pose_limits.build(pose_limits.limit_directions(pose_limits.directions_of(joint_pos), allowed), lengths)
+        if foot_out is not None:   # Ferse und Zehe aus dem Bild statt aus der Laufrichtung
+            joint_pos, fed = foot_fit.apply(joint_pos, pos, foot_out, lens_feet, cam, NAMES, veo_camera.rays)
+            result.feet_from_video += fed
         for side in "lr":
             result.toes.append(joint_pos[:, NAMES.index(side + "Toe"), :2] + pos)
         result.slip_before += before

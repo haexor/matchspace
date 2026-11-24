@@ -17,6 +17,7 @@ import cv2
 import numpy as np
 
 sys.path.insert(0, str(Path(__file__).parent))
+import foot_fit  # noqa: E402
 import pose_fit  # noqa: E402
 import pose_limits  # noqa: E402
 import veo_camera  # noqa: E402
@@ -42,6 +43,7 @@ class Joints:
     boxed: dict
     body: dict
     vbox: dict
+    foot2d: dict = None   # Feld (Bilder, 4, 3): Zehe links, rechts, Ferse links, rechts (tools/veo_feet.py); NaN ohne Erkennung
 
 
 def side_pose(kp, lens, cam, spot, lengths, left_far):
@@ -100,7 +102,8 @@ def side_pose(kp, lens, cam, spot, lengths, left_far):
 
 def read_keypoints(run, observed, smooth):
     """Gelenkpunkte für jede Box aus tools/veo_keypoints.py (einmal je Szene gerechnet) und Körpergröße daraus.
-    Rückgabe (kp2d, body)."""
+    Liegt tools/veo_feet.py (RTMPose) vor, werden die Beinpunkte mit ViTPose zusammengeführt und die Fußpunkte mitgenommen.
+    Rückgabe (kp2d, body, foot2d)."""
     n, cam, cam_pos, obs = run.n, run.cam, run.cam_pos, observed.obs
     kp_path = Path(str(run.det_path) + ".keypoints.npz")
     if not kp_path.exists() or kp_path.stat().st_mtime < Path(run.det_path).stat().st_mtime:
@@ -108,7 +111,13 @@ def read_keypoints(run, observed, smooth):
     with np.load(kp_path) as archive:
         found = {name: archive[name] for name in archive.files}
     kit = observed.kit
+    feet_path = Path(str(run.det_path) + ".feet.npz")
+    feet = None
+    if feet_path.exists() and feet_path.stat().st_mtime >= Path(run.det_path).stat().st_mtime:
+        with np.load(feet_path) as archive:
+            feet = archive["kp26"]
     kp2d = {key: np.full((n, 17, 3), np.nan) for key in smooth}
+    foot2d = {key: np.full((n, 4, 3), np.nan) for key in smooth}
     foreign = 0
     for key in smooth:
         b = obs[key]
@@ -119,6 +128,9 @@ def read_keypoints(run, observed, smooth):
                 foreign += 1
                 continue
             kp2d[key][fi] = found["kp"][row]
+            if feet is not None and (feet[row, :, 2] > 0).any():
+                kp2d[key][fi] = foot_fit.merge_keypoints(found["kp"][row][None], feet[row][None])[0]
+                foot2d[key][fi] = foot_fit.foot_points(feet[row][None])[0]
     # Körpergröße aus den Gelenkpunkten: Bein und Rumpf erscheinen im Bild höchstens so lang, wie sie sind
     # (in die Tiefe geneigt kürzer). Maß ist deshalb ein Wert etwas über der Mitte aller Bilder, in Metern am Ort des Spielers.
     body = {}
@@ -142,7 +154,9 @@ def read_keypoints(run, observed, smooth):
     print("Körpergröße aus den Gelenkpunkten (m):", {f"{k[0]}-{k[1]}": round(v, 2) for k, v in sorted(body.items())}, flush=True)
     with_points = sum(int((~np.isnan(k[:, 0, 0])).sum()) for k in kp2d.values())
     print(f"Gelenkpunkte für {with_points} Boxen übernommen, {foreign} verworfen (fremdes Trikot)", flush=True)
-    return kp2d, body
+    if feet is not None:
+        print(f"Fußpunkte (RTMPose) für {sum(int((~np.isnan(f[:, 0, 0])).sum()) for f in foot2d.values())} Boxen übernommen", flush=True)
+    return kp2d, body, foot2d
 
 
 def search_without_box(run, observed, smooth):
@@ -228,14 +242,16 @@ def search_without_box(run, observed, smooth):
 
 def gather_joints(run, observed, smooth) -> Joints:
     """Stufe 3: Gelenkpunkte aus den Boxen und, wo keine Box ist, aus der Suche im Ausschnitt."""
-    kp2d, body = read_keypoints(run, observed, smooth)
+    kp2d, body, foot2d = read_keypoints(run, observed, smooth)
     vkp, vbox = search_without_box(run, observed, smooth)
     run.clock("Gelenkpunkte und Suche ohne Box")
     boxed = {key: ~np.isnan(k[:, 0, 0]) for key, k in kp2d.items()}  # Bilder mit Gelenkpunkten aus einer eigenen Box
     for key in smooth:
         there = ~np.isnan(vbox[key][:, 0])
         kp2d[key][there] = vkp[key][there]
-    return Joints(kp2d, boxed, body, vbox)
+    for key in smooth:   # Fußpunkte nur dort, wo auch die Gelenkpunkte aus der eigenen Box stammen
+        foot2d[key][~boxed[key]] = np.nan
+    return Joints(kp2d, boxed, body, vbox, foot2d)
 
 
 def fill_gaps(run, observed, smooth, heights, joints: Joints) -> None:
