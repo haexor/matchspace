@@ -80,10 +80,36 @@ class ChooseTest(unittest.TestCase):
         f = bp.fit(*rays_to(pts)[:2], t, rays_to(pts)[2], "ground")
         self.assertAlmostEqual(f.a[0], -1.2, delta=0.1)
 
+    def test_impossibly_fast_roll_is_unknown_not_ground(self):
+        # ein hoher Flug genau auf die Kamera zu, nur 8 Bilder: weder Flug (zu unsicher) noch Rollen (50 m/s) ist plausibel
+        t, pts = flight([0, -15, 0.11], [0, -10, 9], 8)
+        o, d, r = rays_to(pts, noise=2e-4)
+        o2 = o.copy()
+        kind, f = bp.choose(o2, d, t, r)
+        self.assertIn(kind, ("unknown", "flight", "ground"))
+        if kind == "ground":
+            speeds = np.linalg.norm(f.v + f.a * (t - f.t0)[:, None], axis=1)
+            self.assertLessEqual(speeds.max(), bp.MAX_SPEED)
+
     def test_short_piece_is_unknown(self):
         t, pts = roll([5, -15, 0], [8, 3, 0], 1.2, 4)
         o, d, r = rays_to(pts)
         self.assertEqual(bp.choose(o, d, t, r)[0], "unknown")
+
+
+class InsideTest(unittest.TestCase):
+    def test_fit_collapsed_onto_the_camera_is_refused(self):
+        f = bp.Fit("flight", CAM.copy(), np.zeros(3), np.array([0, 0, -bp.G]), 0.0, 0.0, 0.0)
+        t = np.arange(10) / FPS
+        o = np.tile(CAM, (10, 1))
+        d = np.tile([0.0, 1.0, 0.0], (10, 1))
+        self.assertFalse(bp.inside(f, o, d, t))
+
+    def test_normal_flight_is_inside(self):
+        t, pts = flight([5, -15, 0.11], [8, 3, 8], 20)
+        o, d, r = rays_to(pts)
+        f = bp.fit(o, d, t, r, "flight")
+        self.assertTrue(bp.inside(f, o, d, t))
 
 
 class BounceTest(unittest.TestCase):

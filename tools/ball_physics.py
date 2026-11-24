@@ -23,6 +23,10 @@ MIN_OBS = 8            # Beobachtungen, ab denen ein Stück angepasst wird
 FLIGHT_GAIN = 0.7      # Flug zählt nur, wenn sein Restfehler unter diesem Anteil des Rollens liegt
 MIN_APEX = 0.35        # m: niedrigere Flugbögen gelten als Rollen
 MAX_Z_SIGMA = 0.6      # m: unsichere Höhe als „unbestimmt“ ausweisen
+MIN_RANGE = 3.0        # m: näher als das vor der Kamera ist keine Ballbahn (Kameralage ist die triviale Lösung aller Strahlen)
+MAX_HEIGHT = 15.0      # m
+AREA = (65.0, 45.0)    # m: größte Beträge von x und y (Platz mit Rand)
+MAX_SPEED = 35.0       # m/s: schneller rollt kein Ball; ein „Rollen“ darüber ist ein falsch angenommener Flug oder eine falsche Spur
 BOUNCE_TOL = 0.12      # m: so weit darf eine Flugbahn unter den Boden fallen, bevor sie als unmöglich gilt
 SPLIT_MIN_RMS = 0.05   # m: erst bei größerem Restfehler eines Modells wird eine Teilung versucht
 SPLIT_GAIN = 0.5       # Teilung gilt nur, wenn der Restfehler unter diesem Anteil bleibt
@@ -100,6 +104,14 @@ class Segment:
     z_sigma: float
 
 
+def inside(f: Fit, origins, dirs, t) -> bool:
+    """Bahn liegt vor der Kamera (nicht auf oder hinter ihr), unter MAX_HEIGHT und im Gelände."""
+    pts = f.at(t)
+    ahead = ((pts - origins) * dirs).sum(axis=1)
+    return bool((ahead >= MIN_RANGE).all() and (pts[:, 2] <= MAX_HEIGHT).all() and (np.abs(pts[:, 0]) <= AREA[0]).all()
+                and (np.abs(pts[:, 1]) <= AREA[1]).all())
+
+
 def choose(origins, dirs, t, ranges) -> tuple:
     """Besseres Modell für ein Stück. Rückgabe: (kind, Fit). kind unknown, wenn zu wenig Beobachtungen."""
     ground = fit(origins, dirs, t, ranges, "ground")
@@ -109,9 +121,13 @@ def choose(origins, dirs, t, ranges) -> tuple:
     if flight is None:
         return "ground", ground
     z = flight.at(t)[:, 2]
-    plausible = z.max() - RADIUS >= MIN_APEX and z.min() >= RADIUS - BOUNCE_TOL and flight.z_sigma <= MAX_Z_SIGMA
+    plausible = (z.max() - RADIUS >= MIN_APEX and z.min() >= RADIUS - BOUNCE_TOL and flight.z_sigma <= MAX_Z_SIGMA
+                 and inside(flight, origins, dirs, t))
     if plausible and flight.rms < FLIGHT_GAIN * ground.rms:
         return "flight", flight
+    if (np.linalg.norm(ground.v + ground.a * (t - ground.t0)[:, None], axis=1).max() > MAX_SPEED
+            or not inside(ground, origins, dirs, t)):
+        return "unknown", ground    # kein Rollen und kein plausibler Flug: nichts behaupten
     return "ground", ground
 
 

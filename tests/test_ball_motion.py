@@ -65,6 +65,33 @@ class OutputTrackTest(unittest.TestCase):
         self.assertTrue((t.z == 0).all())
 
 
+def piece(kind, rms, frames, at):
+    fit = bp.Fit(kind, np.array(at, float), np.zeros(3), np.zeros(3), 0.0, rms, 0.0)
+    seg = bp.Segment(int(frames[0]), int(frames[-1]) + 1, kind, fit, rms, 0.0)
+    return {"seg": seg, "frames": np.asarray(frames)}
+
+
+class ContinuityTest(unittest.TestCase):
+    def test_matching_pieces_stay(self):
+        pieces = [piece("ground", 0.05, range(0, 10), [1, 1, 0.1]), piece("flight", 0.02, range(11, 30), [1.2, 1, 0.1])]
+        self.assertEqual(bm.drop_discontinuous(pieces, 30.0), 0)
+        self.assertEqual(len(pieces), 2)
+
+    def test_ground_yields_to_flight_at_a_jump(self):
+        pieces = [piece("ground", 0.05, range(0, 10), [-38, -22, 0.1]), piece("flight", 0.02, range(11, 30), [-24, -26, 2.4])]
+        self.assertEqual(bm.drop_discontinuous(pieces, 30.0), 1)
+        self.assertEqual(pieces[0]["seg"].kind, "flight")
+
+    def test_same_kind_larger_residual_goes(self):
+        pieces = [piece("ground", 0.30, range(0, 10), [0, 0, 0.1]), piece("ground", 0.05, range(11, 30), [20, 0, 0.1])]
+        bm.drop_discontinuous(pieces, 30.0)
+        self.assertEqual([p["seg"].rms for p in pieces], [0.05])
+
+    def test_distant_pieces_are_not_compared(self):
+        pieces = [piece("ground", 0.05, range(0, 10), [0, 0, 0.1]), piece("ground", 0.05, range(100, 130), [50, 0, 0.1])]
+        self.assertEqual(bm.drop_discontinuous(pieces, 30.0), 0)
+
+
 class AttachActiveTest(unittest.TestCase):
     def test_only_active_frames_are_pulled(self):
         T = 40

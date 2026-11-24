@@ -76,6 +76,15 @@ class RestFillTest(unittest.TestCase):
         self.assertEqual(filled, 0)
         self.assertTrue(np.isnan(pos[100, 0]))
 
+    def test_static_hits_running_into_a_chain_elsewhere_are_a_reserve_ball(self):
+        n = 150
+        pos = np.full((n, 2), np.nan)
+        pos[:40] = (10.0, -20.0)
+        pos[100:] = (-6.0, 3.0)                        # Spur setzt an anderer Stelle fort, die festen Treffer reichen bis dahin
+        dropped = hits(range(40, 100, 5)) + [[] for _ in range(n - 100)]
+        filled, _ = self.run_fill(pos, dropped)
+        self.assertEqual(filled, 0)
+
     def test_no_chain_no_fill(self):
         pos = np.full((150, 2), np.nan)
         filled, _ = self.run_fill(pos, hits(range(0, 150, 5)))
