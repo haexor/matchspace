@@ -16,6 +16,7 @@ Plan: [plan.md](plan.md), Spec: [spec.md](spec.md). Format: `- [ ] Tnnn [P] [USn
 - [x] T007 [US1] `tools/scene_finder.py`: Vorauswahl aus dem Basisspiel (Ball in Nahzone, Spieler am Ball, Tempowechsel) in Fenstern; Zusammenlegen.
 - [x] T008 [US1] `tools/scene_finder.py`: eigene Bewertung je Abschnitt aus Personenerkennung und eigener Ballspur (Ballanteil, Spielerhöhe des Ballführers, Ballgröße, Beteiligte, Naht).
 - [x] T009 [US1] Die sieben Abschnitte auswerten (`veo_detect.py`, `veo_ball.py`), Rangliste `ranking.json` mit Standbildern, Zahlen gegen SC-001 prüfen.
+- [x] T035 [US1] Ballsuche verbessert: ruhender Ball (`rest_fill`) und lokale Nachsuche in Ausschnitten (`tools/ball_gapfill.py`), Herkunft je Bild in `source`; Tests `tests/test_ball_gapfill.py`, `tests/test_veo_ball.py`. Messung mit versteckten Bildern: 91 % wiedergefunden, Median-Fehler 0,3 px.
 - [ ] T010 [US1] Ergebnis dem Nutzer zeigen (Standbilder, Zahlen), drei bis fünf Szenen gemeinsam auswählen.
 - [ ] T011 [US1] README: Abschnitt „Beste Szenen finden“ mit Aufrufen (ohne Zugangsdaten).
 
