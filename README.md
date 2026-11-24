@@ -113,7 +113,10 @@ python3 tools/convert_veo.py $V/export.json web/data/veo-2026-11-01 $W/veo_align
   lag eine dieser Ecken 7 m neben der echten; der Platz ist 90,0 × 55,0 m groß. Nach der Umrechnung liegen
   Veos Positionen im Mittel 0,2 m neben unseren Fußpunkten.
 - `veo_scene.py` misst die Positionen selbst (Fußpunkt am Boden). Veo liefert dort nur noch Rückennummern
-  und füllt Lücken.
+  und füllt Lücken. Die Datei ist nur noch der Ablauf; die Stufen stehen in eigenen Modulen:
+  `scene_boxes.py` (Boxen zu Spielern), `scene_keypoints.py` (Gelenkpunkte, Suche ohne Box, Bodenphasen),
+  `scene_positions.py` (Spielstand und Positionen), `scene_poses.py` (Haltung), `scene_output.py` (Ausgabe),
+  dazu `scene_context.py` (Eingaben) und `scene_util.py` (Array-Hilfen). Ergebnis bitgleich zu vorher.
 - `track_limits.py` hält Laufwege im Bereich des Möglichen: Wo eine Bahn schneller als 12 m/s wäre (Veo
   vertauscht Spieler), wird sie unterbrochen, statt die Figur über den Platz fliegen zu lassen. Sonst wird
   gerade so weit geglättet, dass niemand schneller als 8,7 m/s läuft oder mit mehr als 8 m/s² beschleunigt.
