@@ -12,10 +12,10 @@ Plan: [plan.md](plan.md), Spec: [spec.md](spec.md). Format: `- [ ] Tnnn [P] [USn
 
 ## Phase 2: US1 – Szenenfinder (P1)
 
-- [ ] T006 [US1] `tests/test_scene_finder.py`: Fensterbildung, Zusammenlegen überlappender Fenster, Nahzonenmaß, Punkte steigen mit Nähe und Ballanteil.
-- [ ] T007 [US1] `tools/scene_finder.py`: Vorauswahl aus dem Basisspiel (Ball in Nahzone, Spieler am Ball, Tempowechsel) in Fenstern; Zusammenlegen.
-- [ ] T008 [US1] `tools/scene_finder.py`: eigene Bewertung je Abschnitt aus Personenerkennung und eigener Ballspur (Ballanteil, Spielerhöhe des Ballführers, Ballgröße, Beteiligte, Naht).
-- [ ] T009 [US1] Die sieben Abschnitte auswerten (`veo_detect.py`, `veo_ball.py`; läuft), Rangliste `ranking.json` mit Standbildern, Zahlen gegen SC-001 prüfen.
+- [x] T006 [US1] `tests/test_scene_finder.py`: Fensterbildung, Zusammenlegen überlappender Fenster, Nahzonenmaß, Punkte steigen mit Nähe und Ballanteil.
+- [x] T007 [US1] `tools/scene_finder.py`: Vorauswahl aus dem Basisspiel (Ball in Nahzone, Spieler am Ball, Tempowechsel) in Fenstern; Zusammenlegen.
+- [x] T008 [US1] `tools/scene_finder.py`: eigene Bewertung je Abschnitt aus Personenerkennung und eigener Ballspur (Ballanteil, Spielerhöhe des Ballführers, Ballgröße, Beteiligte, Naht).
+- [x] T009 [US1] Die sieben Abschnitte auswerten (`veo_detect.py`, `veo_ball.py`), Rangliste `ranking.json` mit Standbildern, Zahlen gegen SC-001 prüfen.
 - [ ] T010 [US1] Ergebnis dem Nutzer zeigen (Standbilder, Zahlen), drei bis fünf Szenen gemeinsam auswählen.
 - [ ] T011 [US1] README: Abschnitt „Beste Szenen finden“ mit Aufrufen (ohne Zugangsdaten).
 
