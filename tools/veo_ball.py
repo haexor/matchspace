@@ -30,6 +30,7 @@ import cv2
 import numpy as np
 
 sys.path.insert(0, str(Path(__file__).parent))
+import ball_gapfill  # noqa: E402
 import veo_camera  # noqa: E402
 
 LENSES = ("left", "right")
@@ -39,6 +40,10 @@ RADIUS = 0.11            # m
 STATIC_PX, STATIC_S, STATIC_HITS = 3.0, 2.0, 6   # so oft über so lange am selben Pixel (auch mit Pausen): kein Spielball
 MAX_SPEED = 35.0         # m/s
 LINK_GAP = 0.25          # s: so lange darf ein Ballstück ohne Treffer bleiben
+REST_PX, REST_HITS = 4.0, 4           # Pixel um den Mittelpunkt; so viele feste Treffer braucht ein ruhender Ball
+REST_LINK_M = 1.2        # m: so nah muss die bewegte Spur an der Ruhestelle enden oder beginnen
+REST_GAP_S = 0.8         # s: längste Pause zwischen festen Treffern, die noch zu demselben Ruhen zählt
+SRC_NONE, SRC_CHAIN, SRC_REST, SRC_LOCAL = 0, 1, 2, 3   # Herkunft je Bild in der Ausgabe (source)
 PIECE_COST = 0.35        # Grundbetrag je Stück: einzelne Treffer unter dieser Sicherheit zählen allein nicht
 
 
@@ -59,8 +64,50 @@ def detect(video):
     return out
 
 
+def lens_cutter(video):
+    """cut_crops für ball_gapfill.fill: liest das Video einmal und schneidet die verlangten Ausschnitte."""
+    def cut(todo):
+        wanted = {}
+        for i, t in enumerate(todo):
+            wanted.setdefault(t[0], []).append(i)
+        out = [None] * len(todo)
+        cap = cv2.VideoCapture(str(video))
+        half = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)) // 2
+        for f in range(max(wanted) + 1):
+            ok, image = cap.read()
+            if not ok:
+                break
+            for i in wanted.get(f, ()):
+                _, lens, _, _, _, x0, y0 = todo[i]
+                top = lens * half
+                out[i] = image[top + y0: top + y0 + 2 * ball_gapfill.CROP, x0: x0 + 2 * ball_gapfill.CROP]
+        return out
+    return cut
+
+
+def crop_detector():
+    """detect_crops für ball_gapfill.fill: Ballkandidaten in Ausschnitten, niedrige Schwelle."""
+    from ultralytics import YOLO
+    model = YOLO("models/yolo11m.pt")
+
+    def run(crops):
+        hits = []
+        for k in range(0, len(crops), 32):
+            res = model.predict(crops[k:k + 32], classes=[BALL_CLASS], conf=ball_gapfill.CONF, imgsz=288, verbose=False)
+            hits += [[((b[0] + b[2]) / 2, (b[1] + b[3]) / 2, b[4]) for b in r.boxes.data.tolist()] for r in res]
+        return hits
+    return run
+
+
 def drop_static(cands, fps):
-    """Entfernt Kandidaten, die über STATIC_S fast am selben Pixel liegen."""
+    """Entfernt Kandidaten, die über STATIC_S fast am selben Pixel liegen. Rückgabe: Rest und Zahl fester Stellen."""
+    kept, _, count = split_static(cands, fps)
+    return kept, count
+
+
+def split_static(cands, fps):
+    """Wie drop_static, gibt aber auch die entfernten Kandidaten zurück (je Bild, gleiche Form): sie können ein ruhender
+    Spielball sein, der nur zählt, wenn er an die bewegte Spur anschließt (rest_fill)."""
     span = int(STATIC_S * fps)
     keyed = {}
     for f, cs in enumerate(cands):
@@ -74,7 +121,81 @@ def drop_static(cands, fps):
 
     def near_static(c):
         return any((c[0], round(c[1] / STATIC_PX) + dx, round(c[2] / STATIC_PX) + dy) in static for dx in (-1, 0, 1) for dy in (-1, 0, 1))
-    return [[c for c in cs if not near_static(c)] for cs in cands], len(static)
+    kept = [[c for c in cs if not near_static(c)] for cs in cands]
+    dropped = [[c for c in cs if near_static(c)] for cs in cands]
+    return kept, dropped, len(static)
+
+
+def rest_fill(pos, pix, dropped, cam, fps):
+    """Ruhender Spielball: feste Treffer zählen dort, wo die bewegte Spur an ihnen endet oder beginnt (Lücke, deren Rand
+    höchstens REST_LINK_M entfernt liegt; am Anfang und Ende des Abschnitts genügt ein Rand). Ein Reserveball irgendwo
+    am Rand schließt nirgends an und bleibt draußen. Füllt pos und pix an Ort und Stelle; Rückgabe: Zahl gefüllter Bilder."""
+    n = len(pos)
+    seen = ~np.isnan(pos[:, 0])
+    centres = []   # Gruppen fester Treffer: [Linse, u, v, Bilder]
+    for f, cs in enumerate(dropped):
+        for li, u, v, conf in cs:
+            for g in centres:
+                if g[0] == li and abs(g[1] - u) <= REST_PX and abs(g[2] - v) <= REST_PX:
+                    g[3].append((f, u, v))
+                    break
+            else:
+                centres.append([li, u, v, [(f, u, v)]])
+    filled = 0
+    for li, _, _, hits in centres:
+        if len(hits) < REST_HITS:
+            continue
+        hits = np.array(hits, float)
+        u, v = float(np.median(hits[:, 1])), float(np.median(hits[:, 2]))
+        p, _ = veo_camera.to_ground(cam, LENSES[li], [[u, v]], RADIUS)
+        if np.isnan(p[0, 0]):
+            continue
+        p = p[0]
+        frames = hits[:, 0].astype(int)
+        for a, b in _gaps(seen):   # Lücken [a, b) ohne Ballfund
+            inside = frames[(frames >= a) & (frames < b)]
+            if len(inside) < REST_HITS:
+                continue
+            before = a > 0 and np.linalg.norm(pos[a - 1] - p) <= REST_LINK_M
+            after = b < n and np.linalg.norm(pos[b] - p) <= REST_LINK_M
+            if not (before or after):
+                continue
+            first, last = a, b   # Ball liegt beidseits der Lücke an derselben Stelle: ruhte die ganze Zeit
+            if before and not after:   # nur so weit, wie die festen Treffer ohne lange Pause reichen
+                last = _reach(inside, a, fps) + 1
+            elif after and not before:
+                first = _reach(inside[::-1], b - 1, fps)
+            todo = [i for i in range(first, last) if not seen[i]]
+            for i in todo:
+                pos[i], pix[i] = p, (li, u, v)
+                seen[i] = True
+            filled += len(todo)
+    return filled
+
+
+def _gaps(seen):
+    """Läufe ohne Fund: Liste von (Anfang, Ende) mit Ende nicht eingeschlossen."""
+    out, start = [], None
+    for i, s in enumerate(seen):
+        if not s and start is None:
+            start = i
+        elif s and start is not None:
+            out.append((start, i))
+            start = None
+    if start is not None:
+        out.append((start, len(seen)))
+    return out
+
+
+def _reach(frames, edge, fps):
+    """Bild, bis zu dem feste Treffer vom Rand der Lücke aus ohne Pause über REST_GAP_S reichen."""
+    gap = max(1, int(REST_GAP_S * fps))
+    last = edge
+    for f in frames:
+        if abs(f - last) > gap:
+            break
+        last = int(f)
+    return last
 
 
 def tracklets(ground, fps):
@@ -127,7 +248,7 @@ def main(video, det_path, camera_path, base_dir=None, start=None):
         cands = detect(video)
         cache.write_text(json.dumps(cands))
     n = len(cands)
-    cands, static = drop_static(cands, fps)
+    cands, dropped, static = split_static(cands, fps)
     # Kandidaten am Boden, auf dem Platz (bis 2 m daneben)
     ground = []
     for f, cs in enumerate(cands):
@@ -160,12 +281,25 @@ def main(video, det_path, camera_path, base_dir=None, start=None):
             pos[f], pix[f] = p, (li, u, v)
         chosen += 1
         j = prev[j]
+    source = np.where(~np.isnan(pos[:, 0]), SRC_CHAIN, SRC_NONE).astype(np.uint8)
+    rest = rest_fill(pos, pix, dropped, cam, fps)
+    source[(source == SRC_NONE) & ~np.isnan(pos[:, 0])] = SRC_REST
+    local = 0
+    if video is not None:   # lokale Nachsuche in den Lücken (nur eigene Messungen)
+        added = ball_gapfill.fill(lens_cutter(video), crop_detector(), pix)
+        for f in np.flatnonzero(added):
+            p, _ = veo_camera.to_ground(cam, LENSES[int(pix[f, 0])], [[pix[f, 1], pix[f, 2]]], RADIUS)
+            if not np.isnan(p[0, 0]) and abs(p[0, 0]) < L / 2 + 2 and abs(p[0, 1]) < W / 2 + 2:
+                pos[f], source[f] = p[0], SRC_LOCAL
+            else:
+                pix[f] = np.nan
+        local = int((source == SRC_LOCAL).sum())
     seen = ~np.isnan(pos[:, 0])
     print(f"Ball in {seen.sum()} von {n} Bildern selbst gefunden ({seen.mean():.0%}), aus {chosen} Stücken; "
-          f"{static} feste Fehltreffer ausgeschlossen")
+          f"{static} feste Stellen ausgeschlossen, davon {rest} Bilder als ruhender Ball angeschlossen, {local} Bilder durch lokale Nachsuche")
     if base_dir is not None:   # nur zum Vergleich: Abstand zu Veos Ballspur
         compare_veo(pos, fps, base_dir, float(start))
-    np.savez_compressed(f"{det_path}.ball.npz", pos=pos, pixel=pix, fps=fps)
+    np.savez_compressed(f"{det_path}.ball.npz", pos=pos, pixel=pix, fps=fps, source=source)
     print(f"-> {det_path}.ball.npz")
 
 

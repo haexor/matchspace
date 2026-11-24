@@ -35,6 +35,7 @@ CARRIER_PX = 90.0          # Pixel: so nah am Ball (im Bild) gilt eine Box als d
 NEAR_BALL_M = 3.0          # m: Spieler so nah am Ball gelten als beteiligt
 KICK_MS = 6.0              # m/s: Tempoänderung binnen KICK_S, die als möglicher Kontakt zählt
 KICK_S = 0.2
+WINDOW_S = 15.0            # s: eine Szene ist kurz; bewertet wird das beste Fenster dieser Länge im Abschnitt
 
 
 def in_zone(p) -> np.ndarray:
@@ -106,7 +107,14 @@ def kicks(pos: np.ndarray, fps: float) -> int:
 def score_clip(det: dict, ball: dict, cam: dict) -> dict:
     """Eigene Einzelwerte und Punkte eines Abschnitts. det: Erkennungen je Bild (tools/veo_detect.py); ball: pos (n, 2) am
     Boden, pixel (n, 3) = Linse, u, v (tools/veo_ball.py)."""
-    frames, pos, pix, fps = det["frames"], ball["pos"], ball["pixel"], float(ball["fps"])
+    fps = float(ball["fps"])
+    n_all = min(len(det["frames"]), len(ball["pos"]))
+    overall = float((~np.isnan(ball["pos"][:n_all, 0])).mean()) if n_all else 0.0
+    # bestes Fenster: dort, wo der Ball am häufigsten gefunden wurde
+    w = min(n_all, int(WINDOW_S * fps))
+    cum = np.concatenate([[0], np.cumsum(~np.isnan(ball["pos"][:n_all, 0]))])
+    s0 = int(np.argmax(cum[w:] - cum[:n_all - w + 1])) if w else 0
+    frames, pos, pix = det["frames"][s0:s0 + w], ball["pos"][s0:s0 + w], ball["pixel"][s0:s0 + w]
     n = min(len(frames), len(pos))
     found = ~np.isnan(pos[:n, 0])
     heights, seam, involved = [], [], []
@@ -133,7 +141,8 @@ def score_clip(det: dict, ball: dict, cam: dict) -> dict:
     contacts = kicks(pos[:n], fps)
     # Nähe (Spielerhöhe des Ballführers) und Ballanteil gehen multiplikativ ein: ohne Ball oder ohne Auflösung gibt es nichts zu messen
     points = share * min(carrier / FULL_HEIGHT_PX, 1.0) * (1.0 - 0.5 * cut) * (0.5 + 0.15 * min(people, 3) + 0.05 * min(contacts, 6))
-    return {"punkte": round(points, 3), "ballanteil": round(share, 3), "zone": round(zone, 3), "ballfuehrerHoehePx": round(carrier, 1),
+    return {"punkte": round(points, 3), "fensterStartS": round(s0 / fps, 1), "fensterS": round(n / fps, 1),
+            "ballanteilGesamt": round(overall, 3), "ballanteil": round(share, 3), "zone": round(zone, 3), "ballfuehrerHoehePx": round(carrier, 1),
             "nahtanteil": round(cut, 3), "beteiligte": round(people, 1), "moeglicheKontakte": contacts, "bilder": n}
 
 
@@ -156,7 +165,7 @@ def main(argv: list) -> None:
             print(f"Video {second:7.0f} s  Punkte {points:.2f}  Zone {zone:.2f}  Zweikampf {duel:.2f}  Ball bei Spieler {dribble:.2f}")
     elif len(argv) >= 4 and argv[0] == "bewerten":
         for r in rank(argv[1], argv[2], argv[3:]):
-            print(f"{r['szene']:>14}  Punkte {r['punkte']:.2f}  Ball {r['ballanteil']:.0%}  Zone {r['zone']:.0%}  "
+            print(f"{r['szene']:>14}  Punkte {r['punkte']:.2f}  Ball {r['ballanteil']:.0%} (Abschnitt {r['ballanteilGesamt']:.0%}, ab {r['fensterStartS']:.0f} s)  Zone {r['zone']:.0%}  "
                   f"Ballführer {r['ballfuehrerHoehePx']:.0f} px  Naht {r['nahtanteil']:.0%}  beteiligt {r['beteiligte']:.1f}  Kontakte {r['moeglicheKontakte']}")
     else:
         sys.exit(__doc__)
