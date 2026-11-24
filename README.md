@@ -23,6 +23,11 @@ Schuhe, Haut, Haare). Ohne sie ist die Ausrüstung eine Farbe je Körperregion, 
 Teamfarbe aus `meta.json` (`teams.<team>.kit` mit `shirt`, `shorts`, `socks` überschreibt sie).
 Spiele mit Bildern aus dem Video werden bei bedecktem Himmel beleuchtet wie am Aufnahmetag.
 
+Aufbau des Viewers (`web/`): `main.js` hält Szene, Akteure, Bedienung und Bildschleife; die Teile stehen in eigenen Modulen:
+`track.js` (Spieldaten und Posen laden und abtasten), `stadium.js` (Platz, Kulisse, Tore), `props.js` (Nummernschild,
+Ball), `looks.js` (Videotextur und Trikot je Spieler), `avatar.js` (Körpermodell auf die Gelenke abbilden),
+`avatar-body.js` (Modell umformen und anziehen) und `avatar-look.js` (Videotextur am Modell, Shader).
+
 ## Beispieldaten erzeugen
 
 Die Daten liegen nicht im Repository. Quelle: Metrica Sports Sample Data
@@ -140,9 +145,10 @@ python3 tools/convert_veo.py $V/export.json web/data/veo-2026-11-01 $W/veo_align
   seitlich wenige Zentimeter, in die Tiefe rund 0,3 m). Er wird aus dem stehenden Fuß bestimmt und
   stärker geglättet.
 - `pose_limits.py` hält Haltungen in dem Bereich, den ein Körper hergibt (Gelenkgrenzen, feste
-  Knochenlängen, höchste Drehgeschwindigkeit je Knochen, nichts unter dem Boden) und hält stehende
-  Füße an ihrer Stelle auf dem Rasen fest. Die Gelenkgrenzen gelten als letzter Schritt, nach dem Glätten
-  und nach dem Festhalten der Füße. Jede Figur hat in jedem Bild ein Skelett.
+  Knochenlängen, höchste Drehgeschwindigkeit je Knochen, nichts unter dem Boden); `foot_planting.py`
+  hält stehende Füße an ihrer Stelle auf dem Rasen fest und plant Schritte, wo kein Gang zu sehen ist.
+  Die Gelenkgrenzen gelten als letzter Schritt, nach dem Glätten und nach dem Festhalten der Füße. Jede
+  Figur hat in jedem Bild ein Skelett.
 - Gleichgewicht: Wie weit sich ein Spieler zur Kamera hin oder von ihr weg neigt, sieht eine Kamera nicht.
   Diese Neigung wird so gewählt, dass er nicht umfällt: Schwerpunkt über den stehenden Füßen, verschoben um
   das, was Beschleunigung und Kurvenlauf verlangen (`pose_limits.balance_depth`). Der Abstand zur Kamera
