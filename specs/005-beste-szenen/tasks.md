@@ -34,10 +34,10 @@ automatisch erkannten Kontakte als Vorschläge zum Bestätigen oder Verwerfen un
 
 ## Phase 4: US3 – Ball und Ballführung (P3)
 
-- [ ] T017 [US3] `tests/test_ball_physics.py`: Parabelanpassung an synthetischen Strahlen (bekannte Höhe), Rollen mit Reibung, Aufspringen, zu kurzer Flug bleibt „unbekannt“.
-- [ ] T018 [US3] `tools/ball_physics.py`: Flug, Rollen, Aufspringen, Höhe aus der Wurfparabel.
-- [ ] T019 [US3] `tests/test_ball_events.py`: Kontakte, Pässe, Schüsse auf synthetischen Spuren mit bekannten Kontakten.
-- [ ] T020 [US3] `tools/ball_events.py`: Ereignisse mit Zeit, Spieler, Körperteil und Sicherheit.
+- [x] T017 [US3] `tests/test_ball_physics.py`: Parabelanpassung an synthetischen Strahlen (bekannte Höhe), Rollen mit Reibung, Aufspringen, zu kurzer Flug bleibt „unbekannt“.
+- [x] T018 [US3] `tools/ball_physics.py`: Flug, Rollen, Aufspringen, Höhe aus der Wurfparabel.
+- [x] T019 [US3] `tests/test_ball_events.py`: Kontakte, Pässe, Schüsse auf synthetischen Spuren mit bekannten Kontakten.
+- [x] T020 [US3] `tools/ball_events.py`: Ereignisse mit Zeit, Spieler (`assign`) und Sicherheit; Körperteil folgt mit den Gelenkpunkten am Kontakt (T030). `tools/ball_motion.py` bindet Physik, Kamera und Kontakte zusammen.
 - [ ] T021 [US3] `tools/ball_eval.py`: Zeitfehler, gefundene und erfundene Kontakte, Spieler und Körperteil, Höhenfehler (SC-003, SC-004).
 - [ ] T022 [US3] `tools/ball_motion.py`: Ballspur aus Physik zwischen den Ereignissen, Kennung „erschlossen“; Dribbling mit Abstand zwischen den Berührungen.
 - [ ] T023 [US3] Anbindung in `scene_output.py` und `own_scene.py` (Ballspur mit Höhe und Kennung; `attach_ball` nur noch ohne erkannte Kontakte); Viewer färbt erschlossene Abschnitte und zeigt die Höhe.
