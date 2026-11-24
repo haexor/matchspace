@@ -31,6 +31,7 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).parent))
 import ball_gapfill  # noqa: E402
+import ball_look  # noqa: E402
 import veo_camera  # noqa: E402
 
 LENSES = ("left", "right")
@@ -64,6 +65,22 @@ def detect(video):
     return out
 
 
+def annotate_white(video, cands):
+    """Hängt an jeden Kandidaten [Linse, u, v, Sicherheit] den Weißanteil (tools/ball_look.py) und liest dazu das Video einmal."""
+    if all(len(c) >= 5 for cs in cands for c in cs):
+        return cands
+    cap = cv2.VideoCapture(str(video))
+    half = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)) // 2
+    out = []
+    for cs in cands:
+        ok, image = cap.read()
+        if not ok:
+            out.append([])
+            continue
+        out.append([[li, u, v, conf, ball_look.white_share((image[:half], image[half:])[int(li)], u, v)] for li, u, v, conf, *_ in cs])
+    return out
+
+
 def lens_cutter(video):
     """cut_crops für ball_gapfill.fill: liest das Video einmal und schneidet die verlangten Ausschnitte."""
     def cut(todo):
@@ -94,7 +111,9 @@ def crop_detector():
         hits = []
         for k in range(0, len(crops), 32):
             res = model.predict(crops[k:k + 32], classes=[BALL_CLASS], conf=ball_gapfill.CONF, imgsz=288, verbose=False)
-            hits += [[((b[0] + b[2]) / 2, (b[1] + b[3]) / 2, b[4]) for b in r.boxes.data.tolist()] for r in res]
+            for img, r in zip(crops[k:k + 32], res):   # nur, was nach Ball aussieht (weiß), nicht Markierung oder Hand
+                hits.append([(cu, cv, b[4]) for b in r.boxes.data.tolist() for cu, cv in [((b[0] + b[2]) / 2, (b[1] + b[3]) / 2)]
+                             if ball_look.white_share(img, cu, cv) >= ball_look.MIN_WHITE])
         return hits
     return run
 
@@ -126,21 +145,28 @@ def split_static(cands, fps):
     return kept, dropped, len(static)
 
 
-def rest_fill(pos, pix, dropped, cam, fps):
-    """Ruhender Spielball: feste Treffer zählen dort, wo die bewegte Spur an ihnen endet oder beginnt (Lücke, deren Rand
-    höchstens REST_LINK_M entfernt liegt; am Anfang und Ende des Abschnitts genügt ein Rand). Ein Reserveball irgendwo
-    am Rand schließt nirgends an und bleibt draußen. Füllt pos und pix an Ort und Stelle; Rückgabe: Zahl gefüllter Bilder."""
-    n = len(pos)
-    seen = ~np.isnan(pos[:, 0])
-    centres = []   # Gruppen fester Treffer: [Linse, u, v, Bilder]
+def static_groups(dropped):
+    """Feste Treffer zu Stellen gruppieren: Liste [Linse, u, v, [(Bild, u, v), ...]]."""
+    centres = []
     for f, cs in enumerate(dropped):
-        for li, u, v, conf in cs:
+        for c in cs:
+            li, u, v = c[:3]
             for g in centres:
                 if g[0] == li and abs(g[1] - u) <= REST_PX and abs(g[2] - v) <= REST_PX:
                     g[3].append((f, u, v))
                     break
             else:
                 centres.append([li, u, v, [(f, u, v)]])
+    return centres
+
+
+def rest_fill(pos, pix, dropped, cam, fps):
+    """Ruhender Spielball: feste Treffer zählen dort, wo die bewegte Spur an ihnen endet oder beginnt (Lücke, deren Rand
+    höchstens REST_LINK_M entfernt liegt; am Anfang und Ende des Abschnitts genügt ein Rand). Ein Reserveball irgendwo
+    am Rand schließt nirgends an und bleibt draußen. Füllt pos und pix an Ort und Stelle; Rückgabe: Zahl gefüllter Bilder."""
+    n = len(pos)
+    seen = ~np.isnan(pos[:, 0])
+    centres = static_groups(dropped)
     filled = 0
     for li, _, _, hits in centres:
         if len(hits) < REST_HITS:
@@ -246,14 +272,17 @@ def main(video, det_path, camera_path, base_dir=None, start=None):
     else:
         print("Suche den Ball in jedem Bild ...", flush=True)
         cands = detect(video)
+    if not all(len(c) >= 5 for cs in cands for c in cs):
+        cands = annotate_white(video, cands)
         cache.write_text(json.dumps(cands))
     n = len(cands)
+    cands = [[c for c in cs if c[4] >= ball_look.MIN_WHITE] for cs in cands]   # Fehltreffer, die nicht nach Ball aussehen
     cands, dropped, static = split_static(cands, fps)
     # Kandidaten am Boden, auf dem Platz (bis 2 m daneben)
     ground = []
     for f, cs in enumerate(cands):
         g = []
-        for li, u, v, conf in cs:
+        for li, u, v, conf, *_ in cs:
             p, _ = veo_camera.to_ground(cam, LENSES[li], [[u, v]], RADIUS)
             if not np.isnan(p[0, 0]) and abs(p[0, 0]) < L / 2 + 2 and abs(p[0, 1]) < W / 2 + 2:
                 g.append((p[0], conf, li, u, v))
@@ -286,7 +315,8 @@ def main(video, det_path, camera_path, base_dir=None, start=None):
     source[(source == SRC_NONE) & ~np.isnan(pos[:, 0])] = SRC_REST
     local = 0
     if video is not None:   # lokale Nachsuche in den Lücken (nur eigene Messungen)
-        added = ball_gapfill.fill(lens_cutter(video), crop_detector(), pix)
+        avoid = [(g[0], g[1], g[2]) for g in static_groups(dropped) if len(g[3]) >= REST_HITS]   # feste Stellen: Reserveball, Markierung
+        added = ball_gapfill.fill(lens_cutter(video), crop_detector(), pix, avoid=avoid)
         for f in np.flatnonzero(added):
             p, _ = veo_camera.to_ground(cam, LENSES[int(pix[f, 0])], [[pix[f, 1], pix[f, 2]]], RADIUS)
             if not np.isnan(p[0, 0]) and abs(p[0, 0]) < L / 2 + 2 and abs(p[0, 1]) < W / 2 + 2:
