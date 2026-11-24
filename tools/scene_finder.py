@@ -112,9 +112,10 @@ def score_clip(det: dict, ball: dict, cam: dict) -> dict:
     heights, seam, involved = [], [], []
     for i in np.flatnonzero(found):
         li = int(pix[i, 0])
-        boxes = np.array(frames[i][LENSES[li]], float).reshape(-1, 6)[:, :4]
-        if not len(boxes):
+        rows = frames[i][LENSES[li]]
+        if not rows:
             continue
+        boxes = np.array([r[:4] for r in rows], float)
         centre = np.column_stack([(boxes[:, 0] + boxes[:, 2]) / 2, boxes[:, 3]])
         near = np.linalg.norm(centre - pix[i, 1:3], axis=1)
         k = int(np.argmin(near))
