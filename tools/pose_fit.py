@@ -158,7 +158,7 @@ def natural_motion(positions, ball, fps, lengths, xy=None, weight=None, A=None, 
         kernel = np.ones(2 * half + 1)
         total = np.convolve(trust, kernel, "same")
         backwards = (total > 0.4 * len(kernel)) & (np.convolve(evidence, kernel, "same") / np.maximum(total, 1e-9) < -0.4)
-        for a, b in pose_limits._runs(backwards):
+        for a, b in pose_limits.runs(backwards):
             if b - a < fps:
                 backwards[a:b] = False
     # Drehung zwischen vorwärts und rückwärts über knapp eine halbe Sekunde, nicht in einem Bild
@@ -208,7 +208,7 @@ def natural_motion(positions, ball, fps, lengths, xy=None, weight=None, A=None, 
             elif t:
                 k = 0
         # Die Stützstellen sind grob: Phase entlang der Zeit entrollen und glätten
-        for a, b in pose_limits._runs(present, 2):
+        for a, b in pose_limits.runs(present, 2):
             un = np.unwrap(phase[a:b])
             if b - a >= 7:
                 kernel = np.array([1, 2, 3, 2, 1]) / 9
