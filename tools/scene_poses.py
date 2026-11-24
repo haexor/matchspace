@@ -16,6 +16,7 @@ from pathlib import Path
 import numpy as np
 
 sys.path.insert(0, str(Path(__file__).parent))
+import foot_planting  # noqa: E402
 import ground_motion  # noqa: E402
 import pose_fit  # noqa: E402
 import pose_limits  # noqa: E402
@@ -116,7 +117,7 @@ def fit_poses(run, observed, smooth, joints, floor, game) -> PoseResult:
         for a, b in segments(present, 6):
             pos[a:b] = track_limits.physical(pos[a:b], OUT_FPS)
         xy[:, entity] = pos
-        joint_pos, before, after, count = pose_limits.plant_feet(pose_limits.build(d, lengths), pos, OUT_FPS, lengths, skip=down)
+        joint_pos, before, after, count = foot_planting.plant_feet(pose_limits.build(d, lengths), pos, OUT_FPS, lengths, skip=down)
         # Das Festhalten der Füße kann die Hüfte überdehnen: Grenzen ein letztes Mal anwenden (der Fuß gibt dann nach)
         joint_pos = pose_limits.build(pose_limits.limit_directions(pose_limits.directions_of(joint_pos), allowed), lengths)
         for side in "lr":

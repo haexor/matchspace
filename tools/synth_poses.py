@@ -47,6 +47,7 @@ BONES = [
 def main(match_dir, minutes=None):
     import numpy as np
     sys.path.insert(0, str(Path(__file__).parent))
+    import foot_planting
     import pose_fit
     import pose_limits
 
@@ -79,7 +80,7 @@ def main(match_dir, minutes=None):
         d = pose_limits.limit_directions(pose_limits.limit_turn(d, fps))
         d, pos = pose_limits.balance_depth(d, lengths, pos, None, fps)   # in Beschleunigung und Kurve hineinlegen
         d = pose_limits.limit_directions(d)
-        joints, *_ = pose_limits.plant_feet(pose_limits.build(d, lengths), pos, fps, lengths)
+        joints, *_ = foot_planting.plant_feet(pose_limits.build(d, lengths), pos, fps, lengths)
         joints = pose_limits.build(pose_limits.limit_directions(pose_limits.directions_of(joints)), lengths)   # Festhalten der Füße darf nichts überdehnen
         out[:frames, slot][present] = np.clip(np.round(joints[present] / POSE_SCALE), -32767, 32767).astype(np.int16)
         print(f"\r{slot + 1}/{len(players)} Figuren", end="", flush=True)
