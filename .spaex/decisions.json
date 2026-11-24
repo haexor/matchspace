@@ -1,10 +1,31 @@
 {
   "schema_version": 1,
   "checked": {
-    "source_hash": "2794b46bcee6ab66dabbee444dfab2cfdc40014d595b5aecbc5690bfcebf48d9",
+    "source_hash": "b605b762b00a423bbd314594d86ab89159b01dfcad57c6c9872478a581b5b498",
     "prompt_hash": "aad1b9eb44b8d38d2bb92a30d9806c85710edad91159543012d0d3a0c686372a"
   },
   "decisions": {
+    "43b3458be6ed92b0c0df225ecbc30af1957c2a2d4b0cceb373afad2029c52509": {
+      "kind": "duplicate",
+      "summary": "Both require /speckit-plan to check plans against this constitution's principles.",
+      "passages": [
+        {
+          "scoped_id": "com.github.haexmas.atoms.spaex-constitution/constitution-enforcement-tooling",
+          "text_hash": "339ca1f7454a677481f70a239efbccca9bb3b78fa865a801fb5125f96aff29b0",
+          "text": "`/speckit-plan` and `/speckit-analyze` MUST check plans and cross-artifact consistency against this constitution. CI does not yet mechanically enforce this; when introduced, it MUST validate that no committed file violates the no-secrets-in-git, no-local-absolute-paths, or cross-repo-refs-pin-immutable-revisions principles."
+        },
+        {
+          "scoped_id": "com.github.haexmas.atoms.spaex-constitution/speckit-workflow-adherence",
+          "text_hash": "ca90eeb6cd9958d7adeed4abbb2160528be5fca24fd5429c33b7823801066a2d",
+          "text": "Every feature or spec created via `/speckit-specify` **MUST** be checked against this constitution's principles during `/speckit-plan`; any conflict is resolved by changing the plan or escalated to a constitution amendment, never silently accepted as an exception. The project's active speckit workflow, declared at `.specify/workflows/speckit/workflow.yml`, MUST be followed for every primary task landing, invoking the named commands at their corresponding stages; when that file is absent, the built-in speckit skills serve as the implicit default and MUST still be followed. Freehand edits against source files are permitted only for review-fix responses on an already-open PR, or follow-up doc-alignment surfaced during a walkthrough test, never for the primary task landing itself."
+        }
+      ],
+      "choice": {
+        "kind": "keep_all"
+      },
+      "asked_at": "2026-11-24T08:30:35Z",
+      "answered_at": "2026-11-24T08:30:35Z"
+    },
     "4e1cdec9989b91f2f0f84298efa02bbf8802fe7695fb2c5070e017a51ef8847d": {
       "kind": "duplicate",
       "summary": "Both passages give the same instruction to pick the narrowest test level: unit tests for pure logic, integration tests for module boundaries and persistence, end-to-end tests only for critical whole-system journeys.",
@@ -162,6 +183,27 @@
       "asked_at": "2026-11-22T21:12:13Z",
       "answered_at": "2026-11-22T21:12:13Z"
     },
+    "b5e634610c428d6858ec708f907226774902c5d0615e50cb3c6223f34a918e25": {
+      "kind": "duplicate",
+      "summary": "Both instruct running `cargo test` for the package or workspace and following documented project-specific command variants.",
+      "passages": [
+        {
+          "scoped_id": "com.github.haexmas.atoms.coding-guideline-rust/rust",
+          "text_hash": "0b42940e864cc0cbeeb56811d8249f642f234a47e6d6472c398905840771ce57",
+          "text": "- Before handing off a change, run `cargo fmt --check`, `cargo check`,\n  `cargo clippy`, and `cargo test` when the project supports those commands.\n  Respect the repository's configured Clippy lint levels; enable stricter\n  categories or `-D warnings` only when the project deliberately requires\n  them. Follow documented command variants when they differ."
+        },
+        {
+          "scoped_id": "com.github.haexmas.atoms.coding-guideline-rust/rust-testing",
+          "text_hash": "616c8688ddbda5d7433a87ada332ef04395a47bda32a02aff4b668f2623cfebd",
+          "text": "- Run `cargo test` for the complete package or workspace as appropriate. This\n  includes unit, integration, and library documentation tests by default;\n  follow project-specific feature, target, and test-runner requirements too."
+        }
+      ],
+      "choice": {
+        "kind": "keep_all"
+      },
+      "asked_at": "2026-11-24T08:30:35Z",
+      "answered_at": "2026-11-24T08:30:35Z"
+    },
     "c087a2d64bb582e4a92f0e0c7f5e987ad36e7c5f767f6a08654ca7c595e5e022": {
       "kind": "duplicate",
       "summary": "Both passages give the same instruction not to introduce an abstraction merely because two pieces of code look similar or might be reusable, and to accept a little local duplication instead.",
@@ -204,6 +246,27 @@
       "asked_at": "2026-11-22T21:12:13Z",
       "answered_at": "2026-11-22T21:12:13Z"
     },
+    "c97355e811a5542df4696e34001394201a40d3853da7953789e3adc1601b4aeb": {
+      "kind": "duplicate",
+      "summary": "Both require test implementations to live in dedicated files separate from production code, leaving only a language-required test-module declaration in the production file.",
+      "passages": [
+        {
+          "scoped_id": "com.github.haexmas.atoms.coding-guideline-rust/rust-testing",
+          "text_hash": "a1218443de08bc595174335b4ccde4044b7707b16718b710d48a58334f1519c3",
+          "text": "- Put focused unit-test implementations in dedicated files separate from\n  production code. For module-private unit tests, a small declaration such as\n  `#[cfg(test)] mod tests;` may remain in the module under test, with the test\n  implementation in the separate test file. Use integration tests under\n  `tests/` to exercise the public API as an external consumer would. Use\n  documentation tests for public examples that should compile and remain\n  correct."
+        },
+        {
+          "scoped_id": "com.github.haexmas.atoms.general-coding/general-coding",
+          "text_hash": "2e66d07f47a07bcc5c5a7ea82b9c9d617b778f1e446d92e2fdc19739960dba91",
+          "text": "- Test code MUST be maintained in files separate from production code in every\n  language. This applies to unit, integration, contract, and end-to-end tests.\n  A language-required test-module declaration or registration may remain in\n  the production file, but test bodies and test-only helpers MUST live in\n  dedicated test files. Do not place inline test modules or test functions in\n  production files. Follow the repository's convention for test-file placement\n  and naming."
+        }
+      ],
+      "choice": {
+        "kind": "keep_all"
+      },
+      "asked_at": "2026-11-24T08:30:35Z",
+      "answered_at": "2026-11-24T08:30:35Z"
+    },
     "d92572fdcd86a53939f9bd11050d62966b024f000d20b3bb088864c5f452ad38": {
       "kind": "duplicate",
       "summary": "Both bullets state the same prohibition on calling `asyncio.run()` from code that is already running inside an event loop.",
@@ -224,6 +287,27 @@
       },
       "asked_at": "2026-11-22T22:10:13Z",
       "answered_at": "2026-11-22T22:10:13Z"
+    },
+    "eca2940fedc8efc1f56d975a82eeed26e0c44d2ca527fa6f328b36ec31c4a936": {
+      "kind": "duplicate",
+      "summary": "Both instruct running `go test ./...` for the module, with `-race` for concurrent code, and following project-specific command variants.",
+      "passages": [
+        {
+          "scoped_id": "com.github.haexmas.atoms.coding-guideline-go/go",
+          "text_hash": "fec35be83295e7d0f6faf687f1e7af314cbf1acbf8324bfb109d0524e1d4e7f1",
+          "text": "- Before handing off a change, verify that `gofmt -l .` prints no files, then\n  run `go vet ./...` and `go test ./...` when the project supports those\n  commands. Add `-race` for code with concurrency. Run `golangci-lint run` and\n  `govulncheck ./...` when the project configures them, and follow documented\n  command variants when they differ."
+        },
+        {
+          "scoped_id": "com.github.haexmas.atoms.coding-guideline-go/go-testing",
+          "text_hash": "e64f228b297aceaf1fed6503ea3f41cb38790bda42d7c44ed0af63157848c6f5",
+          "text": "- Run `go test ./...` for the complete module as appropriate, with `-race`\n  for concurrent code. Use `-count=1` to bypass the test cache when a result\n  may depend on external state, and follow project-specific tags, build\n  constraints, and test-runner requirements too."
+        }
+      ],
+      "choice": {
+        "kind": "keep_all"
+      },
+      "asked_at": "2026-11-24T08:30:35Z",
+      "answered_at": "2026-11-24T08:30:35Z"
     },
     "f33fac02539e620b84f83f37e8441e63b983952dec4135830b5984a79de2c014": {
       "kind": "duplicate",
