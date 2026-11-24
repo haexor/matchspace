@@ -18,6 +18,7 @@ import numpy as np
 sys.path.insert(0, str(Path(__file__).parent))
 import foot_fit  # noqa: E402
 import foot_planting  # noqa: E402
+import overlap  # noqa: E402
 import ground_motion  # noqa: E402
 import pose_fit  # noqa: E402
 import pose_limits  # noqa: E402
@@ -85,6 +86,7 @@ def fit_poses(run, observed, smooth, joints, floor, game) -> PoseResult:
             if joints.foot2d is not None and key in joints.foot2d and (~np.isnan(joints.foot2d[key][:, 0, 0])).any():
                 foot_out, lens_feet = resample_keypoints(np.where(boxed[key][:, None, None], joints.foot2d[key], np.nan), obs[key][:, 0], total, ratio)
             target, weight = pose_fit.targets(kp_out)
+            weight = weight * overlap.weight_factor(obs, key)[nearest][:, None]   # überdeckt (Zweikampf): Gelenkpunkte unsicher
             ref, A = pose_fit.linearize(cam, lens_out, pos)
             weight[down | ~present | np.isnan(ref[:, 0])] = 0
             result.views[e["id"]] = {"kp": kp_out.astype(np.float32), "lens": lens_out.astype(np.float32), "down": down,
