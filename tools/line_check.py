@@ -7,7 +7,7 @@ wirklich hell. Die wahre Lage ist der Punkt der Linie unter dem Fuß. Je Quelle 
 (Blickrichtung der Kamera, positiv = weiter weg) und quer dazu gemessen:
   - scene: Lage der fertigen Szene (tracks.bin);
   - box: Mitte der Boxunterkante am Boden (wie das Tracking);
-  - feet: Bodenpunkt aus den Gelenkpunkten (veo_scene.feet_on_ground, wie die fertige Szene ihn misst);
+  - feet: Bodenpunkt aus den Gelenkpunkten (scene_positions.feet_on_ground, wie die fertige Szene ihn misst);
   - veo: nächster Veo-Spieler, nur mit --veo (zweite Meinung).
 Körpermitte und stehender Fuß liegen bis rund 0,3 m auseinander; das mittelt sich über viele Stellen aus, ein fester
 Versatz bleibt sichtbar.
@@ -31,7 +31,7 @@ import veo_camera  # noqa: E402
 NEAR_PX = 1.5        # px: so nah muss das Fußgelenk an der Linie liegen
 STILL_PX = 2.0       # px: so wenig darf es sich zum Bild davor und danach bewegen
 MIN_CONF = 0.5       # Mindestsicherheit der Gelenkpunkte
-ANKLE_HEIGHT = 0.07  # m: Höhe des Fußgelenks über dem Boden (wie veo_scene.feet_on_ground)
+ANKLE_HEIGHT = 0.07  # m: Höhe des Fußgelenks über dem Boden (wie scene_positions.feet_on_ground)
 PER_SECOND = 3       # höchstens so viele Stellen je Spieler und Sekunde
 BRIGHT = 12.0        # Linie muss im Hintergrundbild so viel heller sein als ihre Umgebung
 SOURCES = ("scene", "box", "feet", "veo")
@@ -148,7 +148,7 @@ def find(identity: Mapping, kp: np.ndarray, kp_index: np.ndarray, index: Mapping
 def main(argv: list[str] | None = None) -> None:
     import jersey_eval
     import jersey_reader
-    import veo_scene
+    import scene_positions
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     for name in ("video", "det", "camera", "scene"):
         ap.add_argument(name)
@@ -179,7 +179,7 @@ def main(argv: list[str] | None = None) -> None:
         g, _ = veo_camera.to_ground(cam, lens, [[(b[0] + b[2]) / 2, b[3]]])
         e["box"] = depth_across(g[0], s.truth, eye)
         row = kp[kp_index[s.frame, s.lens, 0] + s.box][None]
-        feet = veo_scene.feet_on_ground(cam, cam["position"], row, np.array([s.lens]), veo_scene.DEFAULT_HEIGHT)
+        feet = scene_positions.feet_on_ground(cam, cam["position"], row, np.array([s.lens]), scene_positions.DEFAULT_HEIGHT)
         if np.isfinite(feet).all():
             e["feet"] = depth_across(feet[0], s.truth, eye)
         t = det["frames"][s.frame]["t"]
