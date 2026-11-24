@@ -22,11 +22,14 @@ Plan: [plan.md](plan.md), Spec: [spec.md](spec.md). Format: `- [ ] Tnnn [P] [USn
 
 ## Phase 3: US2 – Referenz für Ballkontakte (P2)
 
+Entscheidung des Nutzers (2026-11-24): keine Handmarkierung durch den Nutzer, nicht vor jedem Spiel. Die Referenz entsteht
+einmalig für die gewählten Szenen aus Bildfolgen in voller Auflösung, lokal, ohne Namen; sie dient nur der Messung.
+
 - [ ] T012 [US2] `tests/test_ball_reference.py`: Speichern, Laden, Wiederfinden nach neuer Auswertung, keine Namen und Bilder in der Datei.
 - [ ] T013 [US2] `tools/ball_reference.py`: Format und Wiederfinden (Spieleranker wie in `reference.py`).
 - [ ] T014 [US2] Vorschläge für Kontakte aus der Ballspur (Knicke, Tempowechsel) in `tools/ball_events.py` (Grundstufe, wird in Phase 4 verfeinert).
-- [ ] T015 [US2] Ballmodus im Review-Werkzeug: `web/review/ball.js`, Ergänzungen in `index.html`, `review.css`, `tools/review_server.py` (Bildschritte, Kontakt setzen, Körperteil, Pass, Schuss, Verlust, Gewinn, „Ball nicht erkennbar“).
-- [ ] T016 [US2] Eine Szene gemeinsam mit dem Nutzer markieren; Zeit stoppen (SC-002).
+- [ ] T015 [US2] Kontaktfolgen der gewählten Szenen als Bildfolgen in voller Auflösung ausgeben und Kontakte, Fuß und Art selbst notieren (Ersatz für den Ballmodus im Review-Werkzeug).
+- [ ] T016 [US2] Zusätzliche Plausibilitätsprüfung ohne Referenz: Tempoänderung des Balls nur an einem Kontakt mit nahem Fuß; Veos Pass- und Ballbesitzdaten nur als zweite Meinung. Grenzen im Bericht nennen (SC-002 entfällt).
 
 ## Phase 4: US3 – Ball und Ballführung (P3)
 
