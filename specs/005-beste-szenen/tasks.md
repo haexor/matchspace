@@ -16,7 +16,7 @@ Plan: [plan.md](plan.md), Spec: [spec.md](spec.md). Format: `- [ ] Tnnn [P] [USn
 - [x] T007 [US1] `tools/scene_finder.py`: Vorauswahl aus dem Basisspiel (Ball in Nahzone, Spieler am Ball, Tempowechsel) in Fenstern; Zusammenlegen.
 - [x] T008 [US1] `tools/scene_finder.py`: eigene Bewertung je Abschnitt aus Personenerkennung und eigener Ballspur (Ballanteil, Spielerhöhe des Ballführers, Ballgröße, Beteiligte, Naht).
 - [x] T009 [US1] Die sieben Abschnitte auswerten (`veo_detect.py`, `veo_ball.py`), Rangliste `ranking.json` mit Standbildern, Zahlen gegen SC-001 prüfen.
-- [x] T035 [US1] Ballsuche verbessert: ruhender Ball (`rest_fill`) und lokale Nachsuche in Ausschnitten (`tools/ball_gapfill.py`), Herkunft je Bild in `source`; Tests `tests/test_ball_gapfill.py`, `tests/test_veo_ball.py`. Messung mit versteckten Bildern: 91 % wiedergefunden, Median-Fehler 0,3 px.
+- [x] T035 [US1] Ballsuche verbessert: ruhender Ball (`rest_fill`) und lokale Nachsuche in Ausschnitten (`tools/ball_gapfill.py`), Herkunft je Bild in `source`; Tests `tests/test_ball_gapfill.py`, `tests/test_veo_ball.py`. Messung mit versteckten Bildern: 91 % wiedergefunden, Median-Fehler 0,3 px. Fehltreffer (orangene Markierung, Hand) fallen über den Weißanteil (`tools/ball_look.py`) und feste Stellen heraus.
 - [ ] T010 [US1] Ergebnis dem Nutzer zeigen (Standbilder, Zahlen), drei bis fünf Szenen gemeinsam auswählen.
 - [ ] T011 [US1] README: Abschnitt „Beste Szenen finden“ mit Aufrufen (ohne Zugangsdaten).
 
@@ -28,7 +28,7 @@ automatisch erkannten Kontakte als Vorschläge zum Bestätigen oder Verwerfen un
 
 - [ ] T012 [US2] `tests/test_ball_reference.py`: Speichern, Laden, Wiederfinden nach neuer Auswertung, keine Namen und Bilder in der Datei.
 - [ ] T013 [US2] `tools/ball_reference.py`: Format und Wiederfinden (Spieleranker wie in `reference.py`).
-- [ ] T014 [US2] Vorschläge für Kontakte aus der Ballspur (Knicke, Tempowechsel) in `tools/ball_events.py` (Grundstufe, wird in Phase 4 verfeinert); wird vor dem Ballmodus gebaut.
+- [x] T014 [US2] Vorschläge für Kontakte aus der Ballspur (Knicke, Tempowechsel) in `tools/ball_events.py` (Grundstufe, wird in Phase 4 verfeinert); wird vor dem Ballmodus gebaut.
 - [ ] T015 [US2] Ballmodus im Review-Werkzeug: `web/review/ball.js`, Ergänzungen in `index.html`, `review.css`, `tools/review_server.py`. Vorschläge bestätigen/verwerfen, Zeit korrigieren, Kontakt neu setzen, Körperteil, Pass, Schuss, Verlust, Gewinn, „Ball nicht erkennbar“.
 - [ ] T016 [US2] Gemeinsam mit dem Nutzer die gewählten Szenen markieren; Zeit stoppen (SC-002: höchstens rund 10 Minuten je Szene). Dazu die Plausibilitätsprüfung ohne Referenz (Tempoänderung nur an Kontakten mit nahem Fuß); Veos Pass- und Ballbesitzdaten nur als zweite Meinung.
 

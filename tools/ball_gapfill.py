@@ -18,6 +18,7 @@ MAX_RADIUS = 120.0
 SPAN = 60               # Bilder: so weit darf die Mitte zwischen zwei Funden reichen
 REACH = 8               # Bilder je Runde in die Lücke hinein
 ROUNDS = 8
+AVOID_PX = 6.0          # Pixel: so nah an einer festen Stelle (Markierung, Reserveball) zählt ein Treffer nicht
 VEL_FRAMES = 3          # Geschwindigkeit aus Funden höchstens so weit davor
 
 
@@ -53,10 +54,13 @@ def crop_box(u: float, v: float, width: int, height: int) -> tuple:
     return int(np.clip(u - CROP, 0, max(0, width - 2 * CROP))), int(np.clip(v - CROP, 0, max(0, height - 2 * CROP)))
 
 
-def pick(hits: list, u: float, v: float, radius: float):
-    """Treffer (u, v, Sicherheit) nächster zur erwarteten Stelle innerhalb des Radius."""
+def pick(hits: list, u: float, v: float, radius: float, avoid=(), lens=0):
+    """Treffer (u, v, Sicherheit) nächster zur erwarteten Stelle innerhalb des Radius; Treffer auf festen Stellen (avoid:
+    (Linse, u, v)) zählen nicht."""
     best = None
     for hu, hv, conf in hits:
+        if any(a[0] == lens and abs(a[1] - hu) <= AVOID_PX and abs(a[2] - hv) <= AVOID_PX for a in avoid):
+            continue
         d = float(np.hypot(hu - u, hv - v))
         if d <= radius and (best is None or d < best[0]):
             best = (d, hu, hv, conf)
@@ -76,7 +80,8 @@ def search_round(pix, known, width, height):
     return todo
 
 
-def fill(cut_crops, detect_crops, pix: np.ndarray, width: int = 2048, height: int = 1024, rounds: int = ROUNDS) -> np.ndarray:
+def fill(cut_crops, detect_crops, pix: np.ndarray, width: int = 2048, height: int = 1024, rounds: int = ROUNDS,
+         avoid=()) -> np.ndarray:
     """Füllt Lücken von pix (n, 3 = Linse, u, v; NaN = kein Fund) durch lokale Suche.
     cut_crops(todo) -> Ausschnitte (2*CROP Kantenlänge) zu den Einträgen (Bild, Linse, ..., x0, y0) von todo;
     detect_crops(ausschnitte) -> je Ausschnitt Treffer [(u, v, Sicherheit)] in dessen Koordinaten.
@@ -89,7 +94,7 @@ def fill(cut_crops, detect_crops, pix: np.ndarray, width: int = 2048, height: in
             break
         found = 0
         for (f, lens, u, v, radius, x0, y0), hits in zip(todo, detect_crops(cut_crops(todo))):
-            got = pick([(hu + x0, hv + y0, c) for hu, hv, c in hits], u, v, radius)
+            got = pick([(hu + x0, hv + y0, c) for hu, hv, c in hits], u, v, radius, avoid, lens)
             if got is not None:
                 pix[f] = (lens, got[0], got[1])
                 known[f] = added[f] = True
