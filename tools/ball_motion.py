@@ -3,8 +3,8 @@
 
 Zwischen zwei Kontakten wird je ein Stück Spur an die Sehstrahlen durch die Ballpixel angepasst: Flug mit Höhe oder Rollen am Boden.
 Lücken innerhalb eines Stücks (Ball nicht zu sehen) füllt die angepasste Bahn und sind als erschlossen gekennzeichnet; vor und nach
-einem Stück reicht die Bahn bis zum Kontakt. Wo zu wenig Spur für eine Anpassung da ist, bleibt die Lage am Boden (wie bisher) oder
-leer, mit Kennung „unbekannt“.
+einem Stück reicht die Bahn bis zum Kontakt. Wo zu wenig Spur für eine Anpassung da ist oder weder Rollen noch Flug plausibel sind, bleibt die Lage leer (Kennung „unbekannt“):
+Die Lage am Boden wäre bei einem Ball in der Luft stark verzerrt.
 
 Aufruf:  .venv/bin/python tools/ball_motion.py KAMERA.json DETEKTIONEN.json   (liest DETEKTIONEN.json.ball.npz, schreibt .ball3d.npz)
 """
@@ -21,6 +21,8 @@ import veo_camera  # noqa: E402
 
 LENSES = ("left", "right")
 GROUND, FLIGHT = 1, 2      # kind je Bild; 0 = unbekannt
+EXTEND = 6                 # Bilder, die eine angepasste Bahn über die letzte Beobachtung hinaus weitergeführt wird (Ausholen bis zum Kontakt)
+JUMP_M = 1.5              # m: größte Lücke zwischen zwei Stücken am Kontakt
 MARGIN = 1                 # Bilder rund um einen Kontakt, die nicht in die Anpassung eingehen (der Fuß verdeckt den Ball)
 
 
@@ -47,6 +49,39 @@ def observations(cam, pix: np.ndarray) -> tuple:
     return origin, direction, rng
 
 
+def angular_track(cam, pix: np.ndarray) -> np.ndarray:
+    """Ballspur in Winkeln um die Kamera, mal Entfernung (am Boden angenommen) in Meter umgerechnet: (n, 2), NaN ohne Fund.
+    Anders als die Lage am Boden bleibt ein Flug darin glatt (die Verzerrung durch die Höhe ändert sich nur langsam), und
+    die Naht der beiden Linsenbilder macht keinen Sprung. Darin werden Kontakte gesucht."""
+    _, direction, rng = observations(cam, pix)
+    az = np.arctan2(direction[:, 0], direction[:, 1])
+    el = np.arcsin(np.clip(direction[:, 2], -1, 1))
+    return np.column_stack([az * rng, el * rng])
+
+
+def drop_discontinuous(pieces: list, fps: float, jump: float = JUMP_M) -> int:
+    """Benachbarte Stücke (ein Kontakt dazwischen) müssen am Übergang zusammenpassen: Der Ball ist beim Kontakt an einem Ort. Passen
+    sie um mehr als `jump` Meter nicht zusammen, fliegt das unsicherere Stück raus (Rollen vor Flug, sonst der größere Restfehler).
+    Rückgabe: Zahl entfernter Stücke."""
+    removed = 0
+    i = 0
+    while i < len(pieces) - 1:
+        a, b = pieces[i], pieces[i + 1]
+        if b["frames"][0] - a["frames"][-1] <= 2 * MARGIN + 2:
+            gap = np.linalg.norm(a["seg"].fit.at(a["frames"][-1] / fps) - b["seg"].fit.at(b["frames"][0] / fps))
+            if gap > jump:
+                if a["seg"].kind == b["seg"].kind:
+                    worse = a if a["seg"].rms >= b["seg"].rms else b
+                else:
+                    worse = a if a["seg"].kind == "ground" else b   # ein Flug erklärt sich selbst, Rollen am Boden weicht
+                pieces.remove(worse)
+                removed += 1
+                i = max(0, i - 1)
+                continue
+        i += 1
+    return removed
+
+
 def build(cam, pix: np.ndarray, contacts: list, fps: float) -> Motion:
     n = len(pix)
     origin, direction, rng = observations(cam, pix)
@@ -55,14 +90,8 @@ def build(cam, pix: np.ndarray, contacts: list, fps: float) -> Motion:
     kind = np.zeros(n, np.uint8)
     inferred = np.zeros(n, bool)
     z_sigma = np.zeros(n)
-    # Lage am Boden für alle Funde als Rückfall (Ball auf Rasenhöhe angenommen, wie bisher)
-    for li in (0, 1):
-        idx = np.flatnonzero(found & (pix[:, 0] == li))
-        if len(idx):
-            g, _ = veo_camera.to_ground(cam, LENSES[li], pix[idx, 1:3], ball_physics.RADIUS)
-            xyz[idx] = np.column_stack([g, np.full(len(idx), ball_physics.RADIUS)])
     cuts = [0] + sorted(c.frame for c in contacts) + [n]
-    segments = []
+    pieces = []
     for a, b in zip(cuts[:-1], cuts[1:]):
         lo, hi = (a + MARGIN if a else 0), (b - MARGIN if b < n else n)
         idx = np.flatnonzero(found[lo:hi]) + lo
@@ -70,17 +99,21 @@ def build(cam, pix: np.ndarray, contacts: list, fps: float) -> Motion:
             continue
         t = idx / fps
         for seg in ball_physics.segment_track(origin[idx], direction[idx], t, rng[idx], idx):
-            if seg.fit is None:
+            if seg.fit is None or seg.kind == "unknown":
                 continue
-            first = a if seg.start == idx[0] else seg.start
-            last = b if seg.stop == idx[-1] + 1 else seg.stop
-            frames = np.arange(first, min(last, n))
-            xyz[frames] = seg.fit.at(frames / fps)
-            kind[frames] = FLIGHT if seg.kind == "flight" else GROUND
-            z_sigma[frames] = seg.fit.z_sigma if seg.kind == "flight" else 0.0
-            inferred[frames] = ~found[frames]
-            segments.append((first, int(frames[-1]) + 1, seg.kind, round(seg.rms, 3), round(seg.z_sigma, 2),
-                             round(float(seg.fit.at(frames / fps)[:, 2].max()), 2)))
+            first = max(a if seg.start == idx[0] else seg.start, seg.start - EXTEND)   # bis zum Kontakt, aber nicht weit ins Leere
+            last = min(b if seg.stop == idx[-1] + 1 else seg.stop, seg.stop + EXTEND)
+            pieces.append({"seg": seg, "frames": np.arange(first, min(last, n))})
+    drop_discontinuous(pieces, fps)
+    segments = []
+    for pc in pieces:
+        seg, frames = pc["seg"], pc["frames"]
+        at = seg.fit.at(frames / fps)
+        xyz[frames] = at
+        kind[frames] = FLIGHT if seg.kind == "flight" else GROUND
+        z_sigma[frames] = seg.fit.z_sigma if seg.kind == "flight" else 0.0
+        inferred[frames] = ~found[frames]
+        segments.append((int(frames[0]), int(frames[-1]) + 1, seg.kind, round(seg.rms, 3), round(seg.z_sigma, 2), round(float(at[:, 2].max()), 2)))
     return Motion(xyz, kind, inferred, z_sigma, segments)
 
 
@@ -120,7 +153,7 @@ def main(camera_path, det_path) -> None:
     cam = veo_camera.load(camera_path)
     z = np.load(f"{det_path}.ball.npz")
     pix, fps = z["pixel"], float(z["fps"])
-    contacts = ball_events.find_contacts(z["pos"], fps)
+    contacts = ball_events.find_contacts(angular_track(cam, pix), fps)
     m = build(cam, pix, contacts, fps)
     np.savez_compressed(f"{det_path}.ball3d.npz", xyz=m.xyz, kind=m.kind, inferred=m.inferred, z_sigma=m.z_sigma, fps=fps,
                         contacts=np.array([[c.frame, c.speed_in, c.speed_out, c.jump, c.confidence] for c in contacts]))

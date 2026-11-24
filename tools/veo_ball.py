@@ -189,8 +189,12 @@ def rest_fill(pos, pix, dropped, cam, fps):
             first, last = a, b   # Ball liegt beidseits der Lücke an derselben Stelle: ruhte die ganze Zeit
             if before and not after:   # nur so weit, wie die festen Treffer ohne lange Pause reichen
                 last = _reach(inside, a, fps) + 1
+                if b < n and np.linalg.norm(pos[b] - p) > MAX_SPEED * (b - last + 1) / fps + 0.7:
+                    continue   # setzt die Spur danach dort an, wohin der Ball nicht kommen konnte: Reserveball, kein ruhender Spielball
             elif after and not before:
                 first = _reach(inside[::-1], b - 1, fps)
+                if a > 0 and np.linalg.norm(pos[a - 1] - p) > MAX_SPEED * (first - a + 1) / fps + 0.7:
+                    continue
             todo = [i for i in range(first, last) if not seen[i]]
             for i in todo:
                 pos[i], pix[i] = p, (li, u, v)
