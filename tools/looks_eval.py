@@ -11,7 +11,8 @@ Textur geschoben (dadurch zählt nur der Inhalt der Textur, nicht der Fehler der
 Aufruf (Bilder und Geometrie einmal einsammeln, dauert wie veo_looks.py einen Durchgang):
     .venv/bin/python tools/looks_eval.py sammeln SZENENVIDEO DETEKTIONEN.json KAMERA.json HINTERGRUND.png SZENENORDNER AUSGABE.pkl SPIELER...
 und messen (rechnet nur noch aus der gesammelten Datei):
-    .venv/bin/python tools/looks_eval.py messen AUSGABE.pkl [BILDORDNER]
+    .venv/bin/python tools/looks_eval.py messen AUSGABE.pkl [BILDORDNER] [--masken]
+(--masken: zusätzlich Personenmasken mit models/yolo11x-seg.pt rechnen und die Variante "mit Personenmaske" messen)
 """
 import pickle
 import sys
@@ -24,6 +25,7 @@ import numpy as np
 sys.path.insert(0, str(Path(__file__).parent))
 import veo_looks as vl  # noqa: E402
 
+CROP_PAD = 24                    # Pixel Umgebung um den Spieler im gesammelten Ausschnitt (die Nachbarn müssen im Bild sein, damit die Maske sie trennt)
 TEST_BLOCK, TEST_EVERY = 25, 5   # Bilder je Block, jeder wievielte Block ist Prüfmaterial
 
 
@@ -45,7 +47,7 @@ def collect(video, det_path, camera_path, background_path, scene_dir, out_path, 
     for f, image in vl.frames(sc):
         for o in vl.observe(sc, f, image, only=ids):
             uv = o["uv"]
-            pad = int(np.ceil(2 * MAX_ALIGN)) + 2  # combined body and segment shift, plus gradient and bilinear taps
+            pad = max(CROP_PAD, int(np.ceil(2 * vl.MAX_ALIGN)) + 2)  # Umgebung für die Maske; mindestens Körper- plus Teilverschiebung samt Gradient und bilinearem Zugriff
             x0, y0 = int(max(np.floor(uv[:, 0].min() - pad), 0)), int(max(np.floor(uv[:, 1].min() - pad), 0))
             x1, y1 = int(np.ceil(uv[:, 0].max() + pad)), int(np.ceil(uv[:, 1].max() + pad))
             lens = image[o["lens"] * H:(o["lens"] + 1) * H]
@@ -67,6 +69,35 @@ def align(obs, ref, ref_ok, index, segment):
     return vl.align(obs["crop"], obs["uv"], segment[cell], obs["weight"], ref[texel], ref_ok[texel])
 
 
+def add_masks(observations, scale=3, batch=16):
+    """Personenmaske je Ausschnitt (o["mask"], bool, Größe des Ausschnitts): das Segmentierungsmodell (models/yolo11x-seg.pt) läuft auf dem vergrößerten
+    Ausschnitt; gewählt wird die Person, in der die meisten sichtbaren Stellen des Spielers liegen. Ohne Treffer (weniger als 30 % der Stellen) bleibt
+    o["mask"] = None. Maske um 1 Pixel verbreitert, weil dünne Arme sonst am Rand wegfallen."""
+    from ultralytics import YOLO
+    model = YOLO(str(Path(__file__).parent.parent / "models" / "yolo11x-seg.pt"))
+    found = 0
+    for start in range(0, len(observations), batch):
+        group = observations[start:start + batch]
+        big = [cv2.resize(o["crop"], None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC) for o in group]
+        results = model.predict(big, classes=[0], imgsz=640, conf=0.15, retina_masks=True, verbose=False)
+        for o, r in zip(group, results):
+            o["mask"] = None
+            if r.masks is None or not len(r.masks.data):
+                continue
+            h, w = o["crop"].shape[:2]
+            masks = r.masks.data.cpu().numpy() > 0.5
+            ui = np.clip((o["uv"][:, 0] * scale).astype(int), 0, masks.shape[2] - 1)
+            vi = np.clip((o["uv"][:, 1] * scale).astype(int), 0, masks.shape[1] - 1)
+            score = masks[:, vi, ui].mean(axis=1)
+            best = int(score.argmax())
+            if score[best] < 0.3:
+                continue
+            small = cv2.resize(masks[best].astype(np.uint8), (w, h), interpolation=cv2.INTER_AREA) > 0
+            o["mask"] = cv2.dilate(small.astype(np.uint8), np.ones((3, 3), np.uint8)) > 0
+            found += 1
+    return found
+
+
 def quality(observations, ref=None):
     """Güte je Beobachtung und Stelle: frontal gesehen und nah (Pixel je Meter), auf das 95-%-Quantil des Spielers bezogen (höchstens 1)."""
     q = [o["facing"].astype(np.float32) / o["dist"].astype(np.float32) for o in observations]
@@ -74,7 +105,7 @@ def quality(observations, ref=None):
     return [np.minimum(x / ref, 1.0) for x in q], ref
 
 
-def build(observations, index, segment, aligned=None, rounds=2, power=0.0):
+def build(observations, index, segment, aligned=None, rounds=2, power=0.0, use_mask=False):
     """Textur (Kachel² × 3, Gewicht) aus Ausschnitten wie in veo_looks.main: Mittel mit Gewichten, im zweiten Durchgang ohne Ausreißer.
     `aligned`: Verschiebungen je Ausschnitt (Liste von (N, 2)), sonst keine."""
     size = vl.TILE * vl.TILE
@@ -87,6 +118,10 @@ def build(observations, index, segment, aligned=None, rounds=2, power=0.0):
             colour = vl.sample(o["crop"], uv)
             texel = index[o["cell"].astype(int)]
             w0 = o["weight"].astype(np.float64)
+            if use_mask and o.get("mask") is not None:
+                mh, mw = o["mask"].shape
+                inside = o["mask"][np.clip(np.round(uv[:, 1] - 0.5).astype(int), 0, mh - 1), np.clip(np.round(uv[:, 0] - 0.5).astype(int), 0, mw - 1)]
+                w0 = w0 * inside
             if rnd > 0:
                 w0 = w0 * (np.linalg.norm(colour - mean[texel], axis=1) < vl.OUTLIER)
             w = w0 * qs[k].astype(np.float64) ** power   # Güte: nahe, frontale Bilder zählen mehr ("power" = Schärfe vor Rauschen)
@@ -144,10 +179,14 @@ def sharpness(tex, wt, segment_name="torso"):
 SEG_NAMES = [s[0] for s in vl.SEGMENTS]
 
 
-def measure(pkl_path, image_dir=None):
+def measure(pkl_path, image_dir=None, masken=False):
     pack = pickle.load(open(pkl_path, "rb"))
     index, segment = pack["index"], pack["segment"]
+    if masken:
+        for pid, obs in pack["data"].items():
+            print(f"Masken {pid}: {add_masks(obs)} von {len(obs)}", flush=True)
     variants = {"Mittel (bisher)": lambda tr: build(tr, index, segment),
+                "mit Personenmaske": lambda tr: build(tr, index, segment, use_mask=True),
                 "Güte hoch 2": lambda tr: build(tr, index, segment, power=2),
                 "Güte hoch 4": lambda tr: build(tr, index, segment, power=4),
                 "Güte hoch 8": lambda tr: build(tr, index, segment, power=8),
@@ -201,9 +240,10 @@ def measure(pkl_path, image_dir=None):
 
 
 if __name__ == "__main__":
-    if len(sys.argv) >= 9 and sys.argv[1] == "sammeln":
-        collect(*sys.argv[2:8], sys.argv[8:])
-    elif len(sys.argv) in (3, 4) and sys.argv[1] == "messen":
-        measure(*sys.argv[2:])
+    args = [a for a in sys.argv if a != "--masken"]
+    if len(args) >= 9 and args[1] == "sammeln":
+        collect(*args[2:8], args[8:])
+    elif len(args) in (3, 4) and args[1] == "messen":
+        measure(*args[2:], masken="--masken" in sys.argv)
     else:
         sys.exit(__doc__)
