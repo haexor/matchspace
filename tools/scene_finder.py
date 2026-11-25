@@ -77,7 +77,7 @@ def preselect(base_dir, count: int = 15, window_s: float = 15.0, step_s: float =
     zone = in_zone(ball) & seen
     rows = []
     w, step = int(window_s * fps), int(step_s * fps)
-    for s in range(0, T - w, step):
+    for s in range(0, T - w + 1, step):
         sl = slice(s, s + w)
         if seen[sl].mean() < 0.7:
             continue
