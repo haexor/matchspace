@@ -48,8 +48,9 @@ def collect(video, det_path, camera_path, background_path, scene_dir, out_path, 
     for f, image in vl.frames(sc):
         for o in vl.observe(sc, f, image, only=ids):
             uv = o["uv"]
-            x0, y0 = int(max(np.floor(uv[:, 0].min() - 4), 0)), int(max(np.floor(uv[:, 1].min() - 4), 0))
-            x1, y1 = int(np.ceil(uv[:, 0].max() + 5)), int(np.ceil(uv[:, 1].max() + 5))
+            pad = int(np.ceil(2 * MAX_ALIGN)) + 2  # combined body and segment shift, plus gradient and bilinear taps
+            x0, y0 = int(max(np.floor(uv[:, 0].min() - pad), 0)), int(max(np.floor(uv[:, 1].min() - pad), 0))
+            x1, y1 = int(np.ceil(uv[:, 0].max() + pad)), int(np.ceil(uv[:, 1].max() + pad))
             lens = image[o["lens"] * H:(o["lens"] + 1) * H]
             crop = lens[y0:min(y1, H), x0:x1].copy()
             data[names[o["player"]]].append({
@@ -143,7 +144,7 @@ def refined(observations, index, segment, steps=3, ridge=RIDGE):
     return tex, wt
 
 
-def error(tex, wt, observations, index, segment, aligned):
+def error(tex, coverage, observations, index, segment, aligned):
     """Mittlere absolute Farbabweichung (über Kanäle und Stellen, gewichtet) der Prüfbilder zur Textur, getrennt nach Körperteilgruppe."""
     groups = {"Rumpf": ("torso",), "Kopf": ("head",), "Arme": ("upperarm", "lowerarm"), "Beine": ("thigh", "calf")}
     names = np.array([s.split("_")[0] for s in SEG_NAMES])
@@ -153,14 +154,14 @@ def error(tex, wt, observations, index, segment, aligned):
         texel = index[cell]
         uv = o["uv"] + (aligned[k] if aligned is not None else 0)
         colour = vl.sample(o["crop"], uv)
-        w = o["weight"] * (wt[texel] >= vl.ENOUGH) * (o["facing"].astype(float) > 0.5)
+        w = o["weight"] * coverage[texel] * (o["facing"].astype(float) > 0.5)
         d = np.abs(colour - tex[texel]).mean(axis=1)
         d = np.minimum(d, vl.OUTLIER)
         for g, parts in groups.items():
             m = np.isin(names[segment[cell]], parts)
             sums[g][0] += float((w * d)[m].sum())
             sums[g][1] += float(w[m].sum())
-    return {g: s[0] / max(s[1], 1e-9) for g, s in sums.items()}
+    return {g: s[0] / s[1] if s[1] else None for g, s in sums.items()}
 
 
 def sharpness(tex, wt, segment_name="torso"):
@@ -192,16 +193,25 @@ def measure(pkl_path, image_dir=None):
         print(f"{pid}: {len(train)} Bilder zum Bauen, {len(test)} zum Prüfen", flush=True)
         textures = {}
         for name, fn in variants.items():
-            began = time.time()
             tex, wt = fn(train)
             textures[name] = (tex, wt)
-            nominal = error(tex, wt, test, index, segment, None)
+        used = np.unique(index)
+        variant_coverage = {name: wt >= vl.ENOUGH for name, (_, wt) in textures.items()}
+        shared_coverage = np.logical_and.reduce(list(variant_coverage.values()))
+        shared_ratio = float(shared_coverage[used].mean()) if len(used) else 0.0
+        print(f"  gemeinsame Abdeckung: {shared_ratio:.1%} der {len(used)} verwendeten Texel", flush=True)
+        for name, (tex, wt) in textures.items():
+            began = time.time()
+            nominal = error(tex, shared_coverage, test, index, segment, None)
             sh = [align(o, tex, wt >= vl.ENOUGH, index, segment) for o in test]
-            lined = error(tex, wt, test, index, segment, sh)
+            lined = error(tex, shared_coverage, test, index, segment, sh)
             sharp = sharpness(tex, wt)
             rows[name].append((nominal, lined, sharp))
-            print(f"  {name:34s} Schärfe {sharp:5.1f} | unausgerichtet " + " ".join(f"{g} {v:5.2f}" for g, v in nominal.items()) +
-                  " | ausgerichtet " + " ".join(f"{g} {v:5.2f}" for g, v in lined.items()) + f"  [{time.time() - began:.0f} s]", flush=True)
+            coverage_ratio = float(variant_coverage[name][used].mean()) if len(used) else 0.0
+            print(f"  {name:34s} Abdeckung {coverage_ratio:5.1%} | Schärfe {sharp:5.1f} | unausgerichtet " +
+                  " ".join(f"{g} {v:5.2f}" if v is not None else f"{g}   n/a" for g, v in nominal.items()) +
+                  " | ausgerichtet " + " ".join(f"{g} {v:5.2f}" if v is not None else f"{g}   n/a" for g, v in lined.items()) +
+                  f"  [{time.time() - began:.0f} s]", flush=True)
         if image_dir:
             Path(image_dir).mkdir(parents=True, exist_ok=True)
             seg_rect = [s[1] for s in vl.SEGMENTS if s[0] in ("torso", "head")]
@@ -214,10 +224,13 @@ def measure(pkl_path, image_dir=None):
     for name, vals in rows.items():
         if not vals:
             continue
-        nom = {g: np.mean([v[0][g] for v in vals]) for g in vals[0][0]}
-        lin = {g: np.mean([v[1][g] for v in vals]) for g in vals[0][1]}
-        print(f"  {name:34s} Schärfe {np.mean([v[2] for v in vals]):5.1f} | unausgerichtet " + " ".join(f"{g} {v:5.2f}" for g, v in nom.items()) +
-              " | ausgerichtet " + " ".join(f"{g} {v:5.2f}" for g, v in lin.items()))
+        nom = {g: [v[0][g] for v in vals if v[0][g] is not None] for g in vals[0][0]}
+        lin = {g: [v[1][g] for v in vals if v[1][g] is not None] for g in vals[0][1]}
+        nom = {g: float(np.mean(v)) if v else None for g, v in nom.items()}
+        lin = {g: float(np.mean(v)) if v else None for g, v in lin.items()}
+        print(f"  {name:34s} Schärfe {np.mean([v[2] for v in vals]):5.1f} | unausgerichtet " +
+              " ".join(f"{g} {v:5.2f}" if v is not None else f"{g}   n/a" for g, v in nom.items()) +
+              " | ausgerichtet " + " ".join(f"{g} {v:5.2f}" if v is not None else f"{g}   n/a" for g, v in lin.items()))
 
 
 if __name__ == "__main__":
