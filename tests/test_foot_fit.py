@@ -24,8 +24,8 @@ def pixel_of(point):
 
 def joints_template(n=6):
     j = np.zeros((n, len(NAMES), 3))
-    j[:, 1] = (-0.1, 0.0, 0.10)    # linker Knöchel
-    j[:, 2] = (0.1, 0.0, 0.10)
+    j[:, 1] = (-0.1, 0.0, 0.12)    # linker Knöchel
+    j[:, 2] = (0.1, 0.0, 0.12)
     j[:, 3] = j[:, 1] + (0.0, -0.06, -0.07)   # Ferse (Vorlage, zeigt nach hinten)
     j[:, 4] = j[:, 2] + (0.0, -0.06, -0.07)
     j[:, 5] = j[:, 3] + (0.0, 0.25, 0.0)      # Zehe (Vorlage: nach vorn)
@@ -148,7 +148,27 @@ class ApplyTest(unittest.TestCase):
         j[:, 1:3, 2] = 0.05
         j[:, 3:5, 2] = -0.02
         out, _ = ff.apply(j, np.zeros((6, 2)), np.zeros((6, 4, 3)), np.zeros(6), CAM, NAMES, fake_rays)
-        self.assertTrue((out[:, 3:, 2] >= 0.0).all())
+        # Mittelpunkt von Ferse und Zehe liegt mindestens einen Kugelradius hoch: die Sohle steckt nicht im Rasen
+        self.assertTrue((out[:, 3:5, 2] >= ff.SOLE["Heel"] - 1e-9).all())
+        self.assertTrue((out[:, 5:, 2] >= ff.SOLE["Toe"] - 1e-9).all())
+
+
+class LiftTest(unittest.TestCase):
+    def test_bone_turns_up_and_keeps_its_length(self):
+        base = np.array([0.0, 0.0, 0.07])
+        point = base + np.array([0.0, -0.06, -0.08])
+        got = ff.lift_to_sole(point, base, np.linalg.norm(point - base), 0.04)
+        self.assertAlmostEqual(got[2], 0.04)
+        self.assertAlmostEqual(np.linalg.norm(got - base), np.linalg.norm(point - base), places=9)
+        self.assertLess(got[1], 0.0)
+
+    def test_high_enough_stays(self):
+        p = np.array([0.1, 0.2, 0.3])
+        np.testing.assert_allclose(ff.lift_to_sole(p, np.array([0, 0, 0.5]), 0.3, 0.04), p)
+
+    def test_too_short_to_reach_only_limits_height(self):
+        got = ff.lift_to_sole(np.array([0.0, 0.01, 0.0]), np.array([0.0, 0.0, 0.5]), 0.1, 0.04)
+        self.assertAlmostEqual(got[2], 0.04)
 
 
 class SmoothTest(unittest.TestCase):
