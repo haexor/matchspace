@@ -380,7 +380,7 @@ def main(video, det_path, camera_path, background_path, scene_dir, check_path=No
     used[index] = True
     print("Gesehener Anteil der Oberfläche je Spieler:", {p["id"]: round(float(seen[k][used].mean()), 2) for k, p in enumerate(players)}, flush=True)
 
-    # Lücken füllen: gespiegelte Seite, dann Mannschaftsmittel an derselben Stelle, dann Mittel der Zeile
+    # Lücken füllen: gespiegelte Seite, Mannschaftsmittel für Trikot/Hose/Stutzen, sonst Mittel der Spielerzeile
     mirror = np.arange(TILE * TILE)
     for name, (x, y, w, h), _, _ in SEGMENTS:
         other = name[:-1] + ("r" if name.endswith("_l") else "l") if name[-2:] in ("_l", "_r") else name
@@ -443,7 +443,8 @@ def main(video, det_path, camera_path, background_path, scene_dir, check_path=No
         "headShare": HEAD_SHARE, "footLift": FOOT_LIFT,
         "seen": {p["id"]: round(float(seen[k][used].mean()), 2) for k, p in enumerate(players)},
         "source": "Farben je Spieler aus dem Video (tools/veo_looks.py): Körperoberfläche mit der gerechneten Haltung ins "
-                  "Kamerabild gelegt, über alle Bilder gemittelt; nie gesehene Stellen von der Gegenseite oder aus der Mannschaft.",
+                  "Kamerabild gelegt, über alle Bilder gemittelt; nie gesehene Stellen von der Gegenseite, bei Trikot/Hose/Stutzen "
+                  "aus der Mannschaft und sonst aus der eigenen Zeile.",
     }
     meta_path.write_text(json.dumps(full, indent=2, ensure_ascii=False) + "\n")
     print(f"-> {scene_dir / 'looks.png'} ({atlas.shape[1]} × {atlas.shape[0]}), {time.time() - began:.0f} s")
