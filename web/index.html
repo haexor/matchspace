@@ -25,7 +25,11 @@
   #help { position: fixed; top: 10px; right: 12px; max-width: 260px; font-size: 12px; opacity: .7;
     text-align: right; pointer-events: none; text-shadow: 0 1px 3px #000; }
   @media (max-width: 700px) { #help { display: none; } }
-  body.bare #top, body.bare #help, body.bare #bar { display: none; }
+  body.bare #top, body.bare #help, body.bare #bar, body.bare #ref { display: none; }
+  /* Original unter der Szene: Fläche über der Leiste, die Szene bekommt den Rest oben */
+  #ref { position: fixed; left: 0; right: 0; background: #000; border-top: 1px solid #3d444d; display: flex; justify-content: center; }
+  #refVideo { height: 100%; max-width: 100%; object-fit: contain; }
+  #refTag { position: absolute; left: 12px; top: 8px; font-size: 12px; opacity: .8; text-shadow: 0 1px 3px #000; pointer-events: none; }
 </style>
 <script type="importmap">{ "imports": { "three": "./vendor/three.module.js" } }</script>
 </head>
@@ -33,6 +37,7 @@
 <div id="top"><b>MatchSpace</b><br><span id="status">Lade Spieldaten …</span></div>
 <div id="help">Spieler anklicken zum Auswählen · Leertaste: Start/Stopp · ←/→: 5 s ·
   ,/.: Einzelbild · Ich-Perspektive: ziehen zum Umsehen</div>
+<div id="ref" hidden><video id="refVideo"></video><span id="refTag">Original (Veo-Video, nur lokal)</span></div>
 <div id="bar">
   <button id="play" title="Start/Stopp (Leertaste)">▶</button>
   <span id="clock">–</span>
@@ -59,8 +64,9 @@
       <option value="simple">Einfach</option>
     </select>
   </label>
+  <button id="refToggle" hidden aria-pressed="true" title="Originalvideo unter der Szene ein/aus">Original</button>
   <button id="topview" title="Taktikansicht von oben">Von oben</button>
 </div>
-<script type="module" src="./main.js?v=14"></script>
+<script type="module" src="./main.js?v=17"></script>
 </body>
 </html>

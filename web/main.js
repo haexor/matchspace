@@ -5,6 +5,8 @@ import { query, base, meta, N, ENTITIES, L, W, POSES, PLAYER_SLOTS, JOINTS, BONE
 import { buildStadium } from './stadium.js';
 import { numberSprite, ballTexture } from './props.js';
 import { createLooks } from './looks.js';
+import { createReference } from './reference.js';
+import { createContactShadows } from './contact-shadows.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -20,6 +22,7 @@ renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 document.body.prepend(renderer.domElement);
 const scene = new THREE.Scene();
+const reference = createReference(meta, base, query);
 
 // Himmel als Verlauf, Dunst in der Ferne. Mit Kulisse aus dem Video kommt die Horizontfarbe von dort.
 const BACKDROP = meta.pitch.backdrop ?? null;
@@ -131,6 +134,7 @@ const P = PLAYER_SLOTS.size;
 let boneMesh = null, jointMesh = null;
 let look = ['body', 'sticks', 'simple'].includes(query.get('look')) ? query.get('look') : 'body';
 const jointPos = Array.from({ length: J }, () => new THREE.Vector3());
+const contactShadows = createContactShadows(scene, PLAYER_SLOTS.size, JOINT_INDEX);
 const headPos = new THREE.Vector3(), nosePos = new THREE.Vector3();
 let selectedHasPose = false;
 if (POSES) {
@@ -283,7 +287,8 @@ addEventListener('pointermove', (e) => {
 });
 addEventListener('pointerup', (e) => {
   if (down && !down.moved && e.target === renderer.domElement) {
-    const ndc = new THREE.Vector2(e.clientX / innerWidth * 2 - 1, -(e.clientY / innerHeight) * 2 + 1);
+    const r = renderer.domElement.getBoundingClientRect();
+    const ndc = new THREE.Vector2((e.clientX - r.left) / r.width * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
     raycaster.setFromCamera(ndc, camera);
     const hit = raycaster.intersectObjects(pickable.filter((m) => m.parent.visible))[0]; // auch unsichtbare Figuren treffen
     if (hit) {
@@ -295,8 +300,14 @@ addEventListener('pointerup', (e) => {
 });
 
 function resize() {
-  renderer.setSize(innerWidth, innerHeight);
-  camera.aspect = innerWidth / innerHeight;
+  // Mit Originalvideo bekommt die Szene nur den oberen Teil; das Video sitzt über der Leiste unten
+  const bar = UI ? $('bar').offsetHeight : 0;
+  const refH = UI ? reference.height() : 0;
+  const height = Math.max(120, innerHeight - (refH ? refH + bar : 0));
+  reference.resized();
+  $('ref').style.bottom = `${bar}px`;
+  renderer.setSize(innerWidth, height);
+  camera.aspect = innerWidth / height;
   camera.updateProjectionMatrix();
 }
 addEventListener('resize', resize);
@@ -350,12 +361,14 @@ function frame(now) {
   const dt = Math.min(0.1, (now - last) / 1000);
   last = now;
   if (playing) setTime(t + dt * meta.fps * speed);
+  reference.sync(t, playing, speed);
 
   for (const [i, actor] of actors.entries()) {
     actor.group.visible = sample(i, t, actor.group.position);
     if (actor.kind !== 'player') continue;
     const slot = PLAYER_SLOTS.get(i);
     const posed = look !== 'simple' && actor.group.visible && samplePose(slot, t, actor.group.position, jointPos);
+    contactShadows.update(slot, posed ? jointPos : null, actor.group.position, actor.group.visible);
     if (i === selected) {
       selectedHasPose = posed;
       if (posed) { headPos.copy(jointPos[JOINT_INDEX.head]); nosePos.copy(jointPos[JOINT_INDEX.nose]); }
