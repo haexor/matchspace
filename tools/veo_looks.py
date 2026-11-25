@@ -11,7 +11,7 @@ Sichtbar ist sie, wenn sie zur Kamera zeigt und kein Körper (der eigene oder ei
 Versatz zu seinen erkannten Gelenkpunkten nachgeschoben, und Bildpunkte, die wie der leere Platz
 aussehen (auch Rasen im Schatten eines Spielers), zählen nicht. Gemittelt wird über alle Bilder in zwei Durchgängen (im zweiten ohne Ausreißer);
 dreht sich der Spieler, füllt sich nach und nach auch die Rückseite. Was nie zu sehen war, kommt von der
-gespiegelten Seite, dann vom Mittel der Mannschaft an dieser Stelle (Torwart und Schiedsrichter für sich).
+gespiegelten Seite, dann (nur Rumpf, Hose, Stutzen) vom Mittel der Mannschaft an dieser Stelle, sonst vom Mittel der Zeile des Spielers (Torwart und Schiedsrichter für sich).
 Spieler, die im Video nicht zu sehen waren, tragen die Mittelkachel ihrer Mannschaft.
 
 Grenzen: Spieler sind im Video rund 50 bis 120 Pixel hoch, die Textur ist entsprechend grob; Gesichter und
@@ -395,13 +395,17 @@ def main(video, det_path, camera_path, background_path, scene_dir, check_path=No
     groups = {}
     for k, p in enumerate(players):
         groups.setdefault(p["group"], []).append(k)
+    kit = np.zeros(TILE * TILE, bool)
+    for name, (x, y, w, h), _, _ in SEGMENTS:
+        if name == "torso" or name.split("_")[0] in ("thigh", "calf"):
+            kit[(np.arange(y, y + h)[:, None] * TILE + np.arange(x, x + w)[None, :]).ravel()] = True
     team_tiles, extra, extra_have = {}, [], []
     for group, members in groups.items():
         wsum = weight[members].sum(axis=0)
         gmean = (colour[members] * weight[members][..., None]).sum(axis=0) / np.maximum(wsum, 1e-9)[:, None]
         gseen = (seen[members].sum(axis=0) >= 1)
         for k in members:
-            take = ~have[k] & gseen
+            take = ~have[k] & gseen & kit   # nur Trikot, Hose, Stutzen vom Mannschaftsmittel; Arme (Unterwäsche, Handschuhe), Kopf und Füße sind je Spieler verschieden
             filled[k][take] = gmean[take]
             have[k] |= take
         if not group.endswith("-gk") and len(members) >= 2:   # Kachel für Spieler der Mannschaft, die im Video nicht zu sehen waren
