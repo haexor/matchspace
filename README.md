@@ -95,7 +95,34 @@ python3 tools/convert_veo.py $V/export.json web/data/veo-2026-11-01 $W/veo_align
 # 6. Aussehen je Spieler aus dem Video (rund 4 Minuten je Szene); nach jeder neuen Haltung wiederholen
 .venv/bin/python tools/veo_looks.py $W/scene_705.mp4 $W/scene_705.det.json $W/camera.json $W/background.png web/data/veo-szene-705
 # dann http://localhost:8765/?match=veo-2026-11-01 oder ?match=veo-szene-705
+# 7. Körperhaltung vom Körpermodell statt aus der Schablone (rund 8 s je Bild bei 16 Personen, GPU; Einrichtung siehe unten).
+#    Läuft auf einer fertig gebauten Szene (Bahnen der Spieler) und wird danach beim Neubau der Szene gelesen:
+#    models/sam-3d-body/.venv-sam/bin/python tools/veo_body.py web/data/veo-szene-705-eigen $W/camera.json $W/scene_705.mp4 \
+#        $W/scene_705.det.json.body.npz --code models/sam-3d-body
+#    .venv/bin/python tools/veo_scene.py - $W/camera.json - $W/scene_705.mp4 705 $W/scene_705.det.json web/data/veo-2026-11-01 web/data/veo-szene-705-eigen
+# 8. Videotextur aufbereiten (Nummernfleck weg, Schuhfarbe, vierfach größer) und das Original unter die Szene legen:
+#    .venv/bin/python tools/looks_clean.py web/data/veo-szene-705-eigen
+#    .venv/bin/python tools/scene_reference.py web/data/veo-szene-705-eigen $W/camera.json $W/scene_705.mp4
 ```
+
+**Körpermodell einrichten (einmalig).** SAM 3D Body (Meta, SAM License; Gewichte `facebook/sam-3d-body-dinov3` bei Hugging Face nach
+Antrag freigeschaltet) liegt mit eigener Python-Umgebung unter `models/sam-3d-body` (nicht im Repository):
+`git clone https://github.com/facebookresearch/sam-3d-body models/sam-3d-body`, dann `uv venv --python 3.12 models/sam-3d-body/.venv-sam`,
+darin torch (zur Grafikkarte passend) und `pytorch-lightning opencv-python-headless yacs scikit-image einops timm dill pandas rich hydra-core
+pyrootutils webdataset networkx roma joblib loguru optree fvcore pycocotools huggingface_hub omegaconf braceexpand` installieren. Alles läuft lokal.
+Ohne `.body.npz` fällt die Szene auf die Schablone zurück.
+
+**Körperbau je Spieler.** Die Größe kommt aus der Messung im Bild, Schulter- und Hüftbreite sowie Längen von Ober- und Unterschenkel, Rumpf
+und Armen aus den Abständen der Körperpunkte (`tools/body_build.py`): Median über alle Bilder des Spielers, im Verhältnis zum Median aller
+Spieler, bei wenigen Bildern zur Schablone hin gezogen und begrenzt (Breiten 0,85–1,2, Längen 0,93–1,07). Die Körperhöhe bleibt die gemessene.
+Das Ergebnis steht je Spieler als `build` in `meta.json`. Gemessen streut es in der Nahszene nur um rund ±5 %; die Dicke von Rumpf und
+Gliedmaßen (Statur) sieht das Modell nicht.
+
+**Viewer-Bild ohne Fenster.** `tools/viewer_shot.py SZENE BILD.png --zeit 3.2 --spieler own-6 --modus follow` startet den Viewer in einem
+Chromium über Playwright (mit WebGL) und speichert ein Bild, zum Prüfen von Haltung, Textur und Kontakt. Im Nix-devShell kommen Browser und
+Software-Grafik (Mesa) aus dem Atom `com.github.haexmas.atoms.nix-playwright`; der Playwright-Client muss zur Version der Browser passen
+(`pip install playwright==1.64.1` bei dem gepinnten nixpkgs, `nix eval nixpkgs#playwright-driver.version`). Ohne devShell nimmt Playwright
+seinen eigenen Browser (`playwright install chromium`) und die Grafik des Rechners.
 
 - `veo_camera.py` bestimmt je Aufzeichnung Standort und Blickrichtung der Kamera sowie Länge und Breite des
   Platzes. Nichts davon wird von einem anderen Spiel übernommen: Auswärts ist der Platz anders groß und die
