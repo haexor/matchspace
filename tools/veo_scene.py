@@ -37,6 +37,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 import jersey_identity  # noqa: E402
 from scene_boxes import observe, smooth_boxes  # noqa: E402
+import body_contact  # noqa: E402
 from scene_context import load_run  # noqa: E402
 from scene_keypoints import fill_gaps, floor_poses, gather_joints  # noqa: E402
 from scene_output import write_scene  # noqa: E402
@@ -55,6 +56,9 @@ def main(veo_dir, camera_path, align_path, video, start, det_path, base_dir, out
     game = load_game(run, observed, base_dir, out_dir)
     measure_positions(run, observed, joints, floor, game)
     result = fit_poses(run, observed, smooth, joints, floor, game)
+    touched, biggest = body_contact.keep_apart(game.xy, game.slots)
+    if touched:
+        print(f"Mindestabstand {body_contact.MIN_DISTANCE} m zwischen Spielern: in {touched} Bildern auseinandergeschoben (höchstens {biggest:.2f} m)", flush=True)
     write_scene(run, game, result)
 
 
