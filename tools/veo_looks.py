@@ -356,6 +356,7 @@ def observe(sc, f, image, only=None):
         dist = np.linalg.norm(view, axis=-1)
         facing = (nrm * view).sum(-1) / dist
         uv = veo_camera.project(cam, lens_name, pts.reshape(-1, 3)).reshape(len(bodies), N, 2)
+        uv_raw = uv.copy()   # ohne Versatz zu den erkannten Gelenkpunkten (für Messungen)
         for k, b in enumerate(bodies):
             if "shift" in b and b["lens"][f] == li and not np.isnan(b["shift"][f, 0, 0]):
                 uv[k] += anchor @ b["shift"][f]
@@ -387,7 +388,8 @@ def observe(sc, f, image, only=None):
             scale = 1.0 / dist[k][m][front]
             w = (facing[k][m][front] - 0.1) * scale * 20.0 * ~empty * np.minimum(apart / PURE, 1.0) ** 2
             out.append({"player": a, "lens": li, "cell": np.flatnonzero(m)[front], "uv": q, "colour": colour, "weight": w,
-                        "facing": facing[k][m][front], "dist": dist[k][m][front], "image": lens_image})
+                        "facing": facing[k][m][front], "dist": dist[k][m][front], "image": lens_image,
+                        "uv_raw": uv_raw[k][m][front]})
     return out
 
 
