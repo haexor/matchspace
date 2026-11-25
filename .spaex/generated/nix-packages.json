@@ -22,6 +22,7 @@
   "nodejs_22",
   "openssl",
   "pkg-config",
+  "playwright-driver.browsers",
   "pnpm",
   "rustc",
   "rustfmt",

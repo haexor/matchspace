@@ -12,12 +12,13 @@
         "com.github.haexmas.atoms.haex-vault",
         "com.github.haexmas.atoms.nix-devshell-base",
         "com.github.haexmas.atoms.nix-nodejs",
+        "com.github.haexmas.atoms.nix-playwright",
         "com.github.haexmas.atoms.nix-rust",
         "com.github.haexmas.atoms.ponytail",
         "com.github.haexmas.atoms.spaex-constitution",
         "com.github.haexmas.atoms.speckit"
       ],
-      "revision": "f2be88bdd1b07be394efa9338e53dfa012295110",
+      "revision": "be50d46e3f84aa2bc144f89d45a5b932b65f5803",
       "source": "https://github.com/haexmas/atoms"
     }
   ],
