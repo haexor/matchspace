@@ -8,8 +8,8 @@ export const base = `data/${query.get('match') || 'game1'}/`;
 // ---------- Daten laden (Format: matchspace-track v0) ----------
 export let meta, data;
 try {
-  meta = await (await fetch(base + 'meta.json')).json();
-  data = new Int16Array(await (await fetch(base + meta.tracks.file)).arrayBuffer());
+  meta = await (await fetch(base + 'meta.json', { cache: 'no-cache' })).json();
+  data = new Int16Array(await (await fetch(base + meta.tracks.file, { cache: 'no-cache' })).arrayBuffer());
 } catch (err) {
   $('status').textContent = `Spieldaten unter ${base} nicht gefunden. Siehe README.`;
   throw err;
@@ -38,7 +38,7 @@ export function poseChunk(frame) {
   const cached = chunkCache.get(c);
   if (cached !== undefined) return cached || null;
   chunkCache.set(c, null);
-  fetch(base + POSES.path.replace('{chunk}', String(c).padStart(3, '0')))
+  fetch(base + POSES.path.replace('{chunk}', String(c).padStart(3, '0')), { cache: 'no-cache' })
     .then((r) => (r.ok ? r.arrayBuffer() : Promise.reject(new Error(r.statusText))))
     .then((buf) => {
       chunkCache.set(c, new Int16Array(buf));
