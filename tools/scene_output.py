@@ -102,6 +102,9 @@ def report(result, total: int, out_dir: Path) -> None:
     print("Eingriffe der harten Gelenkgrenzen nach der Anpassung (Bilder, Summe über Spieler und Körperseiten):", dict(result.stats))
     print(f"Fallen, Liegen und Aufstehen aus Vorlagen dargestellt: {result.grounded} Spieler-Bilder")
     print(f"Fußstellung (Ferse, Zehe) aus dem Bild gesetzt: {result.feet_from_video} Fuß-Bilder")
+    if result.body_frames:
+        print(f"Haltung vom Körpermodell (tools/veo_body.py): {result.body_frames} Spieler-Bilder; Bahn nach der Hüfte im Bild korrigiert: im Mittel "
+              f"{result.position_shift / max(result.position_players, 1):.2f} m")
     print(f"Stehende Füße rutschten im Mittel mit {result.slip_before / max(1, result.slip_frames):.2f} m/s über den Rasen, "
           f"nach dem Festhalten mit {result.slip_after / max(1, result.slip_frames):.2f} m/s ({result.slip_frames} Fuß-Bilder mit Bodenkontakt)")
     print(f"-> {out_dir}")

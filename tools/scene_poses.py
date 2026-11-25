@@ -16,6 +16,8 @@ from pathlib import Path
 import numpy as np
 
 sys.path.insert(0, str(Path(__file__).parent))
+import body_build  # noqa: E402
+import body_pose  # noqa: E402
 import foot_fit  # noqa: E402
 import foot_planting  # noqa: E402
 import overlap  # noqa: E402
@@ -51,6 +53,22 @@ class PoseResult:
     slip_after: float = 0.0
     slip_frames: int = 0
     feet_from_video: int = 0   # Fuß-Bilder, deren Stellung aus dem Bild gesetzt wurde
+    body_frames: int = 0       # Spieler-Bilder, deren Haltung vom Körpermodell stammt (tools/veo_body.py)
+    position_shift: float = 0.0   # Summe der mittleren Verschiebung der Bahn durch die Hüfte des Körpermodells (m), über Spieler
+    position_players: int = 0
+
+
+def load_body(run):
+    """Ergebnis des Körpermodells (DETEKTIONEN.json.body.npz von tools/veo_body.py) oder None."""
+    path = Path(str(run.det_path) + ".body.npz")
+    if not path.exists():
+        return None
+    data = dict(np.load(path))
+    if "ids" not in data or not len(data["player"]):
+        return None
+    kept = body_pose.drop_misplaced(data)
+    print(f"Körpermodell: {len(data['player']) - len(kept['player'])} von {len(data['player'])} Personen aussortiert (falsche Person gelesen)", flush=True)
+    return kept
 
 
 def fit_poses(run, observed, smooth, joints, floor, game) -> PoseResult:
@@ -64,6 +82,8 @@ def fit_poses(run, observed, smooth, joints, floor, game) -> PoseResult:
     result = PoseResult(buf, [], {})
     ball_xy = xy[:, ball] if ball is not None else None
     median_height = float(np.median(list(body.values()))) if body else DEFAULT_HEIGHT
+    body_data = load_body(run)
+    builds = body_build.measure(body_data) if body_data is not None else {}
     nearest = np.minimum(np.round(np.arange(total) * ratio).astype(int), n - 1)
     for slot, entity in enumerate(slots):
         pos = xy[:, entity].copy()
@@ -77,6 +97,9 @@ def fit_poses(run, observed, smooth, joints, floor, game) -> PoseResult:
         e = base["entities"][entity]
         key = (e["team"], int(e["id"].rsplit("-", 1)[1])) if no_veo else (e["team"], e["number"]) if "label" not in e else None
         lengths = pose_limits.bone_lengths(body.get(key, median_height))
+        if e["id"] in builds:   # Schulter, Hüfte, Beinlängen, Rumpf und Arme des Spielers statt der Schablone
+            e["build"] = {p: round(builds[e["id"]][p], 3) for p in body_build.PARTS}
+            lengths = body_build.apply(lengths, builds[e["id"]])
         down, low, seen, h36 = np.zeros(total, bool), np.zeros(total, bool), np.zeros(total), None
         foot_out = lens_feet = None   # Fußpunkte aus dem Bild im Takt der Ausgabe (tools/veo_feet.py), wenn vorhanden
         if key in smooth:
@@ -117,18 +140,30 @@ def fit_poses(run, observed, smooth, joints, floor, game) -> PoseResult:
             lying_now = smooth[key]["down"][nearest] & down
             d = ground_motion.sequence(d, smooth[key]["share"][nearest], lying_now, down & present, way, OUT_FPS)
             result.grounded += int((down & present).sum())
+        sam = np.zeros(total, bool)
+        if body_data is not None:   # Haltung vom Körpermodell, wo es den Spieler gelesen hat (außer am Boden: dort die bewährte Abfolge)
+            seen_by_model = pose_limits.directions_of(body_pose.world_joints(body_data, e["id"], total, cam, veo_camera.rays, NAMES))
+            sam = ~np.isnan(seen_by_model[:, 1, 0]) & present & ~down
+            d[sam] = seen_by_model[sam]
+            result.body_frames += int(sam.sum())
         d = pose_limits.smooth_directions(pose_limits.limit_turn(d, OUT_FPS), OUT_FPS)
         allowed = lean if key in smooth else pose_limits.MAX_LEAN
         d = pose_limits.limit_directions(d, allowed)   # Glätten kann Grenzen wieder verletzen
-        d, pos = pose_limits.balance_depth(d, lengths, pos, cam_pos, OUT_FPS, skip=down)
+        d, pos = pose_limits.balance_depth(d, lengths, pos, cam_pos, OUT_FPS, skip=down | sam)   # das Modell gibt die Neigung vor
         d = pose_limits.limit_directions(d, allowed)
+        if sam.any():   # Position: im Zweikampf mischt die gemeinsame Box beide Spieler und hält sie auseinander; die Füße des Modells sind je Person gelesen
+            seen_at = body_pose.position_from_feet(body_data, e["id"], total, cam, veo_camera.rays, pose_limits.build(d, lengths), NAMES)
+            before = pos.copy()
+            pos = body_pose.refine_position(pos, seen_at, sam)
+            result.position_shift += float(np.nanmean(np.linalg.norm(pos - before, axis=1)[sam]))
+            result.position_players += 1
         for a, b in segments(present, 6):
             pos[a:b] = track_limits.physical(pos[a:b], OUT_FPS)
         xy[:, entity] = pos
         joint_pos, before, after, count = foot_planting.plant_feet(pose_limits.build(d, lengths), pos, OUT_FPS, lengths, skip=down)
         # Das Festhalten der Füße kann die Hüfte überdehnen: Grenzen ein letztes Mal anwenden (der Fuß gibt dann nach)
         joint_pos = pose_limits.build(pose_limits.limit_directions(pose_limits.directions_of(joint_pos), allowed), lengths)
-        if foot_out is not None:   # Ferse und Zehe aus dem Bild statt aus der Laufrichtung
+        if foot_out is not None and not sam.any():   # Ferse und Zehe aus dem Bild statt aus der Laufrichtung
             joint_pos, fed = foot_fit.apply(joint_pos, pos, foot_out, lens_feet, cam, NAMES, veo_camera.rays)
             result.feet_from_video += fed
         for side in "lr":
