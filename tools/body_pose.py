@@ -84,12 +84,13 @@ def assign_rows(body: dict, tracks: dict, project, gate=ASSIGN_GATE, hip_height=
     Liegen zwei gelesene Hüften näher als MIN_APART Boxhöhen, ist es dieselbe Person: Es bleibt die, die besser zu ihrer Bahn passt; die andere Bahn
     gilt als verdeckt (auch wenn beide Bahnen nah beieinander liegen und jede für sich zur Hüfte passen würde).
     tracks: {Kennung: (total, 2) Bodenpunkt}; project(linse, (n, 3) Punkte der Welt) -> (n, 2) Pixel der Linse.
-    Rückgabe: (body mit neuem player je Zeile ohne die nicht zugeordneten, Zahl umgehängter Zeilen, Zahl aussortierter Zeilen)."""
+    Rückgabe: (body mit neuem player je Zeile (Index in ids = Kennungen der Bahnen) ohne die nicht zugeordneten, Zahl umgehängter Zeilen, Zahl aussortierter Zeilen)."""
     from scipy.optimize import linear_sum_assignment
     n = len(body["player"])
     if not n:
         return body, 0, 0
-    ids = list(body["ids"])
+    origin = list(body["ids"])        # Kennungen beim Lesen; Spieler werden nur nach Bahnen benannt, die Kennung darf sich seither geändert haben
+    ids = list(tracks)
     index = {i: k for k, i in enumerate(ids)}
     hip = (body["kp2d"][:, L_HIP] + body["kp2d"][:, R_HIP]) / 2
     box = body["box"]
@@ -99,14 +100,14 @@ def assign_rows(body: dict, tracks: dict, project, gate=ASSIGN_GATE, hip_height=
     for k in np.unique(key):
         rows = np.flatnonzero(key == k)
         f, lens = int(body["frame"][rows[0]]), int(body["lens"][rows[0]])
-        names = [i for i in tracks if i in index and not np.isnan(tracks[i][f, 0])]
+        names = [i for i in ids if not np.isnan(tracks[i][f, 0])]
         if not names:
             continue
         expected = np.asarray(project(lens, np.array([[*tracks[i][f], hip_height] for i in names])), float)
         cost = np.linalg.norm(hip[rows][:, None, :] - expected[None, :, :], axis=2) / height[rows][:, None]
         for a, r in enumerate(rows):   # bei gleichem Abstand gewinnt die Bahn, deren Box es war
-            if ids[body["player"][r]] in names:
-                cost[a, names.index(ids[body["player"][r]])] -= 0.02
+            if origin[body["player"][r]] in names:
+                cost[a, names.index(origin[body["player"][r]])] -= 0.02
         cost = np.where(np.isnan(cost), 1e6, cost)
         for a, b in zip(*linear_sum_assignment(np.minimum(cost, 1e3))):
             if cost[a, b] <= gate:
@@ -117,9 +118,10 @@ def assign_rows(body: dict, tracks: dict, project, gate=ASSIGN_GATE, hip_height=
             for j in rows:
                 if i < j and keep[i] and keep[j] and np.linalg.norm(hip[i] - hip[j]) < MIN_APART * min(height[i], height[j]):
                     keep[i if best[i] > best[j] else j] = False
-    moved = int((keep & (player != body["player"])).sum())
+    moved = sum(1 for r in np.flatnonzero(keep) if ids[player[r]] != origin[body["player"][r]])
     out = {key_: (v[keep] if isinstance(v, np.ndarray) and len(v) == n else v) for key_, v in body.items()}
     out["player"] = player[keep]
+    out["ids"] = np.array(ids)
     return out, moved, int(n - keep.sum())
 
 

@@ -175,6 +175,13 @@ class AssignRowsTest(unittest.TestCase):
         out, _, dropped = bp.assign_rows(self.body([100], [0]), tracks, self.project)
         self.assertEqual((len(out["player"]), dropped), (0, 1))
 
+    def test_renamed_tracks_still_get_their_people(self):
+        tracks = {"x-1": np.array([[1.0, 0.0]]), "x-15": np.array([[3.0, 0.0]])}      # Kennungen seit dem Lesen geändert
+        out, _, dropped = bp.assign_rows(self.body([100, 300], [0, 1]), tracks, self.project)
+        self.assertEqual(list(out["ids"]), ["x-1", "x-15"])
+        self.assertEqual(list(out["player"]), [0, 1])
+        self.assertEqual(dropped, 0)
+
     def test_empty_stays_empty(self):
         body = {"player": np.array([], int)}
         self.assertIs(bp.assign_rows(body, {}, self.project)[0], body)
