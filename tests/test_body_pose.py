@@ -121,35 +121,97 @@ class FeetPositionTest(unittest.TestCase):
         np.testing.assert_allclose(out[3], (2.0, 10.0), atol=1e-6)
 
 
-class DropMisplacedTest(unittest.TestCase):
-    def rows(self, hips, boxes, frames=None, lens=None):
+class AssignRowsTest(unittest.TestCase):
+    """Zwei Bahnen a, b; die Projektion legt Welt-x auf Pixel-x (Boxhöhe 200)."""
+    project = staticmethod(lambda lens, pts: np.column_stack([pts[:, 0] * 100, np.full(len(pts), 100.0)]))
+
+    def body(self, hips, origin, frames=None):
         n = len(hips)
         kp2d = np.zeros((n, 70, 2))
         for i, h in enumerate(hips):
-            kp2d[i, bp.L_HIP] = kp2d[i, bp.R_HIP] = h
-        return {"ids": np.array(["a", "b"]), "player": np.arange(n) % 2, "frame": np.array(frames if frames is not None else [0] * n),
-                "lens": np.array(lens if lens is not None else [0] * n), "box": np.array(boxes, float), "kp2d": kp2d,
-                "kp3d": np.zeros((n, 70, 3)), "cam_t": np.zeros((n, 3)), "focal": np.zeros(n)}
+            kp2d[i, bp.L_HIP] = kp2d[i, bp.R_HIP] = (h, 100)
+        return {"ids": np.array(["a", "b"]), "player": np.array(origin), "frame": np.array(frames if frames is not None else [0] * n),
+                "lens": np.zeros(n, int), "box": np.tile([0.0, 0.0, 100.0, 200.0], (n, 1)), "kp2d": kp2d, "kp3d": np.zeros((n, 70, 3))}
 
-    def test_hip_far_from_its_box_is_dropped(self):
-        body = self.rows([(50, 100), (200, 100)], [(0, 0, 100, 200), (0, 0, 100, 200)])
-        out = bp.drop_misplaced(body)
+    def tracks(self, a=1.0, b=3.0, frames=1):
+        return {"a": np.tile([a, 0.0], (frames, 1)), "b": np.tile([b, 0.0], (frames, 1))}
+
+    def test_each_person_goes_to_the_track_it_stands_at(self):
+        out, moved, dropped = bp.assign_rows(self.body([100, 300], [0, 1]), self.tracks(), self.project)
+        self.assertEqual(list(out["player"]), [0, 1])
+        self.assertEqual((moved, dropped), (0, 0))
+
+    def test_a_swapped_person_is_given_to_the_right_track(self):
+        out, moved, dropped = bp.assign_rows(self.body([300, 100], [0, 1]), self.tracks(), self.project)
+        self.assertEqual(list(out["player"]), [1, 0])
+        self.assertEqual((moved, dropped), (2, 0))
+
+    def test_the_same_person_found_twice_is_used_once(self):
+        # beide Boxen finden den Spieler b (Hüfte bei 300); a ist verdeckt
+        out, moved, dropped = bp.assign_rows(self.body([305, 298], [0, 1]), self.tracks(), self.project)
         self.assertEqual(len(out["player"]), 1)
-        self.assertEqual(int(out["player"][0]), 0)
+        self.assertEqual(int(out["player"][0]), 1)
+        self.assertEqual(dropped, 1)
 
-    def test_same_person_found_twice_keeps_the_closer_box(self):
-        body = self.rows([(52, 100), (60, 100)], [(0, 0, 100, 200), (10, 0, 110, 200)])     # beide Hüften fast gleich
-        out = bp.drop_misplaced(body)
+    def test_one_person_found_twice_with_two_close_tracks_is_used_once(self):
+        # Bahnen von a und b nur 20 Pixel auseinander (Zweikampf), beide Boxen finden dieselbe Person bei x=100
+        tracks = {"a": np.array([[1.0, 0.0]]), "b": np.array([[1.2, 0.0]])}
+        out, _, dropped = bp.assign_rows(self.body([100, 101], [0, 1]), tracks, self.project)
         self.assertEqual(len(out["player"]), 1)
-        self.assertEqual(int(out["player"][0]), 1)            # die zweite Hüfte (60) liegt genau in der Mitte ihrer Box (60), die erste (52) nicht (50)
+        self.assertEqual(int(out["player"][0]), 0)        # a liegt genau bei der Hüfte
+        self.assertEqual(dropped, 1)
 
-    def test_two_people_apart_are_both_kept(self):
-        body = self.rows([(50, 100), (300, 100)], [(0, 0, 100, 200), (250, 0, 350, 200)])
-        self.assertEqual(len(bp.drop_misplaced(body)["player"]), 2)
+    def test_a_person_far_from_every_track_is_dropped(self):
+        out, _, dropped = bp.assign_rows(self.body([700], [0]), self.tracks(), self.project)
+        self.assertEqual((len(out["player"]), dropped), (0, 1))
+
+    def test_frames_are_decided_separately(self):
+        tracks = {"a": np.array([[1.0, 0], [5.0, 0]]), "b": np.array([[3.0, 0], [7.0, 0]])}
+        out, _, _ = bp.assign_rows(self.body([100, 700], [0, 1], frames=[0, 1]), tracks, self.project)
+        self.assertEqual(list(out["player"]), [0, 1])
+
+    def test_a_track_without_position_gets_nothing(self):
+        tracks = {"a": np.array([[np.nan, np.nan]]), "b": np.array([[3.0, 0]])}
+        out, _, dropped = bp.assign_rows(self.body([100], [0]), tracks, self.project)
+        self.assertEqual((len(out["player"]), dropped), (0, 1))
 
     def test_empty_stays_empty(self):
         body = {"player": np.array([], int)}
-        self.assertIs(bp.drop_misplaced(body), body)
+        self.assertIs(bp.assign_rows(body, {}, self.project)[0], body)
+
+
+class FillGapsTest(unittest.TestCase):
+    def directions(self, steps):
+        d = np.full((steps, 20, 3), np.nan)
+        return d
+
+    def test_a_gap_between_two_readings_is_bridged_with_unit_directions(self):
+        d = self.directions(6)
+        d[0, 1] = (0, 0, 1)
+        d[5, 1] = (1, 0, 0)
+        out, filled = bp.fill_gaps(d, np.ones(6, bool), 10)
+        self.assertEqual(list(filled), [False, True, True, True, True, False])
+        self.assertAlmostEqual(float(np.linalg.norm(out[2, 1])), 1.0)
+        self.assertGreater(out[4, 1, 0], out[1, 1, 0])        # dreht von z nach x
+
+    def test_a_gap_longer_than_allowed_is_left_open(self):
+        d = self.directions(8)
+        d[0, 1] = d[7, 1] = (0, 0, 1)
+        out, filled = bp.fill_gaps(d, np.ones(8, bool), 3)
+        self.assertFalse(filled.any())
+        self.assertTrue(np.isnan(out[3, 1, 0]))
+
+    def test_nothing_is_made_up_before_the_first_or_after_the_last_reading(self):
+        d = self.directions(6)
+        d[2, 1] = d[3, 1] = (0, 0, 1)
+        _, filled = bp.fill_gaps(d, np.ones(6, bool), 10)
+        self.assertFalse(filled.any())
+
+    def test_frames_without_the_player_stay_open(self):
+        d = self.directions(5)
+        d[0, 1] = d[4, 1] = (0, 0, 1)
+        _, filled = bp.fill_gaps(d, np.array([True, True, False, True, True]), 10)
+        self.assertEqual(list(filled), [False, True, False, True, False])
 
 
 class RefinePositionTest(unittest.TestCase):
