@@ -57,6 +57,21 @@ class VoteTest(unittest.TestCase):
         r = readings("own-1001", SPREAD, n0=0.6, n15=0.4)
         self.assertIsNone(ji.vote(r, {"own-1001": "own"}, FPS)["own-1001"].number)
 
+    def test_many_sure_readings_count_even_when_unsure_windows_lean_the_other_way(self):
+        # sechs Fenster mit 15 sicher, danach sechs Fenster, in denen 75 knapp vor 15 liegt (halb verdeckter Rücken)
+        r = readings("opponent-1005", SPREAD, n15=0.9) + readings("opponent-1005", [180, 210, 240, 270, 300, 330], n75=0.45, n15=0.38)
+        result = ji.vote(r, {"opponent-1005": "opponent"}, FPS)["opponent-1005"]
+        self.assertLess(result.agreement, ji.MIN_AGREEMENT)       # nach der Mehrheit der Fenster allein bliebe sie unbekannt
+        self.assertEqual(result.number, 15)
+
+    def test_sure_readings_of_another_number_block_the_evidence_path(self):
+        r = readings("own-1001", SPREAD, n15=0.9) + readings("own-1001", [180, 210, 240, 270, 300, 330], n7=0.9)
+        self.assertIsNone(ji.vote(r, {"own-1001": "own"}, FPS)["own-1001"].number)
+
+    def test_four_sure_windows_are_not_enough_evidence(self):
+        r = readings("own-1001", SPREAD[:4], n15=0.9) + readings("own-1001", [180, 210, 240, 270, 300, 330], n75=0.45, n15=0.38)
+        self.assertIsNone(ji.vote(r, {"own-1001": "own"}, FPS)["own-1001"].number)
+
     def test_squad_excludes_other_numbers(self):
         r = readings("own-1001", SPREAD, n15=0.8, n16=0.15)
         result = ji.vote(r, {"own-1001": "own"}, FPS, squad={"own": frozenset({16, 7})})

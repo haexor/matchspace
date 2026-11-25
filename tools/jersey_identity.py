@@ -31,6 +31,12 @@ MERGE_SPEED = 8.0        # m/s: schneller kann ein Spieler eine Lücke zwischen 
 POSITION_NOISE = 1.5     # m: so ungenau ist die Lage am Boden in Blickrichtung (Wechsel zwischen zwei Stücken)
 OVERLAP_S = 0.5          # s: so lange dürfen zwei Stücke gleichzeitig zu sehen sein und doch eine Person sein
                          # (das Tracking übergibt einen Spieler oft mit ein paar Bildern Überschneidung)
+SURE = 0.7               # Fenster, in dem die beste Nummer mit mindestens dieser Wahrscheinlichkeit gelesen wird (Lesung "sicher")
+CONTRADICT_LEAD = 0.2    # Fenster widerspricht, wenn die beste Nummer unter CONTRADICT_LEAD liegt ...
+CONTRADICT_OTHER = 0.6   # ... und eine andere Nummer mindestens so sicher gelesen wird
+EVIDENCE_WINDOWS = 5     # Zweiter Weg zur Nummer: so viele sichere Fenster (über MIN_SPAN_S verteilt) ...
+EVIDENCE_CONTRA = 0.4    # ... bei höchstens diesem Anteil (an den sicheren) widersprechender Fenster. Unsichere Fenster (z. B. 15 gegen 75 bei halb
+                         # verdecktem Rücken) zählen weder dafür noch dagegen; die Mehrheit der Fenster entscheidet nicht allein.
 JOIN_CONFIDENCE = 0.9    # Ein Stück schließt sich einem schon sicher erkannten Spieler mit derselben Nummer an,
 JOIN_AGREEMENT = 0.5     # wenn seine eigenen Lesungen diese Nummer so klar stützen (weniger als für eine neue Nummer:
 JOIN_WINDOWS = 2         # dass es die Nummer in der Szene gibt, ist schon belegt)
@@ -58,11 +64,24 @@ class TrackNumber:
     windows: int                      # Fenster, deren beste Lesung die beste Nummer ist
     span_s: float                     # Zeit zwischen dem ersten und letzten dieser Fenster
     agreement: float                  # Anteil dieser Fenster an allen zählenden Fenstern
+    sure: int = 0                     # Fenster, die die beste Nummer sicher lesen (>= SURE)
+    sure_span_s: float = 0.0          # Zeit zwischen dem ersten und letzten dieser Fenster
+    contradicted: int = 0             # Fenster, die eine andere Nummer sicher lesen und die beste kaum
+
+    @property
+    def by_majority(self) -> bool:
+        return (bool(self.ranked) and self.ranked[0][1] >= MIN_CONFIDENCE and self.windows >= MIN_WINDOWS
+                and self.span_s >= MIN_SPAN_S and self.agreement >= MIN_AGREEMENT)
+
+    @property
+    def by_evidence(self) -> bool:
+        """Viele sichere Lesungen über längere Zeit, kaum sichere Gegenstimmen: auch wenn viele unsichere Fenster dazwischen liegen."""
+        return (bool(self.ranked) and self.ranked[0][1] >= MIN_CONFIDENCE and self.sure >= EVIDENCE_WINDOWS
+                and self.sure_span_s >= MIN_SPAN_S and self.contradicted <= EVIDENCE_CONTRA * self.sure)
 
     @property
     def supported(self) -> bool:
-        return (bool(self.ranked) and self.ranked[0][1] >= MIN_CONFIDENCE and self.windows >= MIN_WINDOWS
-                and self.span_s >= MIN_SPAN_S and self.agreement >= MIN_AGREEMENT)
+        return self.by_majority or self.by_evidence
 
     @property
     def number(self) -> int | None:
@@ -101,7 +120,12 @@ def _vote_track(track: str, team: str, readings: Sequence[Reading], fps: float,
     top = order[0]
     agree = [r.frame for r, row in zip(counted, p) if int(np.argmax(row)) == top]
     span = (agree[-1] - agree[0]) / fps if agree else 0.0
-    return TrackNumber(track, team, ranked, len(agree), float(span), len(agree) / len(counted))
+    lead = p[:, top]
+    other = np.where(np.arange(p.shape[1]) == top, 0.0, p).max(axis=1)
+    sure = [r.frame for r, v in zip(counted, lead) if v >= SURE]
+    contradicted = int(((lead < CONTRADICT_LEAD) & (other >= CONTRADICT_OTHER)).sum())
+    sure_span = (sure[-1] - sure[0]) / fps if sure else 0.0
+    return TrackNumber(track, team, ranked, len(agree), float(span), len(agree) / len(counted), len(sure), float(sure_span), contradicted)
 
 
 def vote(readings: Sequence[Reading], teams: Mapping[str, str], fps: float,
