@@ -70,31 +70,79 @@ MAX_SHIFT = 1.0      # m: so weit darf die Korrektur der Position höchstens geh
 SMOOTH_FRAMES = 5.0  # Bilder: Glättung der Korrektur (Gauß); das Pixelrauschen springt, der Fehler der Bahn im Zweikampf bleibt über Sekunden
 
 
-MAX_OFFSET = 0.4     # Anteil der Boxhöhe: so weit darf die Hüfte des Modells von der Mitte der Box abweichen, in der es gesucht hat
-MIN_APART = 0.15     # Anteil der Boxhöhe: so nah dürfen die Hüften zweier Personen im selben Bild nicht sein (dieselbe Person doppelt gefunden)
+HIP_HEIGHT = 0.85    # m: Höhe der Hüfte, in der die Bahn ins Bild gelegt wird (nur zur Zuordnung; ein paar Zentimeter spielen dort keine Rolle)
+MIN_APART = 0.15     # Anteil der Boxhöhe: so nah dürfen die gelesenen Hüften zweier Personen im selben Bild nicht sein (dieselbe Person doppelt gefunden)
+ASSIGN_GATE = 0.35   # Anteil der Boxhöhe: so weit darf eine gelesene Hüfte von der erwarteten Hüfte einer Bahn entfernt sein
 
 
-def drop_misplaced(body: dict, max_offset=MAX_OFFSET, min_apart=MIN_APART) -> dict:
-    """Zeilen aussortieren, in denen das Modell nicht die gesuchte Person gelesen hat. Sucht es in einer Box, in der der gesuchte Spieler fast ganz hinter
-    einem anderen steht, findet es oft den anderen: Die Hüfte liegt dann weit von der Mitte der Box (max_offset), oder zwei Boxen derselben Linse im selben
-    Bild liefern dieselbe Hüfte (min_apart): dann bleibt die Zeile, deren Hüfte näher an ihrer Box liegt."""
+def assign_rows(body: dict, tracks: dict, project, gate=ASSIGN_GATE, hip_height=HIP_HEIGHT) -> tuple:
+    """Jede gelesene Person genau einer Bahn zuordnen, jede Bahn höchstens einer Person (ein Spieler existiert nur einmal).
+    Das Modell liest jede Box für sich; steht der gesuchte Spieler fast ganz hinter einem anderen, findet es den anderen. Hier wird je Bild und
+    Linse alles zusammen entschieden: Kosten = Abstand der gelesenen Hüfte zur erwarteten Hüfte der Bahn (Bahn auf Hüfthöhe ins Bild gelegt) in
+    Boxhöhen; das Verfahren (Ungarisch) wählt die Zuordnung mit der kleinsten Summe, Paare über gate fallen weg. So wird eine vertauschte Person der
+    richtigen Bahn zugeordnet, und eine doppelt gefundene bleibt bei der Bahn, die besser passt; die andere Bahn gilt in diesem Bild als verdeckt.
+    Liegen zwei gelesene Hüften näher als MIN_APART Boxhöhen, ist es dieselbe Person: Es bleibt die, die besser zu ihrer Bahn passt; die andere Bahn
+    gilt als verdeckt (auch wenn beide Bahnen nah beieinander liegen und jede für sich zur Hüfte passen würde).
+    tracks: {Kennung: (total, 2) Bodenpunkt}; project(linse, (n, 3) Punkte der Welt) -> (n, 2) Pixel der Linse.
+    Rückgabe: (body mit neuem player je Zeile ohne die nicht zugeordneten, Zahl umgehängter Zeilen, Zahl aussortierter Zeilen)."""
+    from scipy.optimize import linear_sum_assignment
     n = len(body["player"])
     if not n:
-        return body
+        return body, 0, 0
+    ids = list(body["ids"])
+    index = {i: k for k, i in enumerate(ids)}
     hip = (body["kp2d"][:, L_HIP] + body["kp2d"][:, R_HIP]) / 2
     box = body["box"]
     height = np.maximum(box[:, 3] - box[:, 1], 1.0)
-    centre = np.column_stack([(box[:, 0] + box[:, 2]) / 2, (box[:, 1] + box[:, 3]) / 2])
-    offset = np.linalg.norm(hip - centre, axis=1) / height
-    keep = offset <= max_offset
+    keep, player, best = np.zeros(n, bool), body["player"].copy(), np.full(n, np.inf)
     key = body["frame"] * 2 + body["lens"]
     for k in np.unique(key):
-        rows = np.flatnonzero((key == k) & keep)
-        for i in rows:
+        rows = np.flatnonzero(key == k)
+        f, lens = int(body["frame"][rows[0]]), int(body["lens"][rows[0]])
+        names = [i for i in tracks if i in index and not np.isnan(tracks[i][f, 0])]
+        if not names:
+            continue
+        expected = np.asarray(project(lens, np.array([[*tracks[i][f], hip_height] for i in names])), float)
+        cost = np.linalg.norm(hip[rows][:, None, :] - expected[None, :, :], axis=2) / height[rows][:, None]
+        for a, r in enumerate(rows):   # bei gleichem Abstand gewinnt die Bahn, deren Box es war
+            if ids[body["player"][r]] in names:
+                cost[a, names.index(ids[body["player"][r]])] -= 0.02
+        cost = np.where(np.isnan(cost), 1e6, cost)
+        for a, b in zip(*linear_sum_assignment(np.minimum(cost, 1e3))):
+            if cost[a, b] <= gate:
+                keep[rows[a]] = True
+                player[rows[a]] = index[names[b]]
+                best[rows[a]] = cost[a, b]
+        for i in rows:   # dieselbe Person doppelt: die schlechter passende fällt weg
             for j in rows:
-                if i < j and keep[i] and keep[j] and np.linalg.norm(hip[i] - hip[j]) < min_apart * min(height[i], height[j]):
-                    keep[i if offset[i] > offset[j] else j] = False
-    return {k: (v[keep] if isinstance(v, np.ndarray) and len(v) == n else v) for k, v in body.items()}
+                if i < j and keep[i] and keep[j] and np.linalg.norm(hip[i] - hip[j]) < MIN_APART * min(height[i], height[j]):
+                    keep[i if best[i] > best[j] else j] = False
+    moved = int((keep & (player != body["player"])).sum())
+    out = {key_: (v[keep] if isinstance(v, np.ndarray) and len(v) == n else v) for key_, v in body.items()}
+    out["player"] = player[keep]
+    return out, moved, int(n - keep.sum())
+
+
+def fill_gaps(directions: np.ndarray, present: np.ndarray, max_gap: int) -> tuple:
+    """Knochenrichtungen (T, 20, 3) mit NaN in den Bildern ohne gelesene Haltung: Lücken bis max_gap Bilder zwischen zwei gelesenen Bildern
+    (verdeckter Spieler, der sich nicht in Luft auflöst) werden zwischen den Nachbarn überbrückt (Richtungen gemischt und normiert), solange
+    der Spieler da ist (present). Davor und danach wird nichts erfunden. Rückgabe: (Richtungen, Maske der überbrückten Bilder)."""
+    out = directions.copy()
+    seen = ~np.isnan(directions[:, 1, 0])
+    filled = np.zeros(len(directions), bool)
+    idx = np.flatnonzero(seen)
+    for a, b in zip(idx[:-1], idx[1:]):
+        if b - a < 2 or b - a - 1 > max_gap:
+            continue
+        for t in range(a + 1, b):
+            if not present[t]:
+                continue
+            w = (t - a) / (b - a)
+            mix = (1 - w) * directions[a] + w * directions[b]
+            norm = np.linalg.norm(mix, axis=-1, keepdims=True)
+            out[t] = np.where(norm > 1e-6, mix / np.maximum(norm, 1e-12), directions[a])
+            filled[t] = True
+    return out, filled
 
 
 GROUND_Z = 0.12      # m: Fußpunkte unter dieser Höhe stehen auf dem Rasen; nur sie legen die Tiefe fest (ihre Höhe ist bekannt)

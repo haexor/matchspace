@@ -56,6 +56,10 @@ class PoseResult:
     body_frames: int = 0       # Spieler-Bilder, deren Haltung vom Körpermodell stammt (tools/veo_body.py)
     position_shift: float = 0.0   # Summe der mittleren Verschiebung der Bahn durch die Hüfte des Körpermodells (m), über Spieler
     position_players: int = 0
+    body_bridged: int = 0      # Spieler-Bilder, deren Haltung zwischen zwei gelesenen Bildern überbrückt wurde (verdeckt)
+
+
+GAP_SECONDS = 1.5   # s: so lange Lücken der Körpermodell-Haltung (verdeckter Spieler) werden zwischen den Nachbarbildern überbrückt
 
 
 def load_body(run):
@@ -66,9 +70,7 @@ def load_body(run):
     data = dict(np.load(path))
     if "ids" not in data or not len(data["player"]):
         return None
-    kept = body_pose.drop_misplaced(data)
-    print(f"Körpermodell: {len(data['player']) - len(kept['player'])} von {len(data['player'])} Personen aussortiert (falsche Person gelesen)", flush=True)
-    return kept
+    return data
 
 
 def fit_poses(run, observed, smooth, joints, floor, game) -> PoseResult:
@@ -83,6 +85,11 @@ def fit_poses(run, observed, smooth, joints, floor, game) -> PoseResult:
     ball_xy = xy[:, ball] if ball is not None else None
     median_height = float(np.median(list(body.values()))) if body else DEFAULT_HEIGHT
     body_data = load_body(run)
+    if body_data is not None:   # jede gelesene Person genau einer Bahn, jede Bahn höchstens einer Person
+        by_id = {e["id"]: xy[:, i] for i, e in enumerate(base["entities"]) if e["kind"] == "player"}
+        body_data, moved, dropped = body_pose.assign_rows(body_data, by_id, lambda lens, pts: veo_camera.project(cam, ("left", "right")[lens], pts))
+        print(f"Körpermodell: {len(body_data['player'])} Personen den Bahnen zugeordnet, {moved} davon einer anderen Bahn als der Box; "
+              f"{dropped} aussortiert (zu weit von jeder Bahn oder doppelt gefunden)", flush=True)
     builds = body_build.measure(body_data) if body_data is not None else {}
     nearest = np.minimum(np.round(np.arange(total) * ratio).astype(int), n - 1)
     for slot, entity in enumerate(slots):
@@ -140,22 +147,25 @@ def fit_poses(run, observed, smooth, joints, floor, game) -> PoseResult:
             lying_now = smooth[key]["down"][nearest] & down
             d = ground_motion.sequence(d, smooth[key]["share"][nearest], lying_now, down & present, way, OUT_FPS)
             result.grounded += int((down & present).sum())
-        sam = np.zeros(total, bool)
+        sam = seen_sam = np.zeros(total, bool)
         if body_data is not None:   # Haltung vom Körpermodell, wo es den Spieler gelesen hat (außer am Boden: dort die bewährte Abfolge)
             seen_by_model = pose_limits.directions_of(body_pose.world_joints(body_data, e["id"], total, cam, veo_camera.rays, NAMES))
-            sam = ~np.isnan(seen_by_model[:, 1, 0]) & present & ~down
+            seen_sam = ~np.isnan(seen_by_model[:, 1, 0]) & present & ~down
+            seen_by_model, bridged = body_pose.fill_gaps(seen_by_model, present & ~down, int(GAP_SECONDS * OUT_FPS))   # verdeckt: zwischen den Nachbarn überbrücken
+            sam = seen_sam | bridged
             d[sam] = seen_by_model[sam]
-            result.body_frames += int(sam.sum())
+            result.body_frames += int(seen_sam.sum())
+            result.body_bridged += int(bridged.sum())
         d = pose_limits.smooth_directions(pose_limits.limit_turn(d, OUT_FPS), OUT_FPS)
         allowed = lean if key in smooth else pose_limits.MAX_LEAN
         d = pose_limits.limit_directions(d, allowed)   # Glätten kann Grenzen wieder verletzen
         d, pos = pose_limits.balance_depth(d, lengths, pos, cam_pos, OUT_FPS, skip=down | sam)   # das Modell gibt die Neigung vor
         d = pose_limits.limit_directions(d, allowed)
-        if sam.any():   # Position: im Zweikampf mischt die gemeinsame Box beide Spieler und hält sie auseinander; die Füße des Modells sind je Person gelesen
+        if seen_sam.any():   # Position: im Zweikampf mischt die gemeinsame Box beide Spieler und hält sie auseinander; die Füße des Modells sind je Person gelesen
             seen_at = body_pose.position_from_feet(body_data, e["id"], total, cam, veo_camera.rays, pose_limits.build(d, lengths), NAMES)
             before = pos.copy()
-            pos = body_pose.refine_position(pos, seen_at, sam)
-            result.position_shift += float(np.nanmean(np.linalg.norm(pos - before, axis=1)[sam]))
+            pos = body_pose.refine_position(pos, seen_at, seen_sam)
+            result.position_shift += float(np.nanmean(np.linalg.norm(pos - before, axis=1)[seen_sam]))
             result.position_players += 1
         for a, b in segments(present, 6):
             pos[a:b] = track_limits.physical(pos[a:b], OUT_FPS)
