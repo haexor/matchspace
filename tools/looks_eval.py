@@ -25,9 +25,6 @@ sys.path.insert(0, str(Path(__file__).parent))
 import veo_looks as vl  # noqa: E402
 
 TEST_BLOCK, TEST_EVERY = 25, 5   # Bilder je Block, jeder wievielte Block ist Prüfmaterial
-MAX_ALIGN = 2.5                  # Pixel: so weit darf ein Körperteil im Bild auf die Textur geschoben werden
-MIN_ALIGN_TEXELS = 24            # weniger sichtbare Stellen: kein Schieben
-RIDGE = 0.02                     # Gewicht der Bremse gegen große Verschiebungen (Anteil der Spur)
 
 
 def is_test(f):
@@ -63,98 +60,68 @@ def collect(video, det_path, camera_path, background_path, scene_dir, out_path, 
     print(f"-> {out_path} ({sum(len(v) for v in data.values())} Ausschnitte), {time.time() - began:.0f} s")
 
 
-def gradient(crop, uv):
-    """Farbe (N, 3) und ihre Ableitung nach x und y (N, 3) an Bildpunkten uv eines Ausschnitts."""
-    c = vl.sample(crop, uv)
-    gx = (vl.sample(crop, uv + (0.5, 0)) - vl.sample(crop, uv - (0.5, 0)))
-    gy = (vl.sample(crop, uv + (0, 0.5)) - vl.sample(crop, uv - (0, 0.5)))
-    return c, gx, gy
-
-
-def solve_shift(res, gx, gy, w, ridge, prior=None):
-    """Verschiebung d (2,), die sum w * |res + d_x gx + d_y gy|² klein macht (res = Farbe - Bezug); Bremse zieht zu `prior`."""
-    prior = np.zeros(2) if prior is None else prior
-    a = np.array([[np.sum(w[:, None] * gx * gx), np.sum(w[:, None] * gx * gy)], [np.sum(w[:, None] * gx * gy), np.sum(w[:, None] * gy * gy)]])
-    b = -np.array([np.sum(w[:, None] * gx * res), np.sum(w[:, None] * gy * res)])
-    lam = ridge * np.trace(a) + 1e-6
-    d = np.linalg.solve(a + lam * np.eye(2), b + lam * prior)
-    return np.clip(d, -MAX_ALIGN, MAX_ALIGN)
-
-
-def align(obs, ref, ref_ok, index, segment, passes=2, ridge=RIDGE, whole=True):
-    """Verschiebung (Körper gesamt, dann je Körperteil darüber hinaus) eines Ausschnitts auf den Bezug `ref` (je Stelle der Kachel).
-    Gibt die Verschiebung je sichtbarer Stelle (N, 2) zurück."""
+def align(obs, ref, ref_ok, index, segment):
+    """Verschiebung (N, 2) eines Ausschnitts auf den Bezug `ref` (je Stelle der Kachel); Rechnung wie in veo_looks.align."""
     cell = obs["cell"].astype(int)
     texel = index[cell]
-    ok = ref_ok[texel]
-    shift = np.zeros((len(cell), 2))
-    wt = obs["weight"] * ok
-    if ok.sum() < MIN_ALIGN_TEXELS:
-        return shift
-    body = np.zeros(2)
-    seg = np.zeros((segment.max() + 1, 2))
-    for _ in range(passes):
-        for stage in ((0, 1) if whole else (1,)):
-            if stage == 0:
-                uv = obs["uv"] + body
-                c, gx, gy = gradient(obs["crop"], uv)
-                good = (np.linalg.norm(c - ref[texel], axis=1) < vl.OUTLIER) & ok
-                if good.sum() >= MIN_ALIGN_TEXELS:
-                    body = body + solve_shift(c[good] - ref[texel][good], gx[good], gy[good], wt[good], ridge)
-                    body = np.clip(body, -MAX_ALIGN, MAX_ALIGN)
-            else:
-                uv = obs["uv"] + body + seg[segment[cell]]
-                c, gx, gy = gradient(obs["crop"], uv)
-                good = (np.linalg.norm(c - ref[texel], axis=1) < vl.OUTLIER) & ok
-                for s in range(len(seg)):
-                    m = good & (segment[cell] == s)
-                    if m.sum() >= MIN_ALIGN_TEXELS:
-                        seg[s] = np.clip(seg[s] + solve_shift(c[m] - ref[texel][m], gx[m], gy[m], wt[m], ridge * 5), -MAX_ALIGN, MAX_ALIGN)
-    return body + seg[segment[cell]]
+    return vl.align(obs["crop"], obs["uv"], segment[cell], obs["weight"], ref[texel], ref_ok[texel])
 
 
-def build(observations, index, segment, aligned=None, rounds=2):
+def quality(observations, ref=None):
+    """Güte je Beobachtung und Stelle: frontal gesehen und nah (Pixel je Meter), auf das 95-%-Quantil des Spielers bezogen (höchstens 1)."""
+    q = [o["facing"].astype(np.float32) / o["dist"].astype(np.float32) for o in observations]
+    ref = ref or float(np.quantile(np.concatenate(q), 0.95))
+    return [np.minimum(x / ref, 1.0) for x in q], ref
+
+
+def build(observations, index, segment, aligned=None, rounds=2, power=0.0):
     """Textur (Kachel² × 3, Gewicht) aus Ausschnitten wie in veo_looks.main: Mittel mit Gewichten, im zweiten Durchgang ohne Ausreißer.
     `aligned`: Verschiebungen je Ausschnitt (Liste von (N, 2)), sonst keine."""
     size = vl.TILE * vl.TILE
     mean = None
+    qs, _ = quality(observations)
     for rnd in range(rounds):
-        sums, wsum = np.zeros((size, 3)), np.zeros(size)
+        sums, wq, wsum = np.zeros((size, 3)), np.zeros(size), np.zeros(size)
         for k, o in enumerate(observations):
             uv = o["uv"] + (aligned[k] if aligned is not None else 0)
             colour = vl.sample(o["crop"], uv)
             texel = index[o["cell"].astype(int)]
-            w = o["weight"].astype(np.float64)
+            w0 = o["weight"].astype(np.float64)
             if rnd > 0:
-                w = w * (np.linalg.norm(colour - mean[texel], axis=1) < vl.OUTLIER)
+                w0 = w0 * (np.linalg.norm(colour - mean[texel], axis=1) < vl.OUTLIER)
+            w = w0 * qs[k].astype(np.float64) ** power   # Güte: nahe, frontale Bilder zählen mehr ("power" = Schärfe vor Rauschen)
             for ch in range(3):
                 sums[:, ch] += np.bincount(texel, w * colour[:, ch], minlength=size)
-            wsum += np.bincount(texel, w, minlength=size)
-        mean = sums / np.maximum(wsum, 1e-9)[:, None]
+            wq += np.bincount(texel, w, minlength=size)
+            wsum += np.bincount(texel, w0, minlength=size)   # "gesehen" bleibt unabhängig von der Güte
+        mean = sums / np.maximum(wq, 1e-9)[:, None]
     return mean, wsum
 
 
-def refined(observations, index, segment, steps=3, ridge=RIDGE):
+def refined(observations, index, segment, steps=3, power=0.0):
     """Textur mit dichter Ausrichtung: erst Mittel ohne Verschiebung, dann in `steps` Runden jeden Ausschnitt auf das bisherige Mittel
     schieben und neu mitteln."""
-    tex, wt = build(observations, index, segment)
+    tex, wt = build(observations, index, segment, power=power)
     for _ in range(steps):
-        sh = [align(o, tex, wt >= vl.ENOUGH, index, segment, ridge=ridge) for o in observations]
-        tex, wt = build(observations, index, segment, aligned=sh)
+        sh = [align(o, tex, wt >= vl.ENOUGH, index, segment) for o in observations]
+        tex, wt = build(observations, index, segment, aligned=sh, power=power)
     return tex, wt
 
 
-def error(tex, coverage, observations, index, segment, aligned):
+def error(tex, coverage, observations, index, segment, aligned, sharp_test=False):
     """Mittlere absolute Farbabweichung (über Kanäle und Stellen, gewichtet) der Prüfbilder zur Textur, getrennt nach Körperteilgruppe."""
     groups = {"Rumpf": ("torso",), "Kopf": ("head",), "Arme": ("upperarm", "lowerarm"), "Beine": ("thigh", "calf")}
     names = np.array([s.split("_")[0] for s in SEG_NAMES])
     sums = {g: [0.0, 0.0] for g in groups}
+    qs, _ = quality(observations)
     for k, o in enumerate(observations):
         cell = o["cell"].astype(int)
         texel = index[cell]
         uv = o["uv"] + (aligned[k] if aligned is not None else 0)
         colour = vl.sample(o["crop"], uv)
         w = o["weight"] * coverage[texel] * (o["facing"].astype(float) > 0.5)
+        if sharp_test:
+            w = w * qs[k].astype(float) ** 6   # nur die schärfsten Prüfbilder (nah und frontal) zählen
         d = np.abs(colour - tex[texel]).mean(axis=1)
         d = np.minimum(d, vl.OUTLIER)
         for g, parts in groups.items():
@@ -181,8 +148,10 @@ def measure(pkl_path, image_dir=None):
     pack = pickle.load(open(pkl_path, "rb"))
     index, segment = pack["index"], pack["segment"]
     variants = {"Mittel (bisher)": lambda tr: build(tr, index, segment),
-                "ausgerichtet, 3 Runden": lambda tr: refined(tr, index, segment, 3),
-                "ausgerichtet, 3 Runden, streng": lambda tr: refined(tr, index, segment, 3, ridge=0.1)}
+                "Güte hoch 2": lambda tr: build(tr, index, segment, power=2),
+                "Güte hoch 4": lambda tr: build(tr, index, segment, power=4),
+                "Güte hoch 8": lambda tr: build(tr, index, segment, power=8),
+                "ausgerichtet + Güte hoch 4": lambda tr: refined(tr, index, segment, 3, power=4)}
     rows = {v: [] for v in variants}
     for pid, obs in pack["data"].items():
         train = [o for o in obs if not is_test(o["f"])]
@@ -200,18 +169,17 @@ def measure(pkl_path, image_dir=None):
         shared_coverage = np.logical_and.reduce(list(variant_coverage.values()))
         shared_ratio = float(shared_coverage[used].mean()) if len(used) else 0.0
         print(f"  gemeinsame Abdeckung: {shared_ratio:.1%} der {len(used)} verwendeten Texel", flush=True)
+        fmt = lambda d: " ".join(f"{g} {v:5.2f}" if v is not None else f"{g}   n/a" for g, v in d.items())  # noqa: E731
         for name, (tex, wt) in textures.items():
             began = time.time()
-            nominal = error(tex, shared_coverage, test, index, segment, None)
             sh = [align(o, tex, wt >= vl.ENOUGH, index, segment) for o in test]
-            lined = error(tex, shared_coverage, test, index, segment, sh)
+            nominal = error(tex, shared_coverage, test, index, segment, sh)                      # alle Prüfbilder
+            lined = error(tex, shared_coverage, test, index, segment, sh, sharp_test=True)        # nur die schärfsten
             sharp = sharpness(tex, wt)
             rows[name].append((nominal, lined, sharp))
             coverage_ratio = float(variant_coverage[name][used].mean()) if len(used) else 0.0
-            print(f"  {name:34s} Abdeckung {coverage_ratio:5.1%} | Schärfe {sharp:5.1f} | unausgerichtet " +
-                  " ".join(f"{g} {v:5.2f}" if v is not None else f"{g}   n/a" for g, v in nominal.items()) +
-                  " | ausgerichtet " + " ".join(f"{g} {v:5.2f}" if v is not None else f"{g}   n/a" for g, v in lined.items()) +
-                  f"  [{time.time() - began:.0f} s]", flush=True)
+            print(f"  {name:34s} Abdeckung {coverage_ratio:5.1%} | Schärfe {sharp:5.1f} | alle Prüfbilder {fmt(nominal)}"
+                  f" | scharfe Prüfbilder {fmt(lined)}  [{time.time() - began:.0f} s]", flush=True)
         if image_dir:
             Path(image_dir).mkdir(parents=True, exist_ok=True)
             seg_rect = [s[1] for s in vl.SEGMENTS if s[0] in ("torso", "head")]
@@ -228,9 +196,8 @@ def measure(pkl_path, image_dir=None):
         lin = {g: [v[1][g] for v in vals if v[1][g] is not None] for g in vals[0][1]}
         nom = {g: float(np.mean(v)) if v else None for g, v in nom.items()}
         lin = {g: float(np.mean(v)) if v else None for g, v in lin.items()}
-        print(f"  {name:34s} Schärfe {np.mean([v[2] for v in vals]):5.1f} | unausgerichtet " +
-              " ".join(f"{g} {v:5.2f}" if v is not None else f"{g}   n/a" for g, v in nom.items()) +
-              " | ausgerichtet " + " ".join(f"{g} {v:5.2f}" if v is not None else f"{g}   n/a" for g, v in lin.items()))
+        fmt = lambda d: " ".join(f"{g} {v:5.2f}" if v is not None else f"{g}   n/a" for g, v in d.items())  # noqa: E731
+        print(f"  {name:34s} Schärfe {np.mean([v[2] for v in vals]):5.1f} | alle Prüfbilder {fmt(nom)} | scharfe Prüfbilder {fmt(lin)}")
 
 
 if __name__ == "__main__":
