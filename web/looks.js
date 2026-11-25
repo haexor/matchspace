@@ -8,7 +8,7 @@ export function createLooks(meta, base) {
   let lookAtlas = null, lookPixels = null;
   function loadLooks() {
     if (!LOOKS) return Promise.resolve();
-    return new THREE.TextureLoader().loadAsync(base + LOOKS.file).then((tex) => {
+    return new THREE.TextureLoader().loadAsync(`${base}${LOOKS.file}?tile=${LOOKS.tile}`).then((tex) => {
       tex.flipY = false;
       tex.colorSpace = THREE.SRGBColorSpace;
       tex.generateMipmaps = false;
