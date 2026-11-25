@@ -9,7 +9,8 @@ Für jedes Bild der Szene wird jede Stelle mit der gerechneten Haltung ins kalib
 Sichtbar ist sie, wenn sie zur Kamera zeigt und kein Körper (der eigene oder ein anderer) davor liegt
 (Tiefenpuffer aus allen Spielern). Damit Rasen nicht ins Trikot gerät, wird jedes Körperteil je Bild um den
 Versatz zu seinen erkannten Gelenkpunkten nachgeschoben, und Bildpunkte, die wie der leere Platz
-aussehen (auch Rasen im Schatten eines Spielers), zählen nicht. Gemittelt wird über alle Bilder in zwei Durchgängen (im zweiten ohne Ausreißer);
+aussehen (auch Rasen im Schatten eines Spielers), zählen nicht. Gemittelt wird über alle Bilder in zwei Durchgängen (im zweiten ohne Ausreißer; mit --ausrichtung schiebt jeder weitere Durchgang jedes
+Körperteil je Bild auf das bisherige Mittel, mit --guete zählen je Stelle die nahsten, frontalsten Bilder mehr);
 dreht sich der Spieler, füllt sich nach und nach auch die Rückseite. Was nie zu sehen war, kommt von der
 gespiegelten Seite, dann vom Mittel der Mannschaft an dieser Stelle (Torwart und Schiedsrichter für sich).
 Spieler, die im Video nicht zu sehen waren, tragen die Mittelkachel ihrer Mannschaft.
@@ -18,11 +19,12 @@ Grenzen: Spieler sind im Video rund 50 bis 120 Pixel hoch, die Textur ist entspr
 Rückennummern sind nicht zu erkennen. Licht und Schatten des Spieltags stecken in den Farben.
 
 Aufruf (nach tools/veo_scene.py, das DETEKTIONEN.json.players.npz schreibt):
-    .venv/bin/python tools/veo_looks.py SZENENVIDEO DETEKTIONEN.json KAMERA.json HINTERGRUND.png SZENENORDNER [PRÜFBILD.jpg]
+    .venv/bin/python tools/veo_looks.py SZENENVIDEO DETEKTIONEN.json KAMERA.json HINTERGRUND.png SZENENORDNER [PRÜFBILD.jpg] [--guete P] [--ausrichtung N]
 
 Schreibt SZENENORDNER/looks.png und den Eintrag "looks" in meta.json. web/avatar.js rechnet für jeden Punkt
 des Körpermodells dieselben Koordinaten aus der Grundhaltung und liest dort die Farbe.
 """
+import argparse
 import json
 import sys
 import time
@@ -70,6 +72,9 @@ PURE = 90.0              # Farbabstand zum leeren Platz, ab dem ein Bildpunkt al
 OCCLUDE = 0.06           # m: so weit darf eine Stelle hinter der vordersten Fläche liegen
 OUTLIER = 45.0           # Farbabstand zum Mittel aus Durchgang 1, ab dem ein Wert im zweiten Durchgang nicht zählt
 ENOUGH = 0.5             # Gewicht, ab dem eine Stelle als gesehen gilt
+MAX_ALIGN = 2.5          # Pixel: so weit darf ein Körperteil dabei geschoben werden
+MIN_ALIGN_TEXELS = 24    # weniger sichtbare Stellen: kein Schieben
+RIDGE = 0.02             # Bremse gegen große Verschiebungen (Anteil der Spur der Normalgleichung)
 
 
 def unit(v):
@@ -229,6 +234,45 @@ def sample(image, uv):
     return at(y0, x0) * (1 - fx) * (1 - fy) + at(y0, x0 + 1) * fx * (1 - fy) + at(y0 + 1, x0) * (1 - fx) * fy + at(y0 + 1, x0 + 1) * fx * fy
 
 
+def gradient(image, uv):
+    """Farbe (N, 3) und ihre Ableitung nach x und y (N, 3) an den Bildpunkten uv."""
+    c = sample(image, uv)
+    gx = sample(image, uv + (0.5, 0)) - sample(image, uv - (0.5, 0))
+    gy = sample(image, uv + (0, 0.5)) - sample(image, uv - (0, 0.5))
+    return c, gx, gy
+
+
+def solve_shift(res, gx, gy, w, ridge):
+    """Verschiebung d (2,) in Pixeln, die sum w * |res + d_x gx + d_y gy|² klein macht (res = Farbe - Bezug); die Bremse zieht zu 0."""
+    a = np.array([[np.sum(w[:, None] * gx * gx), np.sum(w[:, None] * gx * gy)], [np.sum(w[:, None] * gx * gy), np.sum(w[:, None] * gy * gy)]])
+    b = -np.array([np.sum(w[:, None] * gx * res), np.sum(w[:, None] * gy * res)])
+    lam = ridge * np.trace(a) + 1e-6
+    return np.clip(np.linalg.solve(a + lam * np.eye(2), b), -MAX_ALIGN, MAX_ALIGN)
+
+
+def align(image, uv, seg, weight, ref, ok, passes=2):
+    """Verschiebung (N, 2) der sichtbaren Stellen eines Spielers in einem Bild, damit sein Bild zum bisherigen Mittel `ref` (N, 3 je Stelle) passt:
+    erst der ganze Körper, dann jedes Körperteil für sich (stärker gebremst). `ok`: Stellen, deren Bezug verlässlich ist; `seg`: Körperteil je Stelle.
+    Die Gelenkpunkte (shifts) sind nur auf etwa 1 bis 2 Pixel genau; das Rest-Verwischen im Mittel kommt daher."""
+    shift = np.zeros((len(uv), 2))
+    wt = weight * ok
+    if ok.sum() < MIN_ALIGN_TEXELS:
+        return shift
+    body, part = np.zeros(2), np.zeros((len(SEGMENTS), 2))
+    for _ in range(passes):
+        c, gx, gy = gradient(image, uv + body)
+        good = ok & (np.linalg.norm(c - ref, axis=1) < OUTLIER)
+        if good.sum() >= MIN_ALIGN_TEXELS:
+            body = np.clip(body + solve_shift(c[good] - ref[good], gx[good], gy[good], wt[good], RIDGE), -MAX_ALIGN, MAX_ALIGN)
+        c, gx, gy = gradient(image, uv + body + part[seg])
+        good = ok & (np.linalg.norm(c - ref, axis=1) < OUTLIER)
+        for k in range(len(part)):
+            m = good & (seg == k)
+            if m.sum() >= MIN_ALIGN_TEXELS:
+                part[k] = np.clip(part[k] + solve_shift(c[m] - ref[m], gx[m], gy[m], wt[m], RIDGE * 5), -MAX_ALIGN, MAX_ALIGN)
+    return body + part[seg]
+
+
 def load_scene(video, det_path, camera_path, background_path, scene_dir):
     """Alles, was ein Durchlauf über die Bilder der Szene braucht: Kamera, Spieler mit Gelenkpunkten im Video (sie
     bekommen eine Textur) und alle übrigen Figuren (sie verdecken nur), Gelenke in Weltkoordinaten."""
@@ -343,11 +387,11 @@ def observe(sc, f, image, only=None):
             scale = 1.0 / dist[k][m][front]
             w = (facing[k][m][front] - 0.1) * scale * 20.0 * ~empty * np.minimum(apart / PURE, 1.0) ** 2
             out.append({"player": a, "lens": li, "cell": np.flatnonzero(m)[front], "uv": q, "colour": colour, "weight": w,
-                        "facing": facing[k][m][front], "dist": dist[k][m][front]})
+                        "facing": facing[k][m][front], "dist": dist[k][m][front], "image": lens_image})
     return out
 
 
-def main(video, det_path, camera_path, background_path, scene_dir, check_path=None):
+def main(video, det_path, camera_path, background_path, scene_dir, check_path=None, quality_power=0.0, align_rounds=0):
     began = time.time()
     scene_dir = Path(scene_dir)
     sc = load_scene(video, det_path, camera_path, background_path, scene_dir)
@@ -357,23 +401,33 @@ def main(video, det_path, camera_path, background_path, scene_dir, check_path=No
     print(f"{P} Spieler mit Gelenkpunkten im Video; Bilder mit brauchbarer Ausrichtung: "
           f"{sum(int(p['usable'].sum()) for p in players)} von {sum(int(present[:, p['entity']].sum()) for p in players)}", flush=True)
 
-    sums = [np.zeros((P * TILE * TILE, 3)), np.zeros((P * TILE * TILE, 3))]
-    weights = [np.zeros(P * TILE * TILE), np.zeros(P * TILE * TILE)]
-    mean = None
-    for rnd in range(2):
+    # Durchgang 1: einfaches gewichtetes Mittel (und je Stelle die beste Güte). Danach `align_rounds` Durchgänge, in denen jedes Körperteil
+    # je Bild auf das bisherige Mittel geschoben wird, Ausreißer wegfallen und nahe, frontale Bilder stärker zählen.
+    size = P * TILE * TILE
+    mean, wplain, best = None, None, np.zeros(size)
+    for rnd in range(1 + max(align_rounds, 1)):
+        sums, wq, wp = np.zeros((size, 3)), np.zeros(size), np.zeros(size)
         for f, image in frames(sc):
             for o in observe(sc, f, image):
                 texel = o["player"] * TILE * TILE + index[o["cell"]]
                 colour, w = o["colour"], o["weight"]
-                if rnd == 1:
+                q = o["facing"] / o["dist"]
+                if rnd == 0:
+                    np.maximum.at(best, texel, q)
+                else:
+                    if align_rounds:
+                        shift = align(o["image"], o["uv"], sc["segment"][o["cell"]], w, mean[texel], wplain[texel] >= ENOUGH)
+                        colour = sample(o["image"], o["uv"] + shift)
                     w = w * (np.linalg.norm(colour - mean[texel], axis=1) < OUTLIER)
+                wg = w * np.minimum(q / np.maximum(best[texel], 1e-9), 1.0) ** quality_power if rnd else w
                 for ch in range(3):
-                    sums[rnd][:, ch] += np.bincount(texel, w * colour[:, ch], minlength=P * TILE * TILE)
-                weights[rnd] += np.bincount(texel, w, minlength=P * TILE * TILE)
-        mean = sums[rnd] / np.maximum(weights[rnd], 1e-9)[:, None]
+                    sums[:, ch] += np.bincount(texel, wg * colour[:, ch], minlength=size)
+                wq += np.bincount(texel, wg, minlength=size)
+                wp += np.bincount(texel, w, minlength=size)   # "gesehen" hängt nicht von der Güte ab
+        mean, wplain = sums / np.maximum(wq, 1e-9)[:, None], wp
         print(f"  [{time.time() - began:.0f} s] Durchgang {rnd + 1}", flush=True)
 
-    weight = weights[1].reshape(P, TILE * TILE)
+    weight = wplain.reshape(P, TILE * TILE)
     colour = mean.reshape(P, TILE * TILE, 3)
     seen = weight >= ENOUGH
     used = np.zeros(TILE * TILE, bool)
@@ -452,6 +506,14 @@ def main(video, det_path, camera_path, background_path, scene_dir, check_path=No
 
 
 if __name__ == "__main__":
-    if len(sys.argv) not in (6, 7):
-        sys.exit(__doc__)
-    main(*sys.argv[1:])
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    for name in ("video", "detektionen", "kamera", "hintergrund", "szenenordner"):
+        ap.add_argument(name)
+    ap.add_argument("pruefbild", nargs="?", help="Prüfbild (jpg) und Rohdaten (.npz) schreiben")
+    ap.add_argument("--guete", type=float, default=0.0, metavar="P",
+                    help="Gütegewicht: je Stelle zählen die nahsten, frontalsten Bilder (Güte / beste Güte der Stelle) hoch P; 0 = einfaches Mittel (Standard). "
+                         "Größer = schärfer, aber körniger (gemessen: 6 bringt Kanten und Körnung, 2 bis 3 sind milder)")
+    ap.add_argument("--ausrichtung", type=int, default=0, metavar="N",
+                    help="N Durchgänge, in denen jedes Körperteil je Bild auf das bisherige Mittel geschoben wird (je Durchgang rund ein Bilddurchlauf mehr); 0 = nur Gelenkpunkte (Standard)")
+    a = ap.parse_args()
+    main(a.video, a.detektionen, a.kamera, a.hintergrund, a.szenenordner, a.pruefbild, quality_power=a.guete, align_rounds=a.ausrichtung)
