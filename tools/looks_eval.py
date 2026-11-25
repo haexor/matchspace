@@ -53,7 +53,7 @@ def collect(video, det_path, camera_path, background_path, scene_dir, out_path, 
             lens = image[o["lens"] * H:(o["lens"] + 1) * H]
             crop = lens[y0:min(y1, H), x0:x1].copy()
             data[names[o["player"]]].append({
-                "f": f, "crop": crop, "uv": (uv - (x0, y0)).astype(np.float32), "cell": o["cell"].astype(np.uint16),
+                "f": f, "crop": crop, "uv": (uv - (x0, y0)).astype(np.float32), "uv_raw": (o["uv_raw"] - (x0, y0)).astype(np.float32), "cell": o["cell"].astype(np.uint16),
                 "weight": o["weight"].astype(np.float32), "facing": o["facing"].astype(np.float16), "dist": o["dist"].astype(np.float16)})
         if f % 100 == 0:
             print(f"  Bild {f} [{time.time() - began:.0f} s]", flush=True)
