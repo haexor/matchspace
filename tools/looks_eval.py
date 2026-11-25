@@ -68,32 +68,15 @@ def align(obs, ref, ref_ok, index, segment):
     return vl.align(obs["crop"], obs["uv"], segment[cell], obs["weight"], ref[texel], ref_ok[texel])
 
 
-def add_masks(observations, scale=3, batch=16):
-    """Personenmaske je Ausschnitt (o["mask"], bool, Größe des Ausschnitts): das Segmentierungsmodell (models/yolo11x-seg.pt) läuft auf dem vergrößerten
-    Ausschnitt; gewählt wird die Person, in der die meisten sichtbaren Stellen des Spielers liegen. Ohne Treffer (weniger als 30 % der Stellen) bleibt
-    o["mask"] = None. Maske um 1 Pixel verbreitert, weil dünne Arme sonst am Rand wegfallen."""
-    from ultralytics import YOLO
-    model = YOLO(str(Path(__file__).parent.parent / "models" / "yolo11x-seg.pt"))
+def add_masks(observations):
+    """Personenmaske je Ausschnitt (o["mask"], bool, Größe des Ausschnitts; None ohne Treffer): veo_looks.person_masks auf den gesammelten Ausschnitten."""
+    model = vl.segmenter()
     found = 0
-    for start in range(0, len(observations), batch):
-        group = observations[start:start + batch]
-        big = [cv2.resize(o["crop"], None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC) for o in group]
-        results = model.predict(big, classes=[0], imgsz=640, conf=0.15, retina_masks=True, verbose=False)
-        for o, r in zip(group, results):
-            o["mask"] = None
-            if r.masks is None or not len(r.masks.data):
-                continue
-            h, w = o["crop"].shape[:2]
-            masks = r.masks.data.cpu().numpy() > 0.5
-            ui = np.clip((o["uv"][:, 0] * scale).astype(int), 0, masks.shape[2] - 1)
-            vi = np.clip((o["uv"][:, 1] * scale).astype(int), 0, masks.shape[1] - 1)
-            score = masks[:, vi, ui].mean(axis=1)
-            best = int(score.argmax())
-            if score[best] < 0.3:
-                continue
-            small = cv2.resize(masks[best].astype(np.uint8), (w, h), interpolation=cv2.INTER_AREA) > 0
-            o["mask"] = cv2.dilate(small.astype(np.uint8), np.ones((3, 3), np.uint8)) > 0
-            found += 1
+    for start in range(0, len(observations), 16):
+        group = observations[start:start + 16]
+        for o, m in zip(group, vl.person_masks(model, [o["crop"] for o in group], [o["uv"] for o in group])):
+            o["mask"] = m
+            found += m is not None
     return found
 
 

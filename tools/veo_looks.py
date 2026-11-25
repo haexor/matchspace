@@ -19,7 +19,7 @@ Grenzen: Spieler sind im Video rund 50 bis 120 Pixel hoch, die Textur ist entspr
 Rückennummern sind nicht zu erkennen. Licht und Schatten des Spieltags stecken in den Farben.
 
 Aufruf (nach tools/veo_scene.py, das DETEKTIONEN.json.players.npz schreibt):
-    .venv/bin/python tools/veo_looks.py SZENENVIDEO DETEKTIONEN.json KAMERA.json HINTERGRUND.png SZENENORDNER [PRÜFBILD.jpg] [--guete P] [--ausrichtung N]
+    .venv/bin/python tools/veo_looks.py SZENENVIDEO DETEKTIONEN.json KAMERA.json HINTERGRUND.png SZENENORDNER [PRÜFBILD.jpg] [--guete P] [--ausrichtung N] [--maske]
 
 Schreibt SZENENORDNER/looks.png und den Eintrag "looks" in meta.json. web/avatar.js rechnet für jeden Punkt
 des Körpermodells dieselben Koordinaten aus der Grundhaltung und liest dort die Farbe.
@@ -234,6 +234,47 @@ def sample(image, uv):
     return at(y0, x0) * (1 - fx) * (1 - fy) + at(y0, x0 + 1) * fx * (1 - fy) + at(y0 + 1, x0) * (1 - fx) * fy + at(y0 + 1, x0 + 1) * fx * fy
 
 
+MASK_PAD = 24   # Pixel Umgebung um den Spieler für die Personenmaske (die Nachbarn müssen im Ausschnitt sein, damit die Maske sie trennt)
+
+
+def segmenter():
+    """Segmentierungsmodell für Personenmasken (models/yolo11x-seg.pt)."""
+    from ultralytics import YOLO
+    return YOLO(str(Path(__file__).parent.parent / "models" / "yolo11x-seg.pt"))
+
+
+def person_masks(model, crops, uvs, scale=3):
+    """Personenmaske je Ausschnitt (BGR) mit den sichtbaren Stellen des Spielers uvs (N, 2 in Ausschnittskoordinaten): bool-Bild in der Größe des
+    Ausschnitts, einen Pixel verbreitert (dünne Arme fallen sonst am Rand weg), von der Person, in der die meisten Stellen liegen; None, wenn
+    weniger als 30 % der Stellen in einer Person liegen. Im Zweikampf liegen viele Stellen eines Spielers auf dem Gegner."""
+    out = [None] * len(crops)
+    if not crops:
+        return out
+    big = [cv2.resize(c, None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC) for c in crops]
+    results = model.predict(big, classes=[0], imgsz=640, conf=0.15, retina_masks=True, verbose=False)
+    for i, (crop, uv, r) in enumerate(zip(crops, uvs, results)):
+        if r.masks is None or not len(r.masks.data):
+            continue
+        masks = r.masks.data.cpu().numpy() > 0.5
+        ui = np.clip((uv[:, 0] * scale).astype(int), 0, masks.shape[2] - 1)
+        vi = np.clip((uv[:, 1] * scale).astype(int), 0, masks.shape[1] - 1)
+        score = masks[:, vi, ui].mean(axis=1)
+        best = int(score.argmax())
+        if score[best] >= 0.3:
+            small = cv2.resize(masks[best].astype(np.uint8), (crop.shape[1], crop.shape[0]), interpolation=cv2.INTER_AREA) > 0
+            out[i] = cv2.dilate(small.astype(np.uint8), np.ones((3, 3), np.uint8)) > 0
+    return out
+
+
+def in_mask(entry, uv):
+    """Welche Bildpunkte uv (N, 2) in der Maske eines Spielers liegen (entry = (x0, y0, Maske) aus `person_masks`; None = keine Maske: alle)."""
+    if entry is None:
+        return np.ones(len(uv), bool)
+    x0, y0, mask = entry
+    h, w = mask.shape
+    return mask[np.clip(np.round(uv[:, 1] - y0 - 0.5).astype(int), 0, h - 1), np.clip(np.round(uv[:, 0] - x0 - 0.5).astype(int), 0, w - 1)]
+
+
 def gradient(image, uv):
     """Farbe (N, 3) und ihre Ableitung nach x und y (N, 3) an den Bildpunkten uv."""
     c = sample(image, uv)
@@ -393,7 +434,7 @@ def observe(sc, f, image, only=None):
     return out
 
 
-def main(video, det_path, camera_path, background_path, scene_dir, check_path=None, quality_power=0.0, align_rounds=0):
+def main(video, det_path, camera_path, background_path, scene_dir, check_path=None, quality_power=0.0, align_rounds=0, masks=False):
     began = time.time()
     scene_dir = Path(scene_dir)
     sc = load_scene(video, det_path, camera_path, background_path, scene_dir)
@@ -407,12 +448,25 @@ def main(video, det_path, camera_path, background_path, scene_dir, check_path=No
     # je Bild auf das bisherige Mittel geschoben wird, Ausreißer wegfallen und nahe, frontale Bilder stärker zählen.
     size = P * TILE * TILE
     mean, wplain, best = None, None, np.zeros(size)
+    model, mask_cache = (segmenter() if masks else None), {}
     for rnd in range(1 + max(align_rounds, 1)):
         sums, wq, wp = np.zeros((size, 3)), np.zeros(size), np.zeros(size)
         for f, image in frames(sc):
-            for o in observe(sc, f, image):
+            observed = observe(sc, f, image)
+            if masks and rnd == 0:   # Personenmasken einmal je Bild und Spieler rechnen und für die weiteren Durchgänge merken
+                boxes = []
+                for o in observed:
+                    x0, y0 = np.maximum(np.floor(o["uv"].min(axis=0) - MASK_PAD), 0).astype(int)
+                    x1, y1 = np.ceil(o["uv"].max(axis=0) + MASK_PAD + 1).astype(int)
+                    boxes.append((x0, y0, o["image"][y0:y1, x0:x1]))
+                found = person_masks(model, [b[2] for b in boxes], [o["uv"] - b[:2] for o, b in zip(observed, boxes)])
+                for o, b, m in zip(observed, boxes, found):
+                    mask_cache[(f, o["player"], o["lens"])] = None if m is None else (b[0], b[1], m)
+            for o in observed:
                 texel = o["player"] * TILE * TILE + index[o["cell"]]
                 colour, w = o["colour"], o["weight"]
+                if masks:
+                    w = w * in_mask(mask_cache[(f, o["player"], o["lens"])], o["uv"])
                 q = o["facing"] / o["dist"]
                 if rnd == 0:
                     np.maximum.at(best, texel, q)
@@ -519,7 +573,10 @@ if __name__ == "__main__":
     ap.add_argument("--guete", type=float, default=0.0, metavar="P",
                     help="Gütegewicht: je Stelle zählen die nahsten, frontalsten Bilder (Güte / beste Güte der Stelle) hoch P; 0 = einfaches Mittel (Standard). "
                          "Größer = schärfer, aber körniger (gemessen: 6 bringt Kanten und Körnung, 2 bis 3 sind milder)")
+    ap.add_argument("--maske", action="store_true",
+                    help="Nur Bildpunkte zählen, die in der Personenmaske des Spielers liegen (models/yolo11x-seg.pt, rechnet einmal je Bild und Spieler): "
+                         "im Zweikampf liegen viele Stellen auf dem Gegner und färben die Textur (rote Flecken am grünen Spieler)")
     ap.add_argument("--ausrichtung", type=int, default=0, metavar="N",
                     help="N Durchgänge, in denen jedes Körperteil je Bild auf das bisherige Mittel geschoben wird (je Durchgang rund ein Bilddurchlauf mehr); 0 = nur Gelenkpunkte (Standard)")
     a = ap.parse_args()
-    main(a.video, a.detektionen, a.kamera, a.hintergrund, a.szenenordner, a.pruefbild, quality_power=a.guete, align_rounds=a.ausrichtung)
+    main(a.video, a.detektionen, a.kamera, a.hintergrund, a.szenenordner, a.pruefbild, quality_power=a.guete, align_rounds=a.ausrichtung, masks=a.maske)
