@@ -229,8 +229,9 @@ def sample(image, uv):
     return at(y0, x0) * (1 - fx) * (1 - fy) + at(y0, x0 + 1) * fx * (1 - fy) + at(y0 + 1, x0) * (1 - fx) * fy + at(y0 + 1, x0 + 1) * fx * fy
 
 
-def main(video, det_path, camera_path, background_path, scene_dir, check_path=None):
-    began = time.time()
+def load_scene(video, det_path, camera_path, background_path, scene_dir):
+    """Alles, was ein Durchlauf über die Bilder der Szene braucht: Kamera, Spieler mit Gelenkpunkten im Video (sie
+    bekommen eine Textur) und alle übrigen Figuren (sie verdecken nur), Gelenke in Weltkoordinaten."""
     scene_dir = Path(scene_dir)
     cam = veo_camera.load(camera_path)
     det = json.loads(Path(det_path).read_text())
@@ -239,16 +240,8 @@ def main(video, det_path, camera_path, background_path, scene_dir, check_path=No
     views = np.load(f"{det_path}.players{'_own' if own_tracking else ''}.npz")
     n = {name: i for i, name in enumerate(names)}
     entities = meta["entities"]
-    total, ratio = meta["frames"], det["fps"] / meta["fps"]
     W, H = cam["lensSize"]
-    background = cv2.imread(str(background_path)).astype(np.float32)
     cells = grid()
-    index = np.concatenate([c["index"] for c in cells])
-    anchor = anchor_weights(cells)
-    N = len(index)
-
-    # Spieler mit Gelenkpunkten im Video (sie bekommen eine Textur) und alle übrigen Figuren (sie verdecken nur);
-    # Gelenke in Weltkoordinaten
     players, others = [], []
     for slot, entity in enumerate(slots):
         e = entities[entity]
@@ -269,6 +262,97 @@ def main(video, det_path, camera_path, background_path, scene_dir, check_path=No
         usable = here & ~np.isnan(shift[:, 0, 0]) & ~down
         players.append({"id": e["id"], "entity": entity, "team": e["team"], "group": e["team"] + ("-gk" if e.get("role") == "goalkeeper" else ""),
                         "world": world, "height": height, "lens": lens, "shift": shift, "usable": usable})
+    return {"video": video, "cam": cam, "det": det, "meta": meta, "present": present, "n": n, "W": W, "H": H,
+            "total": meta["frames"], "ratio": det["fps"] / meta["fps"],
+            "background": cv2.imread(str(background_path)).astype(np.float32),
+            "cells": cells, "index": np.concatenate([c["index"] for c in cells]), "anchor": anchor_weights(cells),
+            "segment": np.concatenate([np.full(len(c["t"]), s) for s, c in enumerate(cells)]),
+            "players": players, "others": others}
+
+
+def frames(sc):
+    """Die Bilder der Szene (Nummer f der Bewegungsdaten, Videobild), einmal von vorn bis hinten."""
+    cap = cv2.VideoCapture(str(sc["video"]))
+    frame_no, image = -1, None
+    for f in range(sc["total"]):
+        want = min(int(round(f * sc["ratio"])), len(sc["det"]["frames"]) - 1)
+        while frame_no < want:
+            ok, image = cap.read()
+            frame_no += 1
+            if not ok:
+                break
+        if image is None:
+            break
+        yield f, image
+    cap.release()
+
+
+def observe(sc, f, image, only=None):
+    """Was Bild f über die Oberfläche der Spieler verrät: je Spieler (nur `only`, sonst alle mit brauchbarer Ausrichtung)
+    die sichtbaren Stellen ("cell" = Nummer in der Reihenfolge von grid()), ihre Bildpunkte uv, Farben und Gewichte.
+    Verdecken dürfen alle Figuren im Bild, auch die, deren Farben in diesem Bild nicht zählen."""
+    players, others, n, cells, index, anchor = sc["players"], sc["others"], sc["n"], sc["cells"], sc["index"], sc["anchor"]
+    cam, W, H, background = sc["cam"], sc["W"], sc["H"], sc["background"]
+    N = len(index)
+    active = [k for k, p in enumerate(players) if p["usable"][f]]
+    if not active:
+        return []
+    cover = [players[k] for k, p in enumerate(players) if p["world"][f, 0, 0] == p["world"][f, 0, 0] and not p["usable"][f]]
+    cover += [o for o in others if o["here"][f]]
+    bodies = [players[k] for k in active] + cover
+    J = np.stack([b["world"][f] for b in bodies])
+    heights = np.array([b["height"] for b in bodies])
+    pts, nrm = surface(J, n, heights, cells)
+    out = []
+    for li, lens_name in enumerate(LENSES):
+        lens_image = image[li * H:(li + 1) * H]
+        lens_bg = background[li * H:(li + 1) * H]
+        centre = cam["lenses"][lens_name]["centre"]
+        view = centre - pts
+        dist = np.linalg.norm(view, axis=-1)
+        facing = (nrm * view).sum(-1) / dist
+        uv = veo_camera.project(cam, lens_name, pts.reshape(-1, 3)).reshape(len(bodies), N, 2)
+        for k, b in enumerate(bodies):
+            if "shift" in b and b["lens"][f] == li and not np.isnan(b["shift"][f, 0, 0]):
+                uv[k] += anchor @ b["shift"][f]
+        inside = (facing > 0.15) & (uv[..., 0] >= 1) & (uv[..., 0] < W - 2) & (uv[..., 1] >= 1) & (uv[..., 1] < H - 2)
+        if not inside.any():
+            continue
+        # Tiefenpuffer aus allen sichtbaren Flächen (je Stelle 2 × 2 Pixel)
+        depth = np.full((H, W), np.inf, np.float32)
+        ui, vi, di = uv[..., 0][inside].astype(int), uv[..., 1][inside].astype(int), dist[inside]
+        for du in (0, 1):
+            for dv in (0, 1):
+                np.minimum.at(depth, (np.minimum(vi + dv, H - 1), np.minimum(ui + du, W - 1)), di)
+        for k, a in enumerate(active):
+            if only is not None and players[a]["id"] not in only:
+                continue
+            m = inside[k]
+            if not m.any():
+                continue
+            q = uv[k][m]
+            front = dist[k][m] <= depth[q[:, 1].astype(int), q[:, 0].astype(int)] + OCCLUDE
+            q = q[front]
+            if not len(q):
+                continue
+            colour = sample(lens_image, q)
+            empty, apart = grass(colour, lens_bg, q)
+            # Gewicht: frontal gesehen, Auflösung (Pixel je Meter), keine Rasenfarbe. Arme und Beine sind nur wenige
+            # Pixel breit, viele Bildpunkte mischen Körper und Rasen; je deutlicher ein Punkt sich vom leeren Platz
+            # abhebt, desto reiner zeigt er den Körper und desto mehr zählt er.
+            scale = 1.0 / dist[k][m][front]
+            w = (facing[k][m][front] - 0.1) * scale * 20.0 * ~empty * np.minimum(apart / PURE, 1.0) ** 2
+            out.append({"player": a, "lens": li, "cell": np.flatnonzero(m)[front], "uv": q, "colour": colour, "weight": w,
+                        "facing": facing[k][m][front], "dist": dist[k][m][front]})
+    return out
+
+
+def main(video, det_path, camera_path, background_path, scene_dir, check_path=None):
+    began = time.time()
+    scene_dir = Path(scene_dir)
+    sc = load_scene(video, det_path, camera_path, background_path, scene_dir)
+    players, index = sc["players"], sc["index"]
+    present = sc["present"]
     P = len(players)
     print(f"{P} Spieler mit Gelenkpunkten im Video; Bilder mit brauchbarer Ausrichtung: "
           f"{sum(int(p['usable'].sum()) for p in players)} von {sum(int(present[:, p['entity']].sum()) for p in players)}", flush=True)
@@ -277,70 +361,15 @@ def main(video, det_path, camera_path, background_path, scene_dir, check_path=No
     weights = [np.zeros(P * TILE * TILE), np.zeros(P * TILE * TILE)]
     mean = None
     for rnd in range(2):
-        cap = cv2.VideoCapture(str(video))
-        frame_no, image = -1, None
-        for f in range(total):
-            want = min(int(round(f * ratio)), len(det["frames"]) - 1)
-            while frame_no < want:
-                ok, image = cap.read()
-                frame_no += 1
-                if not ok:
-                    break
-            if image is None:
-                break
-            active = [k for k, p in enumerate(players) if p["usable"][f]]
-            if not active:
-                continue
-            # verdecken dürfen alle Figuren im Bild, auch die, deren Farben in diesem Bild nicht zählen
-            cover = [players[k] for k, p in enumerate(players) if p["world"][f, 0, 0] == p["world"][f, 0, 0] and not p["usable"][f]]
-            cover += [o for o in others if o["here"][f]]
-            bodies = [players[k] for k in active] + cover
-            J = np.stack([b["world"][f] for b in bodies])
-            heights = np.array([b["height"] for b in bodies])
-            pts, nrm = surface(J, n, heights, cells)
-            for li, lens_name in enumerate(LENSES):
-                lens_image = image[li * H:(li + 1) * H]
-                lens_bg = background[li * H:(li + 1) * H]
-                centre = cam["lenses"][lens_name]["centre"]
-                view = centre - pts
-                dist = np.linalg.norm(view, axis=-1)
-                facing = (nrm * view).sum(-1) / dist
-                uv = veo_camera.project(cam, lens_name, pts.reshape(-1, 3)).reshape(len(bodies), N, 2)
-                for k, b in enumerate(bodies):
-                    if "shift" in b and b["lens"][f] == li and not np.isnan(b["shift"][f, 0, 0]):
-                        uv[k] += anchor @ b["shift"][f]
-                inside = (facing > 0.15) & (uv[..., 0] >= 1) & (uv[..., 0] < W - 2) & (uv[..., 1] >= 1) & (uv[..., 1] < H - 2)
-                if not inside.any():
-                    continue
-                # Tiefenpuffer aus allen sichtbaren Flächen (je Stelle 2 × 2 Pixel)
-                depth = np.full((H, W), np.inf, np.float32)
-                ui, vi, di = uv[..., 0][inside].astype(int), uv[..., 1][inside].astype(int), dist[inside]
-                for du in (0, 1):
-                    for dv in (0, 1):
-                        np.minimum.at(depth, (np.minimum(vi + dv, H - 1), np.minimum(ui + du, W - 1)), di)
-                for k, a in enumerate(active):
-                    m = inside[k]
-                    if not m.any():
-                        continue
-                    q = uv[k][m]
-                    front = dist[k][m] <= depth[q[:, 1].astype(int), q[:, 0].astype(int)] + OCCLUDE
-                    q = q[front]
-                    if not len(q):
-                        continue
-                    colour = sample(lens_image, q)
-                    empty, apart = grass(colour, lens_bg, q)
-                    texel = a * TILE * TILE + index[m][front]
-                    # Gewicht: frontal gesehen, Auflösung (Pixel je Meter), keine Rasenfarbe. Arme und Beine sind nur wenige
-                    # Pixel breit, viele Bildpunkte mischen Körper und Rasen; je deutlicher ein Punkt sich vom leeren Platz
-                    # abhebt, desto reiner zeigt er den Körper und desto mehr zählt er.
-                    scale = 1.0 / dist[k][m][front]
-                    w = (facing[k][m][front] - 0.1) * scale * 20.0 * ~empty * np.minimum(apart / PURE, 1.0) ** 2
-                    if rnd == 1:
-                        w = w * (np.linalg.norm(colour - mean[texel], axis=1) < OUTLIER)
-                    for ch in range(3):
-                        sums[rnd][:, ch] += np.bincount(texel, w * colour[:, ch], minlength=P * TILE * TILE)
-                    weights[rnd] += np.bincount(texel, w, minlength=P * TILE * TILE)
-        cap.release()
+        for f, image in frames(sc):
+            for o in observe(sc, f, image):
+                texel = o["player"] * TILE * TILE + index[o["cell"]]
+                colour, w = o["colour"], o["weight"]
+                if rnd == 1:
+                    w = w * (np.linalg.norm(colour - mean[texel], axis=1) < OUTLIER)
+                for ch in range(3):
+                    sums[rnd][:, ch] += np.bincount(texel, w * colour[:, ch], minlength=P * TILE * TILE)
+                weights[rnd] += np.bincount(texel, w, minlength=P * TILE * TILE)
         mean = sums[rnd] / np.maximum(weights[rnd], 1e-9)[:, None]
         print(f"  [{time.time() - began:.0f} s] Durchgang {rnd + 1}", flush=True)
 
