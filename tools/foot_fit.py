@@ -3,8 +3,8 @@
 Bisher standen Ferse und Fußspitze nach der Laufrichtung und zeigten oft quer zum echten Schuh. RTMPose (Halpe26) liest beide im Bild. Hier wird daraus
 die Fußstellung im Raum: Der Fuß hat feste Längen (Knöchel zu Ferse, Ferse zu Zehe). Ein Bildpunkt legt nur den Sehstrahl fest; die Tiefe ergibt sich aus
 der Länge: Der gesuchte Punkt liegt dort, wo der Strahl die Kugel um den Knöchel (Ferse) bzw. um die Ferse (Zehe) schneidet. Von zwei Schnittpunkten
-gilt der näher an der bisherigen Stellung. Trifft der Strahl die Kugel nicht, wird der Punkt am nächsten Punkt der Kugel gesetzt. Nichts geht unter den
-Rasen. Wo kein sicherer Bildpunkt vorliegt, bleibt die bisherige Stellung; Übergänge werden geglättet.
+gilt der näher an der bisherigen Stellung. Trifft der Strahl die Kugel nicht, wird der Punkt am nächsten Punkt der Kugel gesetzt. Die Sohle geht nicht unter den
+Rasen (Mittelpunkt von Ferse und Zehe mindestens einen Kugelradius hoch); dafür dreht sich der Fuß um den Knöchel, die Längen bleiben. Wo kein sicherer Bildpunkt vorliegt, bleibt die bisherige Stellung; Übergänge werden geglättet.
 
 Außerdem: Die 17 COCO-Punkte von RTMPose und ViTPose werden zusammengeführt (merge_keypoints): Bei den Beinen zählt RTMPose mehr.
 """
@@ -15,7 +15,7 @@ LEG_JOINTS = (13, 14, 15, 16)     # Knie und Knöchel: RTMPose liegt dort genaue
 LEG_WEIGHT = 2.0                  # Gewicht von RTMPose gegenüber ViTPose bei den Beinen
 RTM = {"lBigToe": 20, "rBigToe": 21, "lSmallToe": 22, "rSmallToe": 23, "lHeel": 24, "rHeel": 25}
 SMOOTH = 2                        # Bilder je Seite beim Glätten der Fußvektoren
-GROUND = 0.0                      # m: tiefster Fußpunkt
+SOLE = {"Heel": 0.04, "Toe": 0.035}   # m: Höhe des Mittelpunkts über der Sohle (Kugelradius im Skelett); darunter steckt der Schuh im Rasen
 
 
 def merge_keypoints(vit: np.ndarray, rtm: np.ndarray) -> np.ndarray:
@@ -67,6 +67,19 @@ def sphere_point(origin, direction, centre, radius, prior):
     return near if np.linalg.norm(near - prior) <= np.linalg.norm(far - prior) else far
 
 
+def lift_to_sole(point, base, length, zmin):
+    """Setzt `point` (Ferse oder Zehe) so, dass er mindestens zmin hoch liegt, ohne die Länge des Knochens zu `base` zu ändern: Der Knochen dreht
+    sich um `base` nach oben (die Richtung in der Waagerechten bleibt). Reicht die Länge nicht bis zmin, bleibt nur die Höhe begrenzt."""
+    if point[2] >= zmin:
+        return point
+    dz = zmin - base[2]
+    flat = point[:2] - base[:2]
+    norm = np.linalg.norm(flat)
+    if abs(dz) >= length or norm < 1e-9:
+        return np.array([point[0], point[1], zmin])
+    return np.array([*(base[:2] + flat / norm * np.sqrt(length * length - dz * dz)), zmin])
+
+
 def smooth_vectors(v: np.ndarray, valid: np.ndarray, half: int = SMOOTH) -> np.ndarray:
     """Gleitender Mittelwert über gültige Nachbarn (n, 3); ungültige Bilder bleiben NaN."""
     out = np.full_like(v, np.nan)
@@ -114,6 +127,9 @@ def apply(joints: np.ndarray, pos: np.ndarray, foot2d: np.ndarray, lens: np.ndar
                 out[i, toe] = out[i, heel] + vt_s[i]
             if not (np.isnan(vh_s[i]).any() and np.isnan(vt_s[i]).any()):
                 changed += 1
-        for j in (heel, toe):
-            out[:, j, 2] = np.maximum(out[:, j, 2], GROUND)
+        for i in range(len(pos)):
+            if np.isnan(out[i, [ankle, heel, toe]]).any():
+                continue
+            out[i, heel] = lift_to_sole(out[i, heel], out[i, ankle], r_h[i], SOLE["Heel"])
+            out[i, toe] = lift_to_sole(out[i, toe], out[i, heel], r_t[i], SOLE["Toe"])
     return out, changed
