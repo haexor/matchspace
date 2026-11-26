@@ -278,7 +278,7 @@ export async function loadAvatars(url) {
       } else if (o.name.startsWith('Eyes')) {
         o.castShadow = false;
       } else {
-        o.material = bodyMaterial(kit, number ?? null, look);
+        o.material = bodyMaterial(kit, look?.printKept ? null : (number ?? null), look);   // die Videotextur trägt den echten Aufdruck: keine zweite Nummer darüber
       }
     });
     for (const o of drop) o.removeFromParent();

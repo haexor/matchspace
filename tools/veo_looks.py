@@ -19,7 +19,7 @@ Grenzen: Spieler sind im Video rund 50 bis 120 Pixel hoch, die Textur ist entspr
 Rückennummern sind nicht zu erkennen. Licht und Schatten des Spieltags stecken in den Farben.
 
 Aufruf (nach tools/veo_scene.py, das DETEKTIONEN.json.players.npz schreibt):
-    .venv/bin/python tools/veo_looks.py SZENENVIDEO DETEKTIONEN.json KAMERA.json HINTERGRUND.png SZENENORDNER [PRÜFBILD.jpg] [--guete P] [--ausrichtung N] [--maske]
+    .venv/bin/python tools/veo_looks.py SZENENVIDEO DETEKTIONEN.json KAMERA.json HINTERGRUND.png SZENENORDNER [PRÜFBILD.jpg] [--guete P] [--ausrichtung N] [--maske] [--ansichten N]
 
 Schreibt SZENENORDNER/looks.png und den Eintrag "looks" in meta.json. web/avatar.js rechnet für jeden Punkt
 des Körpermodells dieselben Koordinaten aus der Grundhaltung und liest dort die Farbe.
@@ -35,6 +35,7 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).parent))
 import check_motion  # noqa: E402
+import avatar_mesh  # noqa: E402
 import veo_camera  # noqa: E402
 
 LENSES = ("left", "right")
@@ -100,8 +101,9 @@ def grid():
     return out
 
 
-def surface(J, n, height, cells):
-    """Weltpunkte und Normalen (P, N, 3) aller Texel für Gelenke J (P, 20, 3)."""
+def surface(J, n, height, cells, yaw=None):
+    """Weltpunkte und Normalen (P, N, 3) aller Texel für Gelenke J (P, 20, 3). `yaw` (P,): Drehung des Rumpfs um seine Längsachse (rad),
+    die die Texel gegenüber der aus den Gelenkpunkten geschätzten Ausrichtung weiterdreht (siehe fit_yaw)."""
     g = lambda name: J[:, n[name]]  # noqa: E731
     up_world = np.array([0.0, 0.0, 1.0])
     s = (height / REF_HEIGHT)[:, None]
@@ -142,9 +144,15 @@ def surface(J, n, height, cells):
                 F = np.cross(axis, S)
             F, S = F[:, None], S[:, None]
             centre = A[:, None] + t[..., None] * (B - A)[:, None]
+        if name == "torso" and yaw is not None:
+            th = th + yaw[:, None]
+        # th ist der Polarwinkel um die Achse (nicht der Parameter der Ellipse): so liest ihn der Viewer (web/avatar-look.js, atan2 der Netzpunkte um die
+        # Achse). Mit dem Ellipsenparameter säße ein Merkmal (z. B. die Nummer) im Viewer um rz/rx verschoben und verzerrt.
         cos, sin = np.cos(th)[..., None], np.sin(th)[..., None]
-        points.append(centre + rz[..., None] * cos * F + rx[..., None] * sin * S)
-        normals.append(unit(cos / rz[..., None] * F + sin / rx[..., None] * S))
+        rho = 1.0 / np.sqrt((cos / rz[..., None]) ** 2 + (sin / rx[..., None]) ** 2)
+        x, y = rho * cos, rho * sin
+        points.append(centre + x * F + y * S)
+        normals.append(unit(x / rz[..., None] ** 2 * F + y / rx[..., None] ** 2 * S))
     return np.concatenate(points, axis=1), np.concatenate(normals, axis=1)
 
 
@@ -275,6 +283,82 @@ def in_mask(entry, uv):
     return mask[np.clip(np.round(uv[:, 1] - y0 - 0.5).astype(int), 0, h - 1), np.clip(np.round(uv[:, 0] - x0 - 0.5).astype(int), 0, w - 1)]
 
 
+VIEW_OUTLIER = {"torso": 400.0, "head": 110.0}   # Farbabstand zum gewöhnlichen Mittel, ab dem ein Wert in der Ansichtentextur nicht zählt. Rumpf praktisch aus: weißer Aufdruck auf
+                                                 # rotem Trikot liegt 150 bis 300 vom unscharfen Mittel, ein engerer Filter (45, 110) ließ von der Nummer nur die Mitte stehen (schmal
+                                                 # und hoch). Kopf eng: ohne Filter färben Fremdfarben aus dem Zweikampf ihn (Mannschaftsfarbe im Gesicht).
+VIEW_PARTS = ("torso", "head")   # Körperteile mit Ansichtentextur; dünne Teile (Arme, Beine, Füße) bleiben beim Mittel: ein einzelnes Bild liegt dort oft ein paar Pixel daneben
+VIEW_DEPTH = 3         # so viele Bilder je Körperteil und Ansicht dürfen Lücken des besten Bilds füllen
+
+
+def tile_geometry():
+    """Je Texel der Kachel: Nummer des Körperteils (-1 = unbenutzt) und Winkelanteil um dessen Achse (0 bis 1; 0,5 = vorn)."""
+    part = np.full(TILE * TILE, -1)
+    frac = np.zeros(TILE * TILE)
+    for s, (_, (x, y, w, h), _, _) in enumerate(SEGMENTS):
+        rows, cols = np.meshgrid(np.arange(h), np.arange(w), indexing="ij")
+        at = ((y + rows) * TILE + x + cols).ravel()
+        part[at], frac[at] = s, ((cols + 0.5) / w).ravel()
+    return part, frac
+
+
+def view_texture(texel, colour, weight, quality, obs, nobs, sectors=4, depth=VIEW_DEPTH, outlier=None):
+    """Textur eines Spielers aus zusammenhängenden Bildern je Ansicht statt aus dem Mittel aller Bilder.
+    Das gemittelte Bild ist unschärfer als jedes einzelne, weil dasselbe Texel in verschiedenen Bildern leicht verschiedene echte Stellen trifft
+    (Rumpfdrehung, Stoff, Fehler der Haltung); ein einzelnes Bild verzerrt dagegen glatt und bleibt scharf (Ziffern und Schriftzüge sind zu lesen).
+    Je Körperteil und Ansicht (`sectors` gleich große Winkelbereiche um die Achse, weich überblendet) liefert das Bild mit der besten Güte
+    (nah, frontal, viele Stellen) alle seine Texel; fehlt dort eines, kommt es vom nächstbesten (bis `depth` Bilder).
+    Eingabe je Beobachtung: Texel in der Kachel (N,), Farbe (N, 3), Gewicht (N,), Güte (N,), Nummer des Bilds (N,) von 0 bis nobs - 1.
+    Rückgabe: Farben (TILE², 3) und Gewicht der gesehenen Stellen (TILE²; Stellen ohne Wert haben Gewicht 0 und Farbe 0)."""
+    size = TILE * TILE
+    wsum = np.bincount(texel, weight, minlength=size)
+    ref = np.stack([np.bincount(texel, weight * colour[:, ch], minlength=size) for ch in range(3)], axis=1) / np.maximum(wsum, 1e-9)[:, None]
+    part, frac = tile_geometry()
+    in_view = np.isin(part, [i for i, sg in enumerate(SEGMENTS) if sg[0] in VIEW_PARTS])   # (Texel,): Ansichtentextur statt Mittel
+    # Mittel der übrigen Teile: ohne Ausreißer (wie bisher, OUTLIER), die Ansichten dagegen mit lockerem Filter
+    limits = VIEW_OUTLIER if outlier is None else {name: outlier for name in VIEW_PARTS}
+    limit = np.full(size, OUTLIER)
+    for k, sg in enumerate(SEGMENTS):
+        if sg[0] in VIEW_PARTS:
+            limit[part == k] = limits[sg[0]]
+    keep = np.linalg.norm(colour - ref[texel], axis=1) < limit[texel]
+    mean_w = weight * keep
+    mean_sum = np.stack([np.bincount(texel, mean_w * colour[:, ch], minlength=size) for ch in range(3)], axis=1)
+    seen = np.bincount(texel, mean_w, minlength=size)
+    mean = mean_sum / np.maximum(seen, 1e-9)[:, None]
+    weight = mean_w
+    centre = 0.5 + np.arange(sectors) / sectors
+    dist = np.abs((frac[None, :] - centre[:, None] + 0.5) % 1.0 - 0.5)
+    blend = np.where(dist < 1.0 / sectors, np.cos(np.pi * dist * sectors / 2) ** 2, 0.0)   # (Ansicht, Texel); Summe über die Ansichten = 1
+    groups = len(SEGMENTS) * sectors
+    score = np.zeros(groups * nobs)
+    for k in range(sectors):
+        score += np.bincount((part[texel] * sectors + k) * nobs + obs, blend[k, texel] * weight * quality, minlength=groups * nobs)
+    score = score.reshape(groups, nobs)
+    order = np.argsort(-score, axis=1)[:, :depth]
+    field, have = np.zeros((sectors, size, 3)), np.zeros((sectors, size), bool)
+    for r in range(order.shape[1]):
+        for k in range(sectors):
+            g = part[texel] * sectors + k
+            take = (obs == order[g, r]) & (score[g, order[g, r]] > 0) & (blend[k, texel] > 0) & (weight > 0) & ~have[k, texel]
+            field[k, texel[take]] = colour[take]
+            have[k, texel[take]] = True
+    mix = blend * have
+    total = mix.sum(axis=0)
+    out = np.einsum("kt,ktc->tc", mix, field) / np.maximum(total, 1e-9)[:, None]
+    return np.where((in_view & (total > 0))[:, None], out, mean), seen
+
+
+def frame_masks(model, observed):
+    """Personenmasken der Spieler eines Bilds (Ausgabe von observe): Liste von (x0, y0, Maske) oder None je Beobachtung."""
+    boxes = []
+    for o in observed:
+        x0, y0 = np.maximum(np.floor(o["uv"].min(axis=0) - MASK_PAD), 0).astype(int)
+        x1, y1 = np.ceil(o["uv"].max(axis=0) + MASK_PAD + 1).astype(int)
+        boxes.append((x0, y0, o["image"][y0:y1, x0:x1]))
+    found = person_masks(model, [b[2] for b in boxes], [o["uv"] - b[:2] for o, b in zip(observed, boxes)])
+    return [None if m is None else (b[0], b[1], m) for b, m in zip(boxes, found)]
+
+
 def gradient(image, uv):
     """Farbe (N, 3) und ihre Ableitung nach x und y (N, 3) an den Bildpunkten uv."""
     c = sample(image, uv)
@@ -314,7 +398,7 @@ def align(image, uv, seg, weight, ref, ok, passes=2):
     return body + part[seg]
 
 
-def load_scene(video, det_path, camera_path, background_path, scene_dir):
+def load_scene(video, det_path, camera_path, background_path, scene_dir, mesh_path=None):
     """Alles, was ein Durchlauf über die Bilder der Szene braucht: Kamera, Spieler mit Gelenkpunkten im Video (sie
     bekommen eine Textur) und alle übrigen Figuren (sie verdecken nur), Gelenke in Weltkoordinaten."""
     scene_dir = Path(scene_dir)
@@ -352,7 +436,8 @@ def load_scene(video, det_path, camera_path, background_path, scene_dir):
             "background": cv2.imread(str(background_path)).astype(np.float32),
             "cells": cells, "index": np.concatenate([c["index"] for c in cells]), "anchor": anchor_weights(cells),
             "segment": np.concatenate([np.full(len(c["t"]), s) for s, c in enumerate(cells)]),
-            "players": players, "others": others}
+            "players": players, "others": others,
+            "mesh": avatar_mesh.AvatarMesh(mesh_path, SEGMENTS, TILE) if mesh_path else None}
 
 
 def frames(sc):
@@ -372,10 +457,85 @@ def frames(sc):
     cap.release()
 
 
-def observe(sc, f, image, only=None):
+YAW_SPAN = np.deg2rad(40.0)    # so weit darf der Rumpf je Bild gegenüber der Schätzung aus den Gelenkpunkten gedreht werden
+YAW_STEP = np.deg2rad(8.0)
+YAW_PRIOR = 4.0                # Farbabstand, den eine Drehung um die ganze Spanne kostet (Bremse bei unklarem Bild)
+YAW_ERR_CAP = 80.0             # einzelne Abweichungen zählen höchstens so viel (Verdeckung, Rasen am Rand)
+YAW_MIN_TEXELS = 150
+
+
+def best_yaw(sc, f, image, a, fit):
+    """Drehung des Rumpfs von Spieler a in Bild f (rad), bei der die Farben der Rumpftexel im Bild am besten zum Bezug passen.
+    `fit` = (Farben (P, Kachel², 3), gesehen (P, Kachel²)). Die Haltung aus den Gelenkpunkten liegt bei Drehungen um 20 bis 30° daneben,
+    das ist so viel wie der Rückenaufdruck breit ist. Rechnet nur den Rumpf: Gitter mit YAW_STEP, dann Feinsuche."""
+    p, n, cam, H = sc["players"][a], sc["n"], sc["cam"], sc["H"]
+    li = int(p["lens"][f])
+    if li < 0:   # kein Gelenkpunkt-Bezug in diesem Bild: Haltung bleibt
+        return 0.0
+    lens_name = LENSES[li]
+    lens_image = image[li * H:(li + 1) * H]
+    torso = sc["cells"][0]
+    texel = torso["index"]
+    ref, seen = fit[0][a][texel], fit[1][a][texel]
+    if seen.sum() < YAW_MIN_TEXELS:
+        return 0.0
+    J, height = p["world"][f][None], np.array([p["height"]])
+    centre = cam["lenses"][lens_name]["centre"]
+    shift = sc["anchor"][:len(texel)] @ p["shift"][f]
+
+    def cost(d):
+        pts, nrm = surface(J, n, height, sc["cells"][:1], np.array([d]))
+        view = centre - pts[0]
+        dist = np.linalg.norm(view, axis=-1)
+        facing = (nrm[0] * view).sum(-1) / dist
+        uv = veo_camera.project(cam, lens_name, pts[0]) + shift
+        ok = seen & (facing > 0.3) & (uv[:, 0] >= 1) & (uv[:, 0] < sc["W"] - 2) & (uv[:, 1] >= 1) & (uv[:, 1] < H - 2)
+        if ok.sum() < YAW_MIN_TEXELS:
+            return np.inf
+        err = np.minimum(np.linalg.norm(sample(lens_image, uv[ok]) - ref[ok], axis=1), YAW_ERR_CAP)
+        return float((err * facing[ok]).sum() / facing[ok].sum()) + YAW_PRIOR * (d / YAW_SPAN) ** 2
+
+    grid_ = np.arange(-YAW_SPAN, YAW_SPAN + 1e-9, YAW_STEP)
+    costs = [cost(d) for d in grid_]
+    d = float(grid_[int(np.argmin(costs))])
+    if not np.isfinite(min(costs)):
+        return 0.0
+    fine = [d - YAW_STEP / 2, d + YAW_STEP / 2]
+    fc = [cost(x) for x in fine]
+    return float(([d] + fine)[int(np.argmin([min(costs)] + fc))])
+
+
+def fit_yaw(sc, rounds=2, began=None):
+    """Drehung des Rumpfs je Bild und Spieler: {(f, Spieler): rad}. Runde 0 mittelt die Bilder wie gewohnt; in jeder weiteren Runde wird je Bild die
+    Drehung gesucht, bei der der Rumpf am besten zum bisherigen Mittel passt, und das Mittel damit neu gebildet (es wird dabei schärfer)."""
+    players, index = sc["players"], sc["index"]
+    P, size = len(players), len(players) * TILE * TILE
+    table, ref = {}, None
+    for r in range(rounds + 1):
+        sums, wsum = np.zeros((size, 3)), np.zeros(size)
+        new = {}
+        for f, image in frames(sc):
+            fit = None if r == 0 else (ref[0].reshape(P, TILE * TILE, 3), ref[1].reshape(P, TILE * TILE))
+            for o in observe(sc, f, image, yaw=new, fit=fit):
+                texel = o["player"] * TILE * TILE + index[o["cell"]]
+                w = o["weight"] * (1.0 if r == 0 else (np.linalg.norm(o["colour"] - ref[0][texel], axis=1) < 80.0))
+                for ch in range(3):
+                    sums[:, ch] += np.bincount(texel, w * o["colour"][:, ch], minlength=size)
+                wsum += np.bincount(texel, w, minlength=size)
+        ref = (sums / np.maximum(wsum, 1e-9)[:, None], wsum >= ENOUGH)
+        table = new
+        if r:
+            d = np.degrees(np.array(list(table.values())))
+            print(f"  Drehung Runde {r}: Mittel {d.mean():+.1f}°, Streuung {d.std():.1f}°, im Betrag über 20°: {np.mean(np.abs(d) > 20):.0%}"
+                  + (f" [{time.time() - began:.0f} s]" if began else ""), flush=True)
+    return table
+
+
+def observe(sc, f, image, only=None, yaw=None, fit=None):
     """Was Bild f über die Oberfläche der Spieler verrät: je Spieler (nur `only`, sonst alle mit brauchbarer Ausrichtung)
     die sichtbaren Stellen ("cell" = Nummer in der Reihenfolge von grid()), ihre Bildpunkte uv, Farben und Gewichte.
-    Verdecken dürfen alle Figuren im Bild, auch die, deren Farben in diesem Bild nicht zählen."""
+    Verdecken dürfen alle Figuren im Bild, auch die, deren Farben in diesem Bild nicht zählen.
+    `yaw`: Tabelle {(f, Spieler): Drehung des Rumpfs (rad)} aus fit_yaw; mit `fit` (Bezugsfarben, gesehen) wird sie für dieses Bild erst bestimmt."""
     players, others, n, cells, index, anchor = sc["players"], sc["others"], sc["n"], sc["cells"], sc["index"], sc["anchor"]
     cam, W, H, background = sc["cam"], sc["W"], sc["H"], sc["background"]
     N = len(index)
@@ -387,7 +547,19 @@ def observe(sc, f, image, only=None):
     bodies = [players[k] for k in active] + cover
     J = np.stack([b["world"][f] for b in bodies])
     heights = np.array([b["height"] for b in bodies])
-    pts, nrm = surface(J, n, heights, cells)
+    mesh = sc.get("mesh")
+    turn = np.zeros(len(bodies))
+    for k, a in enumerate(active):
+        if fit is not None and (only is None or players[a]["id"] in only):
+            yaw[(f, a)] = best_yaw(sc, f, image, a, fit)
+        turn[k] = yaw.get((f, a), 0.0) if yaw is not None else 0.0
+    pts, nrm = surface(J, n, heights, cells, turn if turn.any() else None)
+    if mesh is not None:   # Oberfläche des Viewer-Netzes statt der Zylinder, wo der Viewer die Figur zeichnet (tools/avatar_mesh.py)
+        for k, b in enumerate(bodies):
+            got = mesh.points(f, b["id"], index) if "id" in b else None
+            if got is not None:
+                ok = ~np.isnan(got[0][:, 0])
+                pts[k][ok], nrm[k][ok] = got[0][ok], got[1][ok]
     out = []
     for li, lens_name in enumerate(LENSES):
         lens_image = image[li * H:(li + 1) * H]
@@ -434,54 +606,79 @@ def observe(sc, f, image, only=None):
     return out
 
 
-def main(video, det_path, camera_path, background_path, scene_dir, check_path=None, quality_power=0.0, align_rounds=0, masks=False):
+def main(video, det_path, camera_path, background_path, scene_dir, check_path=None, quality_power=0.0, align_rounds=0, masks=False, views=0, turn=0, mesh_path=None, view_depth=VIEW_DEPTH):
     began = time.time()
     scene_dir = Path(scene_dir)
-    sc = load_scene(video, det_path, camera_path, background_path, scene_dir)
+    sc = load_scene(video, det_path, camera_path, background_path, scene_dir, mesh_path)
     players, index = sc["players"], sc["index"]
     present = sc["present"]
     P = len(players)
     print(f"{P} Spieler mit Gelenkpunkten im Video; Bilder mit brauchbarer Ausrichtung: "
           f"{sum(int(p['usable'].sum()) for p in players)} von {sum(int(present[:, p['entity']].sum()) for p in players)}", flush=True)
 
-    # Durchgang 1: einfaches gewichtetes Mittel (und je Stelle die beste Güte). Danach `align_rounds` Durchgänge, in denen jedes Körperteil
-    # je Bild auf das bisherige Mittel geschoben wird, Ausreißer wegfallen und nahe, frontale Bilder stärker zählen.
-    size = P * TILE * TILE
-    mean, wplain, best = None, None, np.zeros(size)
-    model, mask_cache = (segmenter() if masks else None), {}
-    for rnd in range(1 + max(align_rounds, 1)):
-        sums, wq, wp = np.zeros((size, 3)), np.zeros(size), np.zeros(size)
+    yaw = fit_yaw(sc, turn, began) if turn else None   # Drehung des Rumpfs je Bild (None = Haltung aus den Gelenkpunkten)
+
+    if views:   # Ansichtentextur: je Körperteil und Ansicht ein zusammenhängendes Bild (view_texture)
+        model = segmenter() if masks else None
+        store = [{k: [] for k in ("texel", "colour", "weight", "quality", "obs")} for _ in range(P)]
         for f, image in frames(sc):
-            observed = observe(sc, f, image)
-            if masks and rnd == 0:   # Personenmasken einmal je Bild und Spieler rechnen und für die weiteren Durchgänge merken
-                boxes = []
+            observed = observe(sc, f, image, yaw=yaw)
+            entries = frame_masks(model, observed) if masks else [None] * len(observed)
+            for o, entry in zip(observed, entries):
+                st = store[o["player"]]
+                n = len(st["obs"])
+                st["texel"].append(index[o["cell"]].astype(np.int64))
+                st["colour"].append(o["colour"].astype(np.float32))
+                st["weight"].append((o["weight"] * in_mask(entry, o["uv"])).astype(np.float64))
+                st["quality"].append((o["facing"] / o["dist"]).astype(np.float64))
+                st["obs"].append(np.full(len(o["cell"]), n, np.int64))
+        mean_rows, wplain_rows = [], []
+        for a in range(P):
+            st = store[a]
+            if not st["obs"]:
+                mean_rows.append(np.zeros((TILE * TILE, 3)))
+                wplain_rows.append(np.zeros(TILE * TILE))
+                continue
+            cat = {k: np.concatenate(v) for k, v in st.items()}
+            tex, seen = view_texture(cat["texel"], cat["colour"], cat["weight"], cat["quality"], cat["obs"], len(st["obs"]), sectors=views, depth=view_depth)
+            mean_rows.append(tex)
+            wplain_rows.append(seen)
+        mean, wplain = np.concatenate(mean_rows), np.concatenate(wplain_rows)
+        store = None
+        print(f"  [{time.time() - began:.0f} s] Ansichten", flush=True)
+    else:
+        # Durchgang 1: einfaches gewichtetes Mittel (und je Stelle die beste Güte). Danach `align_rounds` Durchgänge, in denen jedes Körperteil
+        # je Bild auf das bisherige Mittel geschoben wird, Ausreißer wegfallen und nahe, frontale Bilder stärker zählen.
+        size = P * TILE * TILE
+        mean, wplain, best = None, None, np.zeros(size)
+        model, mask_cache = (segmenter() if masks else None), {}
+        for rnd in range(1 + max(align_rounds, 1)):
+            sums, wq, wp = np.zeros((size, 3)), np.zeros(size), np.zeros(size)
+            for f, image in frames(sc):
+                observed = observe(sc, f, image, yaw=yaw)
+                if masks and rnd == 0:   # Personenmasken einmal je Bild und Spieler rechnen und für die weiteren Durchgänge merken
+                    for o, entry in zip(observed, frame_masks(model, observed)):
+                        mask_cache[(f, o["player"], o["lens"])] = entry
                 for o in observed:
-                    x0, y0 = np.maximum(np.floor(o["uv"].min(axis=0) - MASK_PAD), 0).astype(int)
-                    x1, y1 = np.ceil(o["uv"].max(axis=0) + MASK_PAD + 1).astype(int)
-                    boxes.append((x0, y0, o["image"][y0:y1, x0:x1]))
-                found = person_masks(model, [b[2] for b in boxes], [o["uv"] - b[:2] for o, b in zip(observed, boxes)])
-                for o, b, m in zip(observed, boxes, found):
-                    mask_cache[(f, o["player"], o["lens"])] = None if m is None else (b[0], b[1], m)
-            for o in observed:
-                texel = o["player"] * TILE * TILE + index[o["cell"]]
-                colour, w = o["colour"], o["weight"]
-                if masks:
-                    w = w * in_mask(mask_cache[(f, o["player"], o["lens"])], o["uv"])
-                q = o["facing"] / o["dist"]
-                if rnd == 0:
-                    np.maximum.at(best, texel, q)
-                else:
-                    if align_rounds:
-                        shift = align(o["image"], o["uv"], sc["segment"][o["cell"]], w, mean[texel], wplain[texel] >= ENOUGH)
-                        colour = sample(o["image"], o["uv"] + shift)
-                    w = w * (np.linalg.norm(colour - mean[texel], axis=1) < OUTLIER)
-                wg = w * np.minimum(q / np.maximum(best[texel], 1e-9), 1.0) ** quality_power if rnd else w
-                for ch in range(3):
-                    sums[:, ch] += np.bincount(texel, wg * colour[:, ch], minlength=size)
-                wq += np.bincount(texel, wg, minlength=size)
-                wp += np.bincount(texel, w, minlength=size)   # "gesehen" hängt nicht von der Güte ab
-        mean, wplain = sums / np.maximum(wq, 1e-9)[:, None], wp
-        print(f"  [{time.time() - began:.0f} s] Durchgang {rnd + 1}", flush=True)
+                    texel = o["player"] * TILE * TILE + index[o["cell"]]
+                    colour, w = o["colour"], o["weight"]
+                    if masks:
+                        w = w * in_mask(mask_cache[(f, o["player"], o["lens"])], o["uv"])
+                    q = o["facing"] / o["dist"]
+                    if rnd == 0:
+                        np.maximum.at(best, texel, q)
+                    else:
+                        if align_rounds:
+                            shift = align(o["image"], o["uv"], sc["segment"][o["cell"]], w, mean[texel], wplain[texel] >= ENOUGH)
+                            colour = sample(o["image"], o["uv"] + shift)
+                        w = w * (np.linalg.norm(colour - mean[texel], axis=1) < OUTLIER)
+                    wg = w * np.minimum(q / np.maximum(best[texel], 1e-9), 1.0) ** quality_power if rnd else w
+                    for ch in range(3):
+                        sums[:, ch] += np.bincount(texel, wg * colour[:, ch], minlength=size)
+                    wq += np.bincount(texel, wg, minlength=size)
+                    wp += np.bincount(texel, w, minlength=size)   # "gesehen" hängt nicht von der Güte ab
+            mean, wplain = sums / np.maximum(wq, 1e-9)[:, None], wp
+            print(f"  [{time.time() - began:.0f} s] Durchgang {rnd + 1}", flush=True)
 
     weight = wplain.reshape(P, TILE * TILE)
     colour = mean.reshape(P, TILE * TILE, 3)
@@ -577,7 +774,17 @@ if __name__ == "__main__":
     ap.add_argument("--maske", action="store_true",
                     help="Nur Bildpunkte zählen, die in der Personenmaske des Spielers liegen (models/yolo11x-seg.pt, rechnet einmal je Bild und Spieler): "
                          "im Zweikampf liegen viele Stellen auf dem Gegner und färben die Textur (rote Flecken am grünen Spieler)")
+    ap.add_argument("--ansichten", type=int, default=0, metavar="N",
+                    help="Textur aus zusammenhängenden Bildern je Ansicht statt aus dem Mittel aller Bilder: je Körperteil N Winkelbereiche (4 empfohlen), "
+                         "jeder aus dem Bild mit der besten Güte (nah, frontal). Schärfer: Ziffern und Schriftzüge werden lesbar. 0 = Mittel (Standard)")
     ap.add_argument("--ausrichtung", type=int, default=0, metavar="N",
                     help="N Durchgänge, in denen jedes Körperteil je Bild auf das bisherige Mittel geschoben wird (je Durchgang rund ein Bilddurchlauf mehr); 0 = nur Gelenkpunkte (Standard)")
+    ap.add_argument("--drehung", type=int, default=0, metavar="N",
+                    help="N Runden, in denen je Bild die Drehung des Rumpfs um seine Achse (bis ±40°) gesucht wird, bei der er am besten zum Mittel passt; "
+                         "die Haltung aus den Gelenkpunkten liegt dort um 15 bis 30° daneben. 0 = Haltung unverändert (Standard)")
+    ap.add_argument("--netz", metavar="PKL", help="Oberfläche des Viewer-Netzes (tools/avatar_bake.py) statt der vereinfachten Zylinder: die Videobilder werden auf dieselben "
+                    "Punkte gelegt, an denen der Viewer die Textur liest")
+    ap.add_argument("--tiefe", type=int, default=VIEW_DEPTH, metavar="N",
+                    help="mit --ansichten: so viele Bilder je Körperteil und Ansicht füllen Lücken des besten Bilds (1 = nur das beste Bild, Lücken vom Mittel)")
     a = ap.parse_args()
-    main(a.video, a.detektionen, a.kamera, a.hintergrund, a.szenenordner, a.pruefbild, quality_power=a.guete, align_rounds=a.ausrichtung, masks=a.maske)
+    main(a.video, a.detektionen, a.kamera, a.hintergrund, a.szenenordner, a.pruefbild, quality_power=a.guete, align_rounds=a.ausrichtung, masks=a.maske, views=a.ansichten, turn=a.drehung, mesh_path=a.netz, view_depth=a.tiefe)

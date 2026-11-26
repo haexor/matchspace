@@ -116,6 +116,101 @@ def build(observations, index, segment, aligned=None, rounds=2, power=0.0, use_m
     return mean, wsum
 
 
+def build_best(observations, index, segment, k=6, aligned=None, use_mask=False):
+    """Textur aus den `k` besten Beobachtungen je Stelle statt aus allen: Güte = frontal und nah (Pixel je Meter). Ein Mittel über Hunderte Bilder, in denen
+    das Modell leicht verschieden sitzt, verwischt; die wenigen besten Bilder tun es kaum. Ausreißer (Fremdfarben) fallen vorher gegen das
+    gewöhnliche Mittel weg. Rückgabe wie build: (Textur, Gewicht der gesehenen Stellen)."""
+    size = vl.TILE * vl.TILE
+    ref, wt = build(observations, index, segment, aligned=aligned, use_mask=use_mask)
+    qs, _ = quality(observations)
+    texel_l, q_l, col_l, w_l = [], [], [], []
+    for j, o in enumerate(observations):
+        uv = o["uv"] + (aligned[j] if aligned is not None else 0)
+        colour = vl.sample(o["crop"], uv)
+        t = index[o["cell"].astype(int)]
+        w = o["weight"].astype(np.float64) * (np.linalg.norm(colour - ref[t], axis=1) < vl.OUTLIER)
+        if use_mask and o.get("mask") is not None:
+            mh, mw = o["mask"].shape
+            w = w * o["mask"][np.clip(np.round(uv[:, 1] - 0.5).astype(int), 0, mh - 1), np.clip(np.round(uv[:, 0] - 0.5).astype(int), 0, mw - 1)]
+        keep = w > 0
+        texel_l.append(t[keep]); q_l.append(qs[j][keep]); col_l.append(colour[keep]); w_l.append(w[keep])
+    texel, q, colour, w = (np.concatenate(x) for x in (texel_l, q_l, col_l, w_l))
+    order = np.lexsort((-q, texel))
+    texel, colour, w = texel[order], colour[order], w[order]
+    first = np.r_[True, texel[1:] != texel[:-1]]
+    start = np.flatnonzero(first)
+    rank = np.arange(len(texel)) - np.repeat(start, np.diff(np.r_[start, len(texel)]))
+    top = rank < k
+    sums, wsum = np.zeros((size, 3)), np.bincount(texel[top], w[top], minlength=size)
+    for ch in range(3):
+        sums[:, ch] = np.bincount(texel[top], w[top] * colour[top][:, ch], minlength=size)
+    tex = np.where(wsum[:, None] > 0, sums / np.maximum(wsum, 1e-9)[:, None], ref)
+    return tex, wt
+
+
+def tile_geometry():
+    """Je Texel der Kachel: Nummer des Körperteils (-1 = unbenutzt) und Winkelanteil um dessen Achse (0 bis 1; 0,5 = vorn, wie in veo_looks)."""
+    part = np.full(vl.TILE * vl.TILE, -1)
+    frac = np.zeros(vl.TILE * vl.TILE)
+    for s, (_, (x, y, w, h), _, _) in enumerate(vl.SEGMENTS):
+        rows, cols = np.meshgrid(np.arange(h), np.arange(w), indexing="ij")
+        at = ((y + rows) * vl.TILE + x + cols).ravel()
+        part[at], frac[at] = s, ((cols + 0.5) / w).ravel()
+    return part, frac
+
+
+def build_views(observations, index, segment, sectors=4, depth=3, use_mask=False, outlier=vl.OUTLIER):
+    """Textur aus zusammenhängenden Bildern je Ansicht: Das gemittelte Bild ist unschärfer als jedes einzelne Bild, weil dasselbe Texel in verschiedenen
+    Bildern leicht verschiedene echte Stellen trifft (Rumpfdrehung, Stoff, Modellfehler); ein einzelnes Bild verzerrt dagegen glatt und bleibt scharf.
+    Je Körperteil und Ansicht (`sectors` gleich große Winkelbereiche, weich überblendet) liefert deshalb das Bild mit der besten Güte (nah, frontal,
+    viele Stellen) alle seine Texel; fehlt dort eines, kommt es vom nächstbesten (bis `depth` Bilder). Ausreißer gegen das gewöhnliche Mittel fallen weg.
+    Rückgabe wie build: (Textur, Gewicht der gesehenen Stellen)."""
+    size = vl.TILE * vl.TILE
+    ref, wt = build(observations, index, segment, use_mask=use_mask)
+    qs, _ = quality(observations)
+    part, frac = tile_geometry()
+    centre = 0.5 + np.arange(sectors) / sectors
+    dist = np.abs((frac[None, :] - centre[:, None] + 0.5) % 1.0 - 0.5)
+    weight = np.where(dist < 1.0 / sectors, np.cos(np.pi * dist * sectors / 2) ** 2, 0.0)   # (Ansicht, Texel): Überblendung, Summe über Ansichten = 1
+    groups = len(vl.SEGMENTS) * sectors
+    data, score = [], np.zeros((groups, len(observations)))
+    for j, o in enumerate(observations):
+        t = index[o["cell"].astype(int)]
+        colour = vl.sample(o["crop"], o["uv"])
+        v = o["weight"].astype(np.float64) * (np.linalg.norm(colour - ref[t], axis=1) < outlier)
+        if use_mask and o.get("mask") is not None:
+            mh, mw = o["mask"].shape
+            v = v * o["mask"][np.clip(np.round(o["uv"][:, 1] - 0.5).astype(int), 0, mh - 1), np.clip(np.round(o["uv"][:, 0] - 0.5).astype(int), 0, mw - 1)]
+        data.append((t, colour, v))
+        for k in range(sectors):
+            score[:, j] += np.bincount(part[t] * sectors + k, weight[k, t] * v * qs[j], minlength=groups)
+    field = np.zeros((sectors, size, 3))
+    have = np.zeros((sectors, size), bool)
+    for g in range(groups):
+        s, k = divmod(g, sectors)
+        for j in np.argsort(-score[g])[:depth]:
+            if score[g, j] <= 0:
+                break
+            t, colour, v = data[j]
+            take = (part[t] == s) & (weight[k, t] > 0) & (v > 0) & ~have[k, t]
+            field[k, t[take]] = colour[take]
+            have[k, t[take]] = True
+    mix = weight * have
+    total = mix.sum(axis=0)
+    tex = np.where(total[:, None] > 0, np.einsum("kt,ktc->tc", mix, field) / np.maximum(total, 1e-9)[:, None], ref)
+    return tex, wt
+
+
+def aligned_best(observations, index, segment, k):
+    """Beste `k` Beobachtungen je Stelle, nachdem jeder Ausschnitt auf das gewöhnliche Mittel ausgerichtet wurde (dreimal, wie refined)."""
+    tex, wt = build(observations, index, segment)
+    for _ in range(2):
+        sh = [align(o, tex, wt >= vl.ENOUGH, index, segment) for o in observations]
+        tex, wt = build(observations, index, segment, aligned=sh)
+    sh = [align(o, tex, wt >= vl.ENOUGH, index, segment) for o in observations]
+    return build_best(observations, index, segment, k, aligned=sh)
+
+
 def refined(observations, index, segment, steps=3, power=0.0):
     """Textur mit dichter Ausrichtung: erst Mittel ohne Verschiebung, dann in `steps` Runden jeden Ausschnitt auf das bisherige Mittel
     schieben und neu mitteln."""
@@ -173,6 +268,12 @@ def measure(pkl_path, image_dir=None, masken=False):
                 "Güte hoch 2": lambda tr: build(tr, index, segment, power=2),
                 "Güte hoch 4": lambda tr: build(tr, index, segment, power=4),
                 "Güte hoch 8": lambda tr: build(tr, index, segment, power=8),
+                "Ansichten: je 3 Bilder": lambda tr: build_views(tr, index, segment, 4, 3),
+                "Ansichten: je 1 Bild": lambda tr: build_views(tr, index, segment, 4, 1),
+                "beste 12 je Stelle": lambda tr: build_best(tr, index, segment, 12),
+                "beste 6 je Stelle": lambda tr: build_best(tr, index, segment, 6),
+                "beste 3 je Stelle": lambda tr: build_best(tr, index, segment, 3),
+                "ausgerichtet + beste 6": lambda tr: aligned_best(tr, index, segment, 6),
                 "ausgerichtet + Güte hoch 4": lambda tr: refined(tr, index, segment, 3, power=4)}
     rows = {v: [] for v in variants}
     for pid, obs in pack["data"].items():

@@ -467,4 +467,5 @@ if (query.has('t')) setTime(Number(query.get('t')) * meta.fps);
 if (query.has('player')) select(ENTITIES.findIndex((e) => e.id === query.get('player')));
 if (query.has('mode')) setMode(query.get('mode'));
 if (query.get('view') === 'top') $('topview').click();
+if (query.has('bake')) window.__bake = { avatars, ENTITIES, setTime };   // tools/avatar_bake.py: Netz der Figuren je Bild auslesen
 requestAnimationFrame(frame);
