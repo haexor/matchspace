@@ -31,7 +31,7 @@ def main(a):
     work = Path(a.arbeit)
     cands = work / "kandidaten"
     if a.neu or not (cands / "index.json").exists():
-        photo_candidates.main(a.video, a.detektionen, a.kamera, a.hintergrund, a.szenenordner, str(cands), set())
+        photo_candidates.main(a.video, a.detektionen, a.kamera, a.hintergrund, a.szenenordner, str(cands), set(), a.min_hoehe, a.min_frontal)
     # Ein Trockenlauf darf keine Modellaufrufe auslösen und soll eine spätere
     # reguläre Erkennung nicht mit den unvollständigen Planungsdaten blockieren.
     teams = Path(a.teams) if a.teams else work / ("teams.plan.json" if a.trocken else "teams.json")
@@ -43,7 +43,7 @@ def main(a):
     photo_ai.cmd_lauf(ai)
     if a.trocken:
         return
-    looks_from_photo.all_players(a.szenenordner, work / "ki", a.netz, a.ausgabe, 75.0)
+    looks_from_photo.all_players(a.szenenordner, work / "ki", a.netz, a.ausgabe)
     print(f"Fertig: {a.ausgabe} (Viewer: spieler.html?match={Path(a.ausgabe).name}&player=SPIELER)")
 
 
@@ -59,5 +59,7 @@ if __name__ == "__main__":
     ap.add_argument("--ersatz", default=photo_ai.FALLBACK)
     ap.add_argument("--max-kosten", type=float, default=photo_ai.MAX_COST, dest="max_kosten")
     ap.add_argument("--trocken", action="store_true")
+    ap.add_argument("--min-hoehe", type=int, default=36, dest="min_hoehe", help="kleinste Spielerhöhe (Pixel) für einen Ausschnitt")
+    ap.add_argument("--min-frontal", type=float, default=0.7, dest="min_frontal", help="kleinste Frontalität (cos) des Rumpfs zur gewünschten Seite")
     ap.add_argument("--neu", action="store_true", help="Ausschnitte neu wählen, auch wenn schon vorhanden")
     main(ap.parse_args())

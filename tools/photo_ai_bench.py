@@ -43,8 +43,8 @@ JUDGE = "anthropic/claude-sonnet-5.5"
 INPUT_HEIGHT = 768   # Ausschnitte werden für alle Modelle gleich auf diese Höhe vergrößert (Lanczos), damit kleine Bilder nicht abgelehnt werden
 POSE_EN = {"hinten": "stands perfectly upright and square to the camera, facing directly away from it: exact back view, shoulders, hips and head all squared to the camera and not turned, weight evenly on both feet, like a standardised reference photo.",
            "vorn": "stands perfectly upright and square to the camera, facing directly toward it: exact front view, shoulders, hips and head squared to the camera and not turned, weight evenly on both feet, like a standardised reference photo.",
-           "links": "stands perfectly upright in an exact side view, his left side toward the camera, head and body in the same plane, like a standardised reference photo.",
-           "rechts": "stands perfectly upright in an exact side view, his right side toward the camera, head and body in the same plane, like a standardised reference photo."}
+           "links": "stands perfectly upright in an exact side view, his left side toward the camera, facing toward the left edge of the image, head and body in the same plane, like a standardised reference photo.",
+           "rechts": "stands perfectly upright in an exact side view, his right side toward the camera, facing toward the right edge of the image, head and body in the same plane, like a standardised reference photo."}
 VIEW_EN = {"hinten": "from directly behind (back view)", "vorn": "from directly in front (front view, face visible)",
            "links": "from his left side (left profile)", "rechts": "from his right side (right profile)"}
 
@@ -117,15 +117,19 @@ def image_models():
     return out
 
 
-def prompt_for(case, team):
-    """Prompt (Englisch, Bildmodelle verstehen ihn am besten) aus den Fakten des Falls."""
+def prompt_for(case, team, crop=True):
+    """Prompt (Englisch, Bildmodelle verstehen ihn am besten) aus den Fakten des Falls. crop=False: kein Videoausschnitt dieser Ansicht, die Eingabebilder sind fertige Ansichten desselben Spielers."""
     lines = []
-    lines.append(f"The input is a small, blurry, low-resolution crop from a sports-camera video of one youth football player. "
-                 f"Create a sharp, photorealistic, full-body photograph of exactly this player, seen {VIEW_EN[case['view']]}, "
-                 f"standing upright and relaxed, arms hanging down at the sides, feet shoulder-width apart, on short-mown grass, "
-                 f"neutral overcast daylight, portrait orientation 3:4, the whole body from head to boots fully inside the frame, no other people.")
-    lines.append("Take only the identity and the kit from the crop: hair colour and hairstyle, skin tone, build, kit. Ignore the pose, the motion, the head and body turn and the camera angle of the crop; "
-                 "he may be running or turned there, but in the result he " + POSE_EN[case["view"]] + " Do not invent a different person.")
+    shot = (f"Create a sharp, photorealistic, full-body photograph of exactly this player, seen {VIEW_EN[case['view']]}, "
+            f"standing upright and relaxed, arms hanging down at the sides, feet shoulder-width apart, on short-mown grass, "
+            f"neutral overcast daylight, portrait orientation 3:4, the whole body from head to boots fully inside the frame, no other people.")
+    if crop:
+        lines.append("The input is a small, blurry, low-resolution crop from a sports-camera video of one youth football player. " + shot)
+        lines.append("Take only the identity and the kit from the crop: hair colour and hairstyle, skin tone, build, kit. Ignore the pose, the motion, the head and body turn and the camera angle of the crop; "
+                     "he may be running or turned there, but in the result he " + POSE_EN[case["view"]] + " Do not invent a different person.")
+    else:
+        lines.append("The input images are finished photographs of one youth football player seen from other sides. " + shot)
+        lines.append("Keep exactly his identity and kit from the input images: hair colour and hairstyle, hair length, skin tone, build, kit. In the result he " + POSE_EN[case["view"]] + " Do not invent a different person.")
     kit = f"Kit: {team['shirt']} short-sleeved shirt"
     if team.get("extra"):
         kit += f" ({team['extra']})"
@@ -140,7 +144,10 @@ def prompt_for(case, team):
             lines.append(f"The back of the shirt carries this print and nothing else: {number}" +
                          (f", and above it, in a smaller size, the text \"{text}\" in white letters, spelled and capitalised exactly as written (keep upper and lower case)" if text else "") + ". Render every character exactly as given, legible and straight; do not add other logos, names or text.")
     elif case["view"] == "vorn":
-        lines.append("Show the face clearly and sharply with the same features as in the crop; no sunglasses, no cap.")
+        if crop:
+            lines.append("Show the face clearly and sharply with the same features as in the crop; no sunglasses, no cap.")
+        else:
+            lines.append("His face is not visible in the input images: give him a natural, plausible face that fits his skin tone, hair and age; show it clearly and sharply; no sunglasses, no cap.")
         front = team.get("front") or "completely plain: no player number, no text, no sponsor, no logo; at most a tiny club crest on the left chest"
         lines.append(f"The front of the shirt is {front}. Do not print any number or lettering on the front unless stated here.")
     else:
