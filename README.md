@@ -159,7 +159,7 @@ seinen eigenen Browser (`playwright install chromium`) und die Grafik des Rechne
   gerade so weit geglättet, dass niemand schneller als 8,7 m/s läuft oder mit mehr als 8 m/s² beschleunigt.
   Beim Spiel vom 2026-11-01 kam Veos Bahn vorher auf bis zu 166 m/s.
 - `check_motion.py SPIELORDNER` zählt Bilder mit unmöglichen Bewegungen (Tempo, Beschleunigung, Sprünge,
-  Knochenlängen, Gelenkgrenzen, Drehtempo, Schweben, Gleichgewicht) und nennt die schlimmsten Stellen mit
+  Knochenlängen, Gelenkgrenzen, Drehtempo, Schweben, Gleichgewicht, Arm im Rumpf) und nennt die schlimmsten Stellen mit
   Spieler und Sekunde. `veo_scene.py` ruft es am Ende auf. Stand: Szenen 0,5 % und 0,9 % der Spieler-Bilder
   mit mindestens einer Verletzung (fast nur Gleichgewicht am Szenenanfang), ganzes Spiel 1,2 %.
 - Haltung (`pose_fit.py`): Eine Kamera misst, wo die Gelenke im Bild liegen, nicht die Tiefe. Je Spieler wird
@@ -181,6 +181,10 @@ seinen eigenen Browser (`playwright install chromium`) und die Grafik des Rechne
   hält stehende Füße an ihrer Stelle auf dem Rasen fest und plant Schritte, wo kein Gang zu sehen ist.
   Die Gelenkgrenzen gelten als letzter Schritt, nach dem Glätten und nach dem Festhalten der Füße. Jede
   Figur hat in jedem Bild ein Skelett.
+- `pose_selfcontact.py`: Arme und Hände nicht durch den eigenen Rumpf. Der Rumpf ist ein Ellipsenzylinder um die
+  Linie Becken–Hals (Maße aus dem Avatarnetz), Ellbogen und Handgelenk werden bei Bedarf nach außen gedreht, die
+  Knochenlängen bleiben. Vorher ragte in der Nahszene in 9,9 % der Spieler-Bilder ein Arm mehr als 3 cm in den Rumpf
+  (Regel „Arm im Rumpf“ in `check_motion.py`), danach in keinem.
 - Gleichgewicht: Wie weit sich ein Spieler zur Kamera hin oder von ihr weg neigt, sieht eine Kamera nicht.
   Diese Neigung wird so gewählt, dass er nicht umfällt: Schwerpunkt über den stehenden Füßen, verschoben um
   das, was Beschleunigung und Kurvenlauf verlangen (`pose_limits.balance_depth`). Der Abstand zur Kamera
