@@ -5,8 +5,10 @@ import * as THREE from 'three';
 
 const SECONDS = 1.6;      // so weit zurück reicht die Spur
 const SEGMENTS = 56;      // Stützstellen der Spur
-const WIDTH_HEAD = 0.16;  // m Breite am Ball
-const WIDTH_TAIL = 0.025; // m Breite am Ende
+const WIDTH_HEAD = 0.07;  // m Breite am Ball (schmal: sonst wirkt das Band aus der Nähe wie ein Stoffstück)
+const WIDTH_TAIL = 0.02;  // m Breite am Ende
+const RAMP = 4;           // Stützstellen vom Ball weg, über die die Spur einblendet (kein Klecks am Ball)
+const SPEED_MIN = 1.5, SPEED_FULL = 4;   // m/s: langsamer als SPEED_MIN gibt es keine Spur (Ball in der Hand, Ball ruht), ab SPEED_FULL volle Stärke
 const ALPHA_AIR = 0.62, ALPHA_GROUND = 0.34;
 const AIR = new THREE.Color('#ffe600'), GROUND = new THREE.Color('#ffffff');
 const LIFT = 0.11;        // Mittelpunkt des Balls über dem Boden
@@ -54,8 +56,11 @@ export function createBallTrail({ scene, sample, ballIndex, fps, enabled = true 
     for (let i = 0; i <= SEGMENTS; i++) {
       const next = Math.min(SEGMENTS, i + 1), prev = Math.max(0, i - 1);
       let fade = known[i] ? 1 - i / SEGMENTS : 0;
-      fade = Math.pow(fade, 1.25);
+      fade = Math.pow(fade, 1.25) * Math.min(1, i / RAMP);
       dir.subVectors(pts[prev], pts[next]);
+      const speed = dir.length() / (((next - prev) * span) / SEGMENTS / fps);   // m/s an dieser Stelle
+      const k = Math.min(1, Math.max(0, (speed - SPEED_MIN) / (SPEED_FULL - SPEED_MIN)));
+      fade *= k * k * (3 - 2 * k);
       if (dir.lengthSq() < 1e-8) dir.set(1, 0, 0);
       view.subVectors(camera.position, pts[i]);
       side.crossVectors(dir, view).normalize().multiplyScalar((WIDTH_HEAD + (WIDTH_TAIL - WIDTH_HEAD) * (i / SEGMENTS)) / 2);
