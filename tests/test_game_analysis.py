@@ -103,6 +103,17 @@ class AnalyseTest(unittest.TestCase):
                   contacts=[{"frame": 0, "kind": "pass", "player": "own-1"}])
         self.assertEqual(ga.analyse(s, {"own": 1})["rows"][0]["offside"]["verdict"], "onside")
 
+    def test_offside_player_can_be_involved_after_another_teammate(self):
+        s = scene({"own-1": (10, 0), "own-2": (36, 5), "own-3": (15, 4),
+                   "opponent-1": (20, 0), "opponent-2": (30, -3), "ball": (10, 0)},
+                  contacts=[{"frame": 0, "kind": "pass", "player": "own-1"},
+                            {"frame": 1, "kind": "touch", "player": "own-3"},
+                            {"frame": 2, "kind": "touch", "player": "own-2"}])
+        result = ga.analyse(s, {"own": 1})["rows"][0]["offside"]
+        runner = next(p for p in result["players"] if p["id"] == "own-2")
+        self.assertTrue(runner["involved"])
+        self.assertEqual(result["verdict"], "offside")
+
     def test_throw_in_contact_is_not_rated(self):
         s = scene({"own-1": (10, 0), "opponent-1": (20, 0), "opponent-2": (30, 0), "ball": (10, 0)},
                   contacts=[{"frame": 0, "kind": "pass", "player": "own-1"}])

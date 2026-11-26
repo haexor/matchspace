@@ -148,9 +148,10 @@ def analyse(scene: Scene, attack: dict) -> dict:
         o = offside_positions(scene, c["frame"], i, a)
         if o is not None:
             later = [x for x in contacts[n + 1:] if x["player"] is not None and (x["frame"] - c["frame"]) / scene.fps <= INVOLVE_S]
-            involved = next(iter(x["player"] for x in later if scene.team[scene.ids.index(x["player"])] == scene.team[i]), None)
+            involved = {x["player"] for x in later if x["player"] in scene.ids
+                        and scene.team[scene.ids.index(x["player"])] == scene.team[i]}
             for p in o["players"]:
-                p["involved"] = p["id"] == involved
+                p["involved"] = p["id"] in involved
             o["verdict"] = ("offside" if any(p["offside"] and p["involved"] and not p["close"] for p in o["players"])
                             else "close" if any(p["offside"] and p["involved"] for p in o["players"]) else "onside")
             row["offside"] = o
