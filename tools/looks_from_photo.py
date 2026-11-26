@@ -40,6 +40,9 @@ ARM_BAND = 0.17            # so breit (m, mit Rand) liegt der hängende Arm samt
 FRONTAL_BIAS = 0.25        # Vorder-/Rückfoto bilden genauer ab als die Seitenfotos: sie behalten den Vorrang bis weit an die Seite (sonst Flecken an der Naht)
 HEAD_SIDE_NZ = 0.2         # Kopf: Seitenfotos nur für den seitlichen Streifen (Ohren, Schläfen); im Gesicht legen sie Augen und Nase versetzt daneben (zwei Nasen, vier Augen)
 TORSO_MIN_FACING = 0.3      # Rumpf aus Vorder-/Rückfoto nur, wo die Fläche dem Foto zugewandt ist (cos)
+THIGH_INNER_T = 0.5         # Oberschenkelachse: so weit nach unten ist die Innenseite von den Shorts und dem anderen Bein verdeckt
+THIGH_INNER_FACING = -0.2   # Innenseite: Normale zeigt so weit (cos) zum anderen Bein
+LOWER_T = 0.05              # Rumpfachse: darunter liegen Saum und Shorts
 TORSO_FILL = "inpaint"       # Rumpflücken (vom Arm verdeckt): "inpaint" (weicher Verlauf aus dem Rand) oder "median"
 INPAINT_FLAG = cv2.INPAINT_TELEA
 HEAD_NECK_T = 0.1          # Kopfachse: bis hier ist es der Halsansatz
@@ -268,6 +271,13 @@ def project_arm(fm, name, P, J):
     return p0[0] + sign * rot[:, 0], p0[1] - rot[:, 1]
 
 
+def hidden_inner_thigh(name, normal_x, t):
+    """Texel der Innenseite im oberen Oberschenkel (zwischen den Beinen, unter den Shorts): bool je Texel. Kein Foto sieht sie; dort stand Schatten oder die Lücke zwischen den Beinen.
+    name: thigh_l oder thigh_r, normal_x: x der Normalen (links = +x), t: Lage entlang der Oberschenkelachse."""
+    toward_other_leg = np.nan_to_num(normal_x) * (-1.0 if name.endswith("_l") else 1.0)
+    return (toward_other_leg > THIGH_INNER_FACING) & (t < THIGH_INNER_T)
+
+
 def migrate_layout(atlas, looks, f):
     """Kopfbereich der Kacheln auf den Sollbereich (vl.SEGMENTS) bringen, falls die Szene noch den alten, kleineren hat: Der Kopfbereich wird für alle Spieler
     hochskaliert an die neue Stelle kopiert (das Gesicht belegt in der größeren Kachel doppelt so viele Pixel), die Szene bekommt den neuen Bereich im Meta.
@@ -395,6 +405,12 @@ def main(scene_dir, player, photos, mesh_path, out_dir, debug=None):
                 valid &= ~covered
             if name == "torso" and not fm.get("side"):      # Rumpfrand im Vorder-/Rückfoto: die Abbildung trifft dort knapp daneben (Arm, Rasen), die Texel wären hell/verfälscht
                 valid &= (facing >= TORSO_MIN_FACING) | neck_ok
+            if name.startswith("thigh"):     # Innenseite im oberen Teil (zwischen den Beinen, unter den Shorts): kein Foto sieht sie, dort stand Schatten oder die Lücke (schwarze Flamme an der Hüfte)
+                hidden = hidden_inner_thigh(name, N[:, 0], t_axis)
+                valid &= ~hidden
+                hip_arm = np.zeros(len(index), bool)          # die hängende Hand und der schwarze Unterärmel liegen im Foto vor der Hüfte
+                hip_arm[inside] = fm["arm_mask"][v[inside].astype(int), u[inside].astype(int)]
+                valid &= ~(hip_arm & (t_axis < THIGH_INNER_T))
             if name not in ARMS:     # nur Texel, die das Foto sieht (nicht von hinten: sonst käme die Rückennummer auf die Brust); Arme sind eine Röhre in einer Farbe, sie lesen ihr Foto ganz
                 valid &= (facing >= 0.0) | neck_ok
             colour = np.zeros((len(index), 3), np.float32)
@@ -417,11 +433,20 @@ def main(scene_dir, player, photos, mesh_path, out_dir, debug=None):
         tile_new = np.clip(new, 0, 255).astype(np.uint8).reshape(h, w, 3)
         if name == "torso" and TORSO_FILL == "median":
             tile_new = fill_holes_median(tile_new, (ok & ~has).reshape(h, w), ok.reshape(h, w))
+        settled = np.zeros((h, w), bool)
+        if name == "torso":
+            # Unterer Rumpf (Saum, Shorts): rund um die Hüfte einfarbig; vom Arm verdeckte Seiten bekommen den Median der ganzen Zeile (nicht den Verlauf aus dem Rand,
+            # der dunkle Ärmelreste mitzieht: dunkle Flamme an der Hüfte)
+            low = np.repeat((t_axis.reshape(h, w)[:, :1] < LOWER_T), w, axis=1)
+            gone = (ok & ~has).reshape(h, w) & low
+            if gone.any():
+                tile_new = fill_holes_median(tile_new, gone, ok.reshape(h, w), window=1, reach=w)
+                settled = gone
         if name == "head":      # Scheitel (die letzten Zeilen): im Foto knapp am Rand der Personenmaske, dort steht Himmel zwischen den Haaren; die Haarzeile darunter fortsetzen
             tile_new[int(CROWN_T * h):] = tile_new[int(CROWN_T * h) - 1]
             tile_new[:int(HEAD_NECK_T * h)] = tile_new[int(HEAD_NECK_T * h)]      # Halsansatz am Kopf: die Zeile darüber fortsetzen (dort schimmerte das Trikot als Zackenring durch)
         if coverage >= FILL_MIN_COVERAGE:
-            hole = (ok & ~has).reshape(h, w).astype(np.uint8)
+            hole = ((ok & ~has).reshape(h, w) & ~settled).astype(np.uint8)
             if hole.any():
                 pad = 6
                 wrapped = np.concatenate([tile_new[:, -pad:], tile_new, tile_new[:, :pad]], axis=1)

@@ -215,6 +215,13 @@ class PhotoMappingTest(unittest.TestCase):
         again, same = lfp.migrate_layout(out, new, f)
         self.assertIs(same, new)                          # schon im neuen Layout: nichts ändert sich
 
+    def test_inner_upper_thigh_is_hidden_but_outer_side_and_lower_leg_are_read(self):
+        nx = np.array([-0.9, 0.9, 0.0, -0.9])      # innen/außen/vorn oben, innen unten der linken Oberschenkelachse
+        t = np.array([0.1, 0.1, 0.1, 0.9])
+        hidden = lfp.hidden_inner_thigh("thigh_l", nx, t)
+        self.assertEqual(hidden.tolist(), [True, False, True, False])        # Innenseite und Vorderseite oben (bis zur Mitte der Lücke) ja; Außenseite und unten nein
+        self.assertEqual(lfp.hidden_inner_thigh("thigh_r", -nx, t).tolist(), [True, False, True, False])
+
 
 if __name__ == "__main__":
     unittest.main()
