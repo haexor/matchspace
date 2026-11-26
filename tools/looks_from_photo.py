@@ -268,6 +268,29 @@ def project_arm(fm, name, P, J):
     return p0[0] + sign * rot[:, 0], p0[1] - rot[:, 1]
 
 
+def migrate_layout(atlas, looks, f):
+    """Kopfbereich der Kacheln auf den Sollbereich (vl.SEGMENTS) bringen, falls die Szene noch den alten, kleineren hat: Der Kopfbereich wird für alle Spieler
+    hochskaliert an die neue Stelle kopiert (das Gesicht belegt in der größeren Kachel doppelt so viele Pixel), die Szene bekommt den neuen Bereich im Meta.
+    -> (Atlas, Meta). Ist die Szene schon im neuen Layout, kommt beides unverändert zurück."""
+    want = next(tuple(v * f for v in rect) for name, rect, _, _ in vl.SEGMENTS if name == "head")
+    segs = [dict(s) for s in looks["segments"]]
+    head = next(s for s in segs if s["name"] == "head")
+    if tuple(head["rect"]) == want:
+        return atlas, looks
+    ox, oy, ow, oh = head["rect"]
+    nx, ny, nw, nh = want
+    tile, cols = looks["tile"], looks["columns"]
+    out = atlas.copy()
+    for k in range(atlas.shape[0] // tile * cols):
+        ty, tx = (k // cols) * tile, (k % cols) * tile
+        if ty + tile > atlas.shape[0]:
+            break
+        old = atlas[ty + oy:ty + oy + oh, tx + ox:tx + ox + ow]
+        out[ty + ny:ty + ny + nh, tx + nx:tx + nx + nw] = cv2.resize(old, (nw, nh), interpolation=cv2.INTER_CUBIC)
+    head["rect"] = list(want)
+    return out, {**looks, "segments": segs}
+
+
 def main(scene_dir, player, photos, mesh_path, out_dir, debug=None):
     scene_dir, out_dir = Path(scene_dir), Path(out_dir)
     meta = json.loads((scene_dir / "meta.json").read_text())
@@ -276,7 +299,9 @@ def main(scene_dir, player, photos, mesh_path, out_dir, debug=None):
     cols, tile = looks["columns"], looks["tile"]
     k = looks["players"][player]
     f = tile // vl.TILE
-    segments = [(n, (x * f, y * f, w * f, h * f), t, p) for n, (x, y, w, h), t, p in vl.SEGMENTS]
+    atlas, looks = migrate_layout(atlas, looks, f)       # Szenen mit dem alten Kopfbereich (kleine Kachel) bekommen den großen
+    meta["looks"] = looks
+    segments = [(s["name"], tuple(s["rect"]), tuple(s["t"]), None) for s in looks["segments"]]
     mesh = avatar_mesh.AvatarMesh(mesh_path, segments, tile)
     J = mesh.joints()
     ty, tx = (k // cols) * tile, (k % cols) * tile
