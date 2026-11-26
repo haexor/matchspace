@@ -80,11 +80,29 @@ class PlanTest(unittest.TestCase):
             (d / "index.json").write_text(json.dumps(index))
             out = Path(tmp) / "ki"
             front = lambda: [j for j in photo_ai.jobs(d, {"own": TEAM}, ("hinten", "vorn"), set(), out) if j["case"]["view"] == "vorn"][0]   # noqa: E731
-            self.assertIsNone(front()["ref"])
+            self.assertEqual(front()["refs"], [])
             (out / "own-6").mkdir(parents=True)
             (out / "own-6" / "hinten.png").write_bytes(cv2.imencode(".png", np.zeros((8, 8, 3), np.uint8))[1].tobytes())
-            self.assertIsNotNone(front()["ref"])
+            self.assertEqual(len(front()["refs"]), 1)
             self.assertIn("Image 2", front()["prompt"])
+
+    def test_side_view_gets_front_and_back_as_references_and_a_facing_direction(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            d = self.make(tmp)
+            for v in ("vorn", "links"):
+                cv2.imwrite(str(d / "own-6" / f"{v}.png"), np.full((60, 30, 3), 120, np.uint8))
+            index = json.loads((d / "index.json").read_text())
+            index["own-6"]["views"].update({"vorn": {}, "links": {}})
+            (d / "index.json").write_text(json.dumps(index))
+            out = Path(tmp) / "ki"
+            (out / "own-6").mkdir(parents=True)
+            for v in ("vorn", "hinten"):
+                (out / "own-6" / f"{v}.png").write_bytes(cv2.imencode(".png", np.zeros((8, 8, 3), np.uint8))[1].tobytes())
+            side = [j for j in photo_ai.jobs(d, {"own": TEAM}, ("links",), set(), out)][0]
+            self.assertEqual([r.name for r in side["refs"]], ["vorn.png", "hinten.png"])
+            self.assertIn("Image 2 shows the same player from the front", side["prompt"])
+            self.assertIn("Image 3 shows the same player from behind", side["prompt"])
+            self.assertIn("toward the left edge", side["prompt"])
 
 
 class CostTest(unittest.TestCase):
@@ -115,7 +133,7 @@ class PhotoMappingTest(unittest.TestCase):
         self.assertAlmostEqual(u[1], 400, delta=1e-6)       # Ellbogen im Foto
         self.assertAlmostEqual(v[1], 600, delta=1e-6)
         self.assertAlmostEqual(v[2], 450, delta=1e-6)       # halbe Strecke
-        self.assertGreater(abs(u[2] - 400), 1)               # 5 cm Versatz quer zum Knochen wird zur Breite
+        self.assertAlmostEqual(u[2], 400, delta=1e-6)       # nur die Knochenachse wird abgebildet: der Versatz quer zum Knochen entfällt (keine Zacken am Armrand)
 
     def test_unsure_keypoints_skip_the_arm(self):
         conf = np.ones(17)
@@ -123,6 +141,23 @@ class PhotoMappingTest(unittest.TestCase):
         fm = {"kp": np.zeros((17, 2)), "conf": conf, "view": "vorn"}
         joints = {"upperarm_l": np.zeros(3), "lowerarm_l": np.array([0.3, 0, 0]), "hand_l": np.array([0.6, 0, 0])}
         self.assertIsNone(lfp.project_arm(fm, "upperarm_l", np.zeros((1, 3)), joints))
+
+    def test_side_view_maps_depth_to_the_image_width_in_the_facing_direction(self):
+        # Seitenansicht: Figur schaut nach Bildlinks (dir −1), 100 px je Meter; vorn (+z) liegt links von der Ebenenmitte
+        fm = {"side": True, "dir": -1.0, "scale": 100.0, "view": "links",
+              "y": np.array([0.0, 1.0, 2.0]), "v": np.array([500.0, 300.0, 100.0]), "u": np.array([400.0, 400.0, 400.0]), "z": np.array([0.0, 0.0, 0.0])}
+        pts = np.array([[0.0, 1.0, 0.0], [0.0, 1.0, 0.2], [0.0, 1.0, -0.1], [5.0, 1.0, 0.0]])
+        u, v = lfp.project(fm, pts)
+        self.assertEqual(list(v), [300.0] * 4)
+        self.assertAlmostEqual(u[0], 400.0)
+        self.assertAlmostEqual(u[1], 380.0)         # 20 cm nach vorn: 20 px nach links
+        self.assertAlmostEqual(u[2], 410.0)         # 10 cm nach hinten: 10 px nach rechts
+        self.assertAlmostEqual(u[3], 400.0)         # Breite (x) spielt in der Seitenansicht keine Rolle
+
+    def test_camera_directions_of_the_four_views(self):
+        self.assertEqual(list(lfp.FACE["links"]), [1.0, 0.0, 0.0])      # Kamera links vom Spieler: Avatar +x
+        self.assertEqual(list(lfp.FACE["hinten"]), [0.0, 0.0, -1.0])
+        self.assertEqual(set(lfp.FACE), {"hinten", "vorn", "links", "rechts"})
 
     def test_snap_inside_moves_gap_pixels_to_the_nearest_sleeve_pixel(self):
         inner = np.zeros((20, 20), bool)
@@ -141,6 +176,26 @@ class PhotoMappingTest(unittest.TestCase):
         grass = lfp.grass_mask(img, person)
         self.assertTrue(grass[30, 22])    # Rasen innerhalb der Maske
         self.assertFalse(grass[30, 30])   # Trikot
+
+    def test_hole_fill_uses_only_the_neighbours_of_the_hole_not_the_whole_row(self):
+        tile = np.zeros((9, 40, 3), np.uint8)
+        tile[:] = (0, 0, 200)                  # Trikot rot
+        tile[:, 0:6] = (255, 255, 255)         # Rückennummer weit weg (weiß)
+        hole = np.zeros((9, 40), bool)
+        hole[3:6, 20:26] = True
+        out = lfp.fill_holes_median(tile, hole, np.ones((9, 40), bool))
+        self.assertTrue((out[4, 20:26] == (0, 0, 200)).all())
+
+    def test_skin_like_keeps_skin_and_drops_jersey_and_grass(self):
+        img = np.zeros((4, 4, 3), np.uint8)
+        img[0, 0] = (110, 140, 200)            # Haut (BGR)
+        img[0, 1] = (30, 30, 200)              # rotes Trikot
+        img[0, 2] = (40, 140, 50)              # Rasen
+        ref = lfp.cv2.cvtColor(np.uint8([[[110, 140, 200]]]), lfp.cv2.COLOR_BGR2LAB)[0, 0].astype(np.float32)
+        like = lfp.skin_like(img, np.ones((4, 4), bool), ref)
+        self.assertTrue(like[0, 0])
+        self.assertFalse(like[0, 1])
+        self.assertFalse(like[0, 2])
 
 
 if __name__ == "__main__":

@@ -92,7 +92,10 @@ def candidates(sc, player):
     return out
 
 
-def main(video, det_path, camera_path, background_path, scene_dir, out_dir, only):
+def main(video, det_path, camera_path, background_path, scene_dir, out_dir, only, min_height=None, min_facing=None):
+    global MIN_HEIGHT, MIN_FACING
+    MIN_HEIGHT = MIN_HEIGHT if min_height is None else min_height       # kleinere Schwellen: auch ferne Spieler bekommen einen Ausschnitt (die KI macht daraus eine scharfe Ansicht)
+    MIN_FACING = MIN_FACING if min_facing is None else min_facing
     sc = vl.load_scene(video, det_path, camera_path, background_path, scene_dir)
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -154,5 +157,7 @@ if __name__ == "__main__":
     for name in ("video", "detektionen", "kamera", "hintergrund", "szenenordner", "ausgabe"):
         ap.add_argument(name)
     ap.add_argument("--spieler", nargs="*")
+    ap.add_argument("--min-hoehe", type=int, dest="min_hoehe", help=f"kleinste Spielerhöhe im Bild in Pixeln (Standard {MIN_HEIGHT})")
+    ap.add_argument("--min-frontal", type=float, dest="min_frontal", help=f"kleinste Frontalität (cos, Standard {MIN_FACING})")
     a = ap.parse_args()
-    main(a.video, a.detektionen, a.kamera, a.hintergrund, a.szenenordner, a.ausgabe, set(a.spieler or []))
+    main(a.video, a.detektionen, a.kamera, a.hintergrund, a.szenenordner, a.ausgabe, set(a.spieler or []), a.min_hoehe, a.min_frontal)

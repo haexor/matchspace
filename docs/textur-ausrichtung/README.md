@@ -252,3 +252,36 @@ Was nötig war (Reihenfolge der Fehler):
 3. Dünne Arme: Rand der Maske weg, Randtexel lesen den nächsten Punkt im Ärmelinneren (`snap_inside`).
 4. Gelbgrüne Streifen am Arm: Die Personenmaske füllt die Lücke zwischen Arm und Körper, dort steht Rasen. Alles in Rasenfarbe (Lab-Abstand < 22 zum Median außerhalb der Person) zählt bei den Armen nicht zur Person.
 Offen: Füße/Schuhe aus dem Video; Seitenansichten nicht eingebunden.
+
+## Versuch 20: Seitenansichten und Füße
+
+`photo_ai.py` erzeugt jetzt auch links/rechts (in Stufen: Rücken, Vorderseite mit dem Rücken als Referenz, Seiten mit Vorder- und Rückseite als Referenzen; der Prompt nennt die Blickrichtung: von links schaut die Figur nach Bildlinks). 18 Seitenansichten kosteten 0,41 USD (Ø 0,023). Haare, Gesicht, Statur und Kleidung passen zu den anderen Ansichten.
+`looks_from_photo.py`: In der Seitenansicht trägt die Bildbreite die Tiefe (z des Avatars): `u = u_Ebene + Richtung · (z − z_Ebene) · Maßstab`. Die Blickrichtung (Nase gegen Hüfte) entscheidet, welche Seite das Foto wirklich zeigt. Der hängende Arm verdeckt in der Seitenansicht die Rumpfseite: dort wird nichts gelesen (Armband aus den Pose-Punkten). Füße kommen jetzt auch aus den Fotos.
+Fehler, bis es stimmte:
+1. Seitenansicht ließ grüne Flecken an Shorts und Stutzen entstehen: Die Personenmaske füllt die Lücke zwischen den Beinen. Dieselbe Rasenmaske wie bei den Armen (`snap_inside`) gilt jetzt für Arme, Beine, Füße und alle Seitenansichten.
+2. Rasenfarbe aus dem ganzen Hintergrund war ein Mittel aus Himmel, Bäumen und Gras (own-1006): nur der untere Bildteil zählt.
+3. Quantilkurve je Teil aus der verunreinigten Videotextur zog Knieschoner ins Grüne, ein Kanalfaktor färbte die Haut am Knie leuchtend grün. Beine, Füße und Seitenansichten bekommen deshalb nur einen Helligkeitsfaktor; der Kopf behält die Quantilkurve (sonst gelbe Gesichter).
+
+## Versuch 21: Die KI-Bilder unverändert nutzen, nichts mitteln, kein Video als Füllung
+
+Rückmeldung zu Versuch 20: Arme und Schuhe passten nicht, das schwarze Unterziehshirt verschwamm mit dem roten Trikot, und die Texturen wirkten wieder schwammig. Ursache: Der Übertragungsschritt rechnete erneut Mittelwerte und Angleichungen (Farbkurven und Faktoren gegen die Videotextur, gewichtetes Überblenden mit dem Video, Füllen aus Nachbarn). Außerdem war der Helligkeitsfaktor der Arme falsch gerechnet (Median über alle Kanalwerte zusammen ist bei Rot fast null, die Vorderseite jedes Arms wurde schwarz).
+Jetzt (`looks_from_photo.py`):
+- Jeder Texel liest seine Farbe unverändert aus dem einen Foto, das ihn am frontalsten sieht (Vorder-/Rückfoto bevorzugt, `FRONTAL_BIAS`); nur an einer schmalen Naht (`SEAM`) wird überblendet. Keine Farbangleichung an das Video, keine Videotextur dazwischen.
+- Arme aus einem Foto (sonst Zacken, weil die Ärmellänge in den Fotos leicht abweicht); der von den hängenden Armen verdeckte Rumpf wird aus dem Median der Foto-Texel derselben Zeilen gefüllt, der Hals über den Rand-Fix (nächster Körperpunkt ohne Rasenfarbe).
+Und die Fotos selbst (`photo_ai.py`, `photo_candidates.py`):
+- Ansichten ohne Videoausschnitt erzeugt GPT Image aus den fertigen Ansichten desselben Spielers (hinten/vorn, eine Seite); die zweite Seite ist die gespiegelte erste (kostenlos).
+- Kleinere Schwellen für die Ausschnitte (`--min-hoehe 36 --min-frontal 0.7`): 18 von 19 Spielern der Nahszene bekommen vier KI-Ansichten (vorher 11 mit teils nur einer Ansicht). Kosten dieses Durchgangs 1,18 USD (davon 0,42 USD durch erneutes Erzeugen der Seiten, nachdem ihre Referenzbilder dazugekommen waren).
+- Ergebnis: Kopf, Arme, Beine und Füße zu 100 %, Rumpf zu 92 bis 95 % aus den Fotos (der Rest vom Arm verdeckt, aus den Foto-Texeln gefüllt). Nur Spieler ganz ohne Ausschnitt (1 von 19) und Sohlen/Kopfoberseite kommen nicht aus Fotos.
+Offen: Gesichter von Spielern mit sehr kleinem Ausschnitt sind erfunden (plausibel, keine Ähnlichkeit); beim Gegner bleibt am Hals ein grünlicher Rest; Knie (Haut zwischen Shorts und Stutzen) wirkt stellenweise fleckig; der Saum hat kleine dunkle Stellen.
+
+## Versuch 22: Kopf, Hals und Ränder (Nachbesserung zu Versuch 21)
+
+Rückmeldung: Hals und Kopf wirkten falsch, teils „zwei Nasen, vier Augen“, und die Trikots hatten Löcher. Was die Nahaufnahmen im Viewer zeigten und was geändert wurde (`looks_from_photo.py`):
+1. **Zwei Nasen**: Die Seitenfotos legten Augen und Nase versetzt neben das Gesicht. Der Kopf liest sie jetzt nur noch im schmalen seitlichen Streifen (`HEAD_SIDE_NZ`, Ohren, Schläfen), das Gesicht kommt allein aus dem Vorderfoto. Außerdem las der Kopf über `snap_inside` dunkle Haar-/Rasenpixel in das Gesicht (Flecken unter den Augen): Der Kopf liest jetzt direkt (nur Pixel in der Maske).
+2. **Scheitel grün/weiß**: Der Scheitel liegt im Foto am Rand der Maske, dort steht Rasen oder Himmel zwischen den Haaren. Die letzten Kopfzeilen setzen die Haarzeile darunter fort (`CROWN_T`).
+3. **Hals**: Er liest den nächsten Pixel mit Hautton (Farbart a/b in Lab nahe der Gesichtshaut desselben Spielers, `skin_reference`, `skin_like`); Trikot, Kragen und Haar fallen heraus. Die Seiten der Halsröhre lesen ebenfalls das Vorder-/Rückfoto (vorher Lücken, aus dem Trikot gefüllt: Zackenring).
+4. **Himmel als Hintergrund**: Vor Himmel, Bäumen oder Zaun (statt Rasen) lasen Lücken zwischen Arm und Rumpf weiße Flecken. `grass_mask` bestimmt den Hintergrund jetzt auch zeilenweise aus dem Foto (Pixel rechts/links der Person).
+5. **Arme**: Nur die Knochenachse wird abgebildet (die Röhre hat entlang der Achse ihre Farbe): kein Zackenrand mehr.
+6. **Rumpflücken** (vom Arm verdeckt) füllt der Median der direkten Nachbarn, nicht der ganzen Zeile (die Rückennummer zog Weiß in die Seiten).
+Verworfen: Halshaut schon ab `t > 1.05` oder mit Radiusbedingung (grüne/rosa Flecken an den Schultern).
+Offen (Geometrie, keine Textur): An Ellbogen, Hüfte, Schulterrand und zwischen Kopf und Hals durchdringen sich die Röhren des Avatars (Arm im Rumpf, Hals im Kopf); die Teile zeigen sich dort gegenseitig durch (schwarze/rote Zacken, rosa Streifen am Saum). Das lässt sich nur im Netz oder in der Pose beheben. Das Gesicht belegt nur etwa 40 Pixel der Kopfkachel.
