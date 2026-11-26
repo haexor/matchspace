@@ -190,17 +190,22 @@ class BridgeTest(unittest.TestCase):
         return xy, z
 
     def test_plausible_gap_is_a_straight_roll(self):
-        xy, z = self.track(30, {4: (0.0, 0.0), 25: (8.4, 0.0)})     # 21 Bilder = 0,84 s: 10 m/s
+        xy, z = self.track(30, {4: (0.0, 0.0), 22: (7.2, 0.0)})     # 18 Bilder = 0,72 s: 10 m/s
         out, oz = bm.bridge(xy, z, self.FPS)
-        self.assertFalse(np.isnan(out[10:25, 0]).any())
-        self.assertTrue((np.diff(out[4:26, 0]) > 0).all())
-        self.assertGreater(oz[14], 0.0)                                # schnell und kurz: Flug mit Bogen
+        self.assertFalse(np.isnan(out[10:22, 0]).any())
+        self.assertTrue((np.diff(out[4:23, 0]) > 0).all())
+        self.assertGreater(oz[13], 0.0)                                # schnell und kurz: Flug mit Bogen
 
     def test_slow_gap_stays_on_the_ground(self):
-        xy, z = self.track(80, {4: (0.0, 0.0), 70: (10.0, 0.0)})      # 2,6 s: 3,8 m/s
+        xy, z = self.track(40, {4: (0.0, 0.0), 19: (2.4, 0.0)})        # 0,6 s: 4 m/s
         out, oz = bm.bridge(xy, z, self.FPS)
-        self.assertTrue((oz[5:70] == 0).all())
-        self.assertFalse(np.isnan(out[5:70, 0]).any())
+        self.assertTrue((oz[5:19] == 0).all())
+        self.assertFalse(np.isnan(out[5:19, 0]).any())
+
+    def test_gap_over_a_second_is_not_invented(self):
+        xy, z = self.track(80, {4: (0.0, 0.0), 54: (10.0, 0.0)})      # 2 s, 5 m/s: glaubwürdig schnell, aber zu lange ungesehen
+        out, _ = bm.bridge(xy, z, self.FPS)
+        self.assertTrue(np.isnan(out[10:50, 0]).all())
 
     def test_impossible_speed_leaves_the_gap_empty(self):
         xy, z = self.track(30, {4: (0.0, 0.0), 14: (20.0, 0.0)})    # 20 m in 0,4 s: 50 m/s
