@@ -416,15 +416,32 @@ def air_bridge(xy: np.ndarray, z: np.ndarray, A: int, B: int, fps: float, player
     return False
 
 
+RAW_HOLD_XY = 1.5          # m: so nah muss ein Spieler am letzten erkannten Ball sein (die Spielerlage ist hier noch die grobe Bahn, nicht die aus den Gelenken verfeinerte)
+RAW_HOLD_REACH = 25        # Bilder (1 s): so weit zählt die nächste bekannte Lage eines Spielers, wenn seine Bahn dort eine Lücke hat
+RAW_HOLD_GAP = 5           # Bilder (0,2 s): länger offen nach einem Ball am Spieler bleibt unbekannt
 RAW_CHAIN_MIN = 3          # so viele zusammenpassende Erkennungen braucht eine Lage am Boden nach einer offenen Lücke
 
 
-def rescue_raw(xy: np.ndarray, z: np.ndarray, raw: np.ndarray, fps: float) -> int:
+def _player_near(players: np.ndarray, f: int, point: np.ndarray, reach: int = RAW_HOLD_REACH) -> float:
+    """Kleinster Abstand eines Spielers zu `point` bei Bild f; wo die Bahn eines Spielers dort eine Lücke hat, gilt seine nächste bekannte Lage innerhalb von `reach` Bildern."""
+    best = np.inf
+    for p in range(players.shape[1]):
+        col = players[max(0, f - reach):f + reach + 1, p]
+        ok = np.flatnonzero(~np.isnan(col[:, 0]))
+        if len(ok):
+            k = ok[np.argmin(np.abs(ok - (f - max(0, f - reach))))]
+            best = min(best, float(np.linalg.norm(col[k] - point)))
+    return best
+
+
+def rescue_raw(xy: np.ndarray, z: np.ndarray, raw: np.ndarray, fps: float, players=None) -> int:
     """Erkennungen in Lücken, die die Regeln offen ließen, als Lage am Boden übernehmen, wenn sie vom letzten bekannten Ort aus eine mögliche Bahn bilden:
     nach einem gerechneten Flug liegt der Ball oft schon wieder gut sichtbar am Boden, aber die Rohspur kannte den Landeort nicht (der Flug entsteht erst
     hier) und hat die Erkennungen deshalb nicht angeschlossen. Eine Kette von mindestens RAW_CHAIN_MIN Erkennungen, die vom bekannten Ort aus (am Boden)
     jeweils höchstens RAW_MAX_SPEED schnell und RAW_MAX_S voneinander entfernt sind; einzelne Ausreißer fallen heraus. Die Stücke dazwischen und danach schließen
-    die üblichen Lückenregeln. raw (T, 2): Lage am Boden je Ausgabebild, NaN wo nichts erkannt ist. Rückgabe: Zahl übernommener Bilder."""
+    die üblichen Lückenregeln, außer hinter der letzten Erkennung, wenn dort ein Spieler am Ball steht (RAW_HOLD_GAP): Wer den Ball aufnimmt oder mitnimmt, nimmt
+    ihn aus dem Bild; eine gerade Strecke bis zur nächsten gesehenen Lage wäre erfunden, der Ball bleibt unbekannt.
+    raw (T, 2): Lage am Boden je Ausgabebild, NaN wo nichts erkannt ist. Rückgabe: Zahl übernommener Bilder."""
     n = len(xy)
     taken = 0
     f = 1
@@ -451,8 +468,12 @@ def rescue_raw(xy: np.ndarray, z: np.ndarray, raw: np.ndarray, fps: float) -> in
             continue
         taken += len(chain)
         for g0, g1 in zip([f - 1] + chain, chain + [b]):          # Stücke zwischen den Lagen schließen (am Ende der Spur: nichts)
-            if g1 < n:
-                _close_rest(xy, z, g0 + 1, g1, fps)
+            if g1 >= n:
+                continue
+            if g1 == b and g0 == chain[-1] and players is not None and g1 - g0 > RAW_HOLD_GAP and \
+                    _player_near(players, g0, xy[g0]) < RAW_HOLD_XY:
+                continue                                          # der Ball endete an einem Spieler und war danach nicht mehr zu sehen
+            _close_rest(xy, z, g0 + 1, g1, fps)
         f = b + 1
     return taken
 
@@ -501,7 +522,7 @@ def bridge(xy: np.ndarray, z: np.ndarray, fps: float, players=None, raw=None) ->
         if T <= ARC_MAX_S and v >= ARC_MIN_SPEED and max(z[A], z[B]) < 0.3:
             z[a:b] += 4 * (ball_physics.G * T * T / 8) * s * (1 - s)
     if raw is not None:
-        rescue_raw(xy, z, raw, fps)
+        rescue_raw(xy, z, raw, fps, players)
     return xy, z
 
 

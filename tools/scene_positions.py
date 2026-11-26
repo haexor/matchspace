@@ -48,6 +48,7 @@ class Game:
     ball: int | None
     ball_source: str
     ball_track: object = None   # tools/ball_motion.OutputTrack: Ball mit Höhe und Kontakten, wenn `.ball3d.npz` vorliegt
+    ball_inputs: tuple | None = None   # (Lage, Höhe, Erkennungen) der Ballspur vor dem Überbrücken: wird mit den verfeinerten Spielerlagen noch einmal überbrückt
 
 
 def feet_on_ground(cam, eye, kp, lens, height):
@@ -130,15 +131,25 @@ def load_game(run, observed, base_dir, out_dir) -> Game:
     if ball is not None and Path(f"{det_path}.ball.npz").exists():   # eigener Ball aus dem Video (tools/veo_ball.py) statt Veos
         xy[:, ball] = own_ball(resample(np.load(f"{det_path}.ball.npz")["pos"], total, ratio), BALL_GAP * OUT_FPS)
         ball_source = "Video"
-    track = None
+    track, ball_inputs = None, None
     if ball is not None and Path(f"{det_path}.ball3d.npz").exists():   # Ball mit Höhe aus der Physik (tools/ball_motion.py)
         track = ball_motion.output_track(f"{det_path}.ball3d.npz", total, ratio)
         raw = None
         if Path(f"{det_path}.ball.npz").exists():    # Erkennungen am Boden, je Ausgabebild die nächste (nicht gemittelt: Lücken bleiben Lücken)
             seen = np.load(f"{det_path}.ball.npz")["pos"]
             raw = seen[np.minimum(np.rint(np.arange(total) * ratio).astype(int), len(seen) - 1)]
+        ball_inputs = (track.xy, track.z.copy(), raw)
         xy[:, ball], track.z = ball_motion.bridge(track.xy, track.z, OUT_FPS, xy[:, slots], raw)   # nur die Bahn der Physik: die Bodenlage der Rohspur wäre im Flug verzerrt
-    return Game(base, base_dir, out_dir, period, clock_start, total, ratio, tscale, data, xy, slots, entity_of, ball, ball_source, track)
+    return Game(base, base_dir, out_dir, period, clock_start, total, ratio, tscale, data, xy, slots, entity_of, ball, ball_source, track, ball_inputs)
+
+
+def rebridge_ball(game: Game) -> None:
+    """Ballbahn noch einmal überbrücken, jetzt mit den verfeinerten Spielerlagen: Die Regeln, die an einem Spieler enden (Flug trifft einen Spieler, Ball endet an
+    einem, der ihn aufnimmt), brauchen ihre Lage auf rund einen Meter; die grobe Bahn aus dem Laden war dafür oft zu weit weg."""
+    if game.ball_inputs is None:
+        return
+    xy0, z0, raw = game.ball_inputs
+    game.xy[:, game.ball], game.ball_track.z = ball_motion.bridge(xy0, z0, OUT_FPS, game.xy[:, game.slots], raw)
 
 
 def measure_positions(run, observed, joints, floor, game: Game) -> None:
@@ -192,5 +203,6 @@ def measure_positions(run, observed, joints, floor, game: Game) -> None:
         v, o = np.concatenate(veo_speed), np.concatenate(own_speed)
         print(f"Tempo über 0,4 s gemittelt, {len(measured_share)} Spieler: höchstes laut Veo {np.nanmax(v) * 3.6:.1f} km/h, "
               f"aus eigenen Positionen {np.nanmax(o) * 3.6:.1f} km/h; 99. Perzentil {np.nanpercentile(v, 99) * 3.6:.1f} und {np.nanpercentile(o, 99) * 3.6:.1f} km/h", flush=True)
+    rebridge_ball(game)
     game.out_dir.mkdir(parents=True, exist_ok=True)
     run.clock("Positionen")
