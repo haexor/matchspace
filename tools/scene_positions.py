@@ -133,7 +133,11 @@ def load_game(run, observed, base_dir, out_dir) -> Game:
     track = None
     if ball is not None and Path(f"{det_path}.ball3d.npz").exists():   # Ball mit Höhe aus der Physik (tools/ball_motion.py)
         track = ball_motion.output_track(f"{det_path}.ball3d.npz", total, ratio)
-        xy[:, ball], track.z = ball_motion.bridge(track.xy, track.z, OUT_FPS, xy[:, slots])   # nur die Bahn der Physik: die Bodenlage der Rohspur wäre im Flug verzerrt
+        raw = None
+        if Path(f"{det_path}.ball.npz").exists():    # Erkennungen am Boden, je Ausgabebild die nächste (nicht gemittelt: Lücken bleiben Lücken)
+            seen = np.load(f"{det_path}.ball.npz")["pos"]
+            raw = seen[np.minimum(np.rint(np.arange(total) * ratio).astype(int), len(seen) - 1)]
+        xy[:, ball], track.z = ball_motion.bridge(track.xy, track.z, OUT_FPS, xy[:, slots], raw)   # nur die Bahn der Physik: die Bodenlage der Rohspur wäre im Flug verzerrt
     return Game(base, base_dir, out_dir, period, clock_start, total, ratio, tscale, data, xy, slots, entity_of, ball, ball_source, track)
 
 

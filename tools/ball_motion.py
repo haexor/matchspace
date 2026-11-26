@@ -416,12 +416,54 @@ def air_bridge(xy: np.ndarray, z: np.ndarray, A: int, B: int, fps: float, player
     return False
 
 
-def bridge(xy: np.ndarray, z: np.ndarray, fps: float, players=None) -> tuple:
+RAW_CHAIN_MIN = 3          # so viele zusammenpassende Erkennungen braucht eine Lage am Boden nach einer offenen Lücke
+
+
+def rescue_raw(xy: np.ndarray, z: np.ndarray, raw: np.ndarray, fps: float) -> int:
+    """Erkennungen in Lücken, die die Regeln offen ließen, als Lage am Boden übernehmen, wenn sie vom letzten bekannten Ort aus eine mögliche Bahn bilden:
+    nach einem gerechneten Flug liegt der Ball oft schon wieder gut sichtbar am Boden, aber die Rohspur kannte den Landeort nicht (der Flug entsteht erst
+    hier) und hat die Erkennungen deshalb nicht angeschlossen. Eine Kette von mindestens RAW_CHAIN_MIN Erkennungen, die vom bekannten Ort aus (am Boden)
+    jeweils höchstens RAW_MAX_SPEED schnell und RAW_MAX_S voneinander entfernt sind; einzelne Ausreißer fallen heraus. Die Stücke dazwischen und danach schließen
+    die üblichen Lückenregeln. raw (T, 2): Lage am Boden je Ausgabebild, NaN wo nichts erkannt ist. Rückgabe: Zahl übernommener Bilder."""
+    n = len(xy)
+    taken = 0
+    f = 1
+    while f < n:
+        if not np.isnan(xy[f, 0]) or np.isnan(xy[f - 1, 0]) or z[f - 1] > 0.5:     # nur am Boden, direkt hinter einer bekannten Lage
+            f += 1
+            continue
+        b = f
+        while b < n and np.isnan(xy[b, 0]):
+            b += 1
+        last, chain = f - 1, []
+        for g in range(f, b):
+            if np.isnan(raw[g, 0]):
+                continue
+            dt = (g - last) / fps
+            if dt <= RAW_MAX_S and np.linalg.norm(raw[g] - xy[last]) / dt <= RAW_MAX_SPEED:
+                chain.append(g)
+                last = g
+                xy[g], z[g] = raw[g], 0.0      # vorläufig: der nächste prüft gegen diese Lage
+        if len(chain) < RAW_CHAIN_MIN:
+            for g in chain:
+                xy[g], z[g] = np.nan, np.nan
+            f = b + 1
+            continue
+        taken += len(chain)
+        for g0, g1 in zip([f - 1] + chain, chain + [b]):          # Stücke zwischen den Lagen schließen (am Ende der Spur: nichts)
+            if g1 < n:
+                _close_rest(xy, z, g0 + 1, g1, fps)
+        f = b + 1
+    return taken
+
+
+def bridge(xy: np.ndarray, z: np.ndarray, fps: float, players=None, raw=None) -> tuple:
     """Lücken der Ballspur (NaN) im Takt der Ausgabe schließen, ohne den Ball durch die Gegend zu schießen. Zwischen zwei bekannten Lagen
     legt der Ball eine gerade Strecke zurück, solange das Tempo glaubwürdig ist (höchstens GAP_MAX_SPEED und GAP_MAX_S); ein schneller kurzer Weg
     zwischen Bodenlagen ist ein Flug mit Bogen. Ist das Tempo unmöglich, war der Ball nicht zu verfolgen: Die Lücke bleibt leer (der Ball ist
     dann unbekannt, nicht an einem erfundenen Ort). Anfang und Ende halten die nächste Lage nur kurz (HOLD_S).
     players (T, P, 2): Lagen der Spieler im selben Takt; mit ihnen endet ein gerechneter Flug, wo er einen Spieler trifft (Kopfball, Annahme).
+    raw (T, 2): Lage am Boden je erkanntem Bild; Erkennungen, die nach den Regeln eine mögliche Bahn vom bekannten Ort bilden, füllen offene Lücken (rescue_raw).
     Rückgabe: Lage (n, 2) und Höhe (n,) über dem Boden, NaN in offenen Lücken."""
     xy, z = xy.copy(), z.copy()
     known = ~np.isnan(xy[:, 0])
@@ -458,6 +500,8 @@ def bridge(xy: np.ndarray, z: np.ndarray, fps: float, players=None) -> tuple:
         z[a:b] = z[A] + (z[B] - z[A]) * s
         if T <= ARC_MAX_S and v >= ARC_MIN_SPEED and max(z[A], z[B]) < 0.3:
             z[a:b] += 4 * (ball_physics.G * T * T / 8) * s * (1 - s)
+    if raw is not None:
+        rescue_raw(xy, z, raw, fps)
     return xy, z
 
 

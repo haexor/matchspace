@@ -411,5 +411,41 @@ class AirContactTest(_AirTruth):
         self.assertLess(np.linalg.norm(out[45] - (head[:2] + [-3.0, 1.0] * np.array([6 / self.FPS] * 2))), 1.0)
 
 
+class RawRescueTest(_AirTruth):
+    """Nach einem gerechneten Flug liegt der Ball wieder am Boden und ist zu sehen, die Rohspur kannte den Landeort aber nicht: Die Erkennungen schließen an."""
+    N = 100
+
+    def scene(self, raw_frames, far=False):
+        land = self.truth(1.83)[:2]
+        xy, z = self.build(range(0, 13), roll_to={f: land + [6.0, 0.0] for f in range(90, 100)})     # Beginn gesehen, Ball wieder ab 3,6 s am Boden
+        raw = np.full((self.N, 2), np.nan)
+        for f in raw_frames:
+            raw[f] = land + [2.0 * (f / self.FPS - 1.83), 0.0] + ([30.0, 20.0] if far else 0)      # rollt langsam von der Landung weg
+        return xy, z, raw
+
+    def test_detections_after_the_landing_fill_the_hidden_roll(self):
+        xy, z, raw = self.scene(range(56, 67))
+        out, oz = bm.bridge(xy, z, self.FPS, None, raw)
+        np.testing.assert_allclose(out[56:67], raw[56:67], atol=1e-6)
+        self.assertFalse(np.isnan(out[47:67, 0]).any())            # Landung bis zur ersten Erkennung gerade verbunden
+        self.assertEqual(float(oz[60]), 0.0)
+        self.assertTrue(np.isnan(out[75:88, 0]).all())             # danach bis zur nächsten Lage 1 s und mehr: bleibt unbekannt
+
+    def test_without_detections_the_roll_stays_hidden(self):
+        xy, z, raw = self.scene([])
+        out, _ = bm.bridge(xy, z, self.FPS, None, raw)
+        self.assertTrue(np.isnan(out[50:88, 0]).all())
+
+    def test_two_detections_are_not_enough(self):
+        xy, z, raw = self.scene([56, 58])
+        out, _ = bm.bridge(xy, z, self.FPS, None, raw)
+        self.assertTrue(np.isnan(out[50:88, 0]).all())
+
+    def test_detections_far_from_the_landing_are_not_taken(self):
+        xy, z, raw = self.scene(range(56, 67), far=True)
+        out, _ = bm.bridge(xy, z, self.FPS, None, raw)
+        self.assertTrue(np.isnan(out[50:88, 0]).all())
+
+
 if __name__ == "__main__":
     unittest.main()
