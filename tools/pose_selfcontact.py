@@ -82,7 +82,7 @@ def penetration(p):
             depth[:, k] = np.maximum(depth[:, k], inside(locate(s + t * (e - s), p, axes), UPPER_RADIUS)[0])
         for t in FORE:
             depth[:, k] = np.maximum(depth[:, k], inside(locate(e + t * (w - e), p, axes), FORE_RADIUS)[0])
-    return np.nan_to_num(depth)
+    return np.nan_to_num(depth * axes[3][:, None])
 
 
 def keep_arms_out(p, passes=PASSES):
@@ -136,7 +136,16 @@ def fix_scene(scene, out):
         frames = min(len(arr), meta["frames"] - k * poses["chunkFrames"])
         fixed = arr.copy()
         for p in range(players):
-            fixed[:frames, p] = keep_arms_out(arr[:frames, p])
+            poses_for_player = arr[:frames, p]
+            torso = np.linalg.norm(poses_for_player[:, I["neck"]] - poses_for_player[:, I["pelvis"]], axis=1)
+            # Completed scenes do not store scene_poses' down mask. Low pelvis or wrists at floor height identify the ground poses.
+            grounded = ((poses_for_player[:, I["pelvis"], 2] < torso)
+                        | (poses_for_player[:, I["lWrist"], 2] < 0.12)
+                        | (poses_for_player[:, I["rWrist"], 2] < 0.12))
+            editable = ~grounded
+            fixed_player = poses_for_player.copy()
+            fixed_player[editable] = keep_arms_out(poses_for_player[editable])
+            fixed[:frames, p] = fixed_player
             before += int((penetration(arr[:frames, p]) > 0.03).any(axis=1).sum())
             after += int((penetration(fixed[:frames, p]) > 0.03).any(axis=1).sum())
         values = np.where(np.isnan(fixed), poses["missing"], np.clip(np.round(np.nan_to_num(fixed) / poses["scale"]), -32767, 32767)).astype("<i2")
