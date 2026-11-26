@@ -1,0 +1,254 @@
+# Versuchsbericht: Warum die Rückennummer verzerrt und verschmiert ist
+
+Stand 2026-11-26, Nahszene `nah_1466.mp4`.
+Die Bilder (`*.png`) liegen lokal unter `data/work/doku-bilder/textur-ausrichtung/` und sind nicht eingecheckt: sie zeigen Videomaterial von Jugendspielern, und das Repository ist öffentlich. Messungen mit dem Rückenaufdruck von own-6, opponent-15, own-15 (weiße Nummer).
+
+## Ausgangslage
+
+Die Ansichten-Textur (`veo_looks.py --ansichten 4 --maske`) holt den Rückenaufdruck aus einem einzelnen Videobild.
+Im Viewer ist die Nummer aber schmal, in die Länge gezogen und verwaschen („6“ sieht aus wie „8“).
+
+*Bild (lokal, nicht eingecheckt): `00-viewer-vorher-nachher-ansichten.png` – Viewer vorher/nachher*
+
+## Versuch 1: Raster der Rumpfstellen über das Foto legen
+
+Das Modell legt je Videobild ein Raster aus Rumpfstellen auf den Spieler (rot = Rücken). Zwei fast benachbarte Bilder (21 und 23):
+Die „6“ liegt im Raster einmal links, einmal in der Mitte, obwohl sich der Spieler kaum bewegt hat.
+
+*Bild (lokal, nicht eingecheckt): `01-raster-auf-foto-bild21-23.png` – Raster, Bild 21 und 23*
+*Bild (lokal, nicht eingecheckt): `02-raster-auf-foto-bild22.png` – Raster, Bild 22*
+
+Gemessen (weiße Pixel des Aufdrucks, Lage im Modell): Streuung des Winkels 16° (own-6), 33° (opponent-15), 29° (own-15).
+Wichtig zur Einordnung: Die Kachel hat 64 Texel rund um den Rumpf, also 5,6° je Texel. 16° sind rund 3 Texel, die Nummer ist etwa 8 Texel breit.
+Das ist ein Fünftel der Nummernbreite, nicht so breit wie die Nummer. (Meine erste Einschätzung war da zu groß.)
+
+## Versuch 2: Rumpfdrehung je Bild nachfahren (`--drehung`)
+
+Je Bild und Spieler Drehung ±40° suchen, bei der der Rumpf am besten zum Mittel passt; zwei Runden. Standard aus.
+
+| | Streuung vorher | nachher |
+|---|---|---|
+| own-6, Winkel der Nummer | 16,0° | 13,8° |
+| Sprung zu Nachbarbild | 12,3° | 10,1° |
+
+Fast keine Wirkung.
+
+## Versuch 3: Ausrichtung auf ein einziges scharfes Rückenbild
+
+Bild 22 als Bezug; je anderes Rückenbild Drehung ±40° und Verschiebung ±4 px gesucht (118 Bilder).
+
+| | vorher | nachher |
+|---|---|---|
+| Streuung des Winkels | 16,7° | 17,0° |
+| Streuung der Zeile | 5,3 Texel | 6,0 Texel |
+
+Keine Besserung, die Passung bleibt schlecht (Farbabstand 50 bis 60). Der Fehler ist nicht starr (Drehung/Verschiebung), sondern von Bild zu Bild verrauscht.
+
+*Bild (lokal, nicht eingecheckt): `03-rueckenkachel-referenz-vorher-nachher.png` – Rückenkachel: Referenz, Mittel unausgerichtet, ausgerichtet*
+
+## Versuch 4: Haltung zeitlich glätten (Messgerät: `harness.py`, Scratchpad)
+
+Gelenkpunkt-Versatz und/oder Welt-Gelenke mit einem Gauß über die Zeit glätten (σ = 1,5 und 3 Bilder). Messung: Streuung des Nummernwinkels / Sprung zu Nachbarbild (Grad):
+
+| Variante | own-6 | opponent-15 | own-15 | own-5 | opponent-7 |
+|---|---|---|---|---|---|
+| Ist-Zustand | 16,8 / 9,6 | 18,9 / 13,7 | 18,2 / 11,8 | 4,1 / 3,7 | 26,4 / 13,0 |
+| ohne Versatz zu den Gelenkpunkten | 27,5 / 11,9 | 28,5 / 16,0 | 37,5 / 13,8 | 6,3 / 4,4 | 14,9 / 8,9 |
+| Versatz geglättet σ=3 | 16,4 / 9,7 | 18,5 / 12,5 | 15,8 / 14,6 | 4,2 / 4,0 | 27,8 / 17,2 |
+| Welt-Gelenke geglättet σ=3 | 15,7 / 9,9 | 19,9 / 11,6 | 18,2 / 14,8 | 3,4 / 3,2 | 30,5 / 14,6 |
+| beides σ=3 | 16,9 / 9,5 | 18,1 / 11,2 | 15,3 / 12,9 | 3,9 / 3,4 | 26,6 / 11,9 |
+
+Glätten ändert nichts. Das Rauschen ist also kein hochfrequentes Zittern der Gelenke. Der Versatz zu den erkannten Gelenkpunkten hilft (ohne ihn ist es bei 4 von 5 Spielern schlechter).
+Nebenbeobachtung: Die Zeilen-Streuung (5 bis 7 Texel) ist größer als die Winkel-Streuung (3 Texel). Vertikal ist die Lage unsicherer als seitlich.
+Roh: [exp1-glaettung.log.txt](exp1-glaettung.log.txt). Die weiße Nummernerkennung ist grob (Schriftzug, Verdeckung): Unterschiede unter ca. 3° sind nicht belastbar.
+
+## Versuch 5: Passen Aufnahme-Modell und Viewer-Avatar zusammen?
+
+Fund im Code: Der Viewer (`web/avatar-look.js`) liest die Textur nach dem **Polarwinkel** der Netzpunkte um die Rumpfachse.
+`veo_looks.py surface()` schrieb sie nach dem **Parameter der Ellipse**. Beim schmalen Rumpf (0,14 m breit, 0,095 m tief) landen Merkmale
+im Viewer um rund 30 % näher an der Rückenmitte, als sie am Spieler sitzen (z. B. 10° Ellipsenparameter = 2,4 cm, im Viewer 1,7 cm).
+Behoben: `surface()` nutzt jetzt den Polarwinkel (Radius ρ(φ) = 1/√((cos φ/rz)² + (sin φ/rx)²)).
+Die Szenen wurden mit dem Fix neu gerechnet (`veo-szene-nah-polar-ansichten`, `veo-szene-nah-polar-mittel`).
+
+Links alt, rechts mit Polarwinkel (Ansichten-Textur): Die Nummer ist leicht breiter, aber weiter in die Länge gezogen. Der Fehler ist damit nicht behoben.
+
+*Bild (lokal, nicht eingecheckt): `04-viewer-ansichten-alt-vs-polar.png` – Ansichten alt vs. polar*
+*Bild (lokal, nicht eingecheckt): `06-rumpfkacheln-alt-vs-polar.png` – Rumpfkacheln alt vs. polar (je Spieler: links alt, rechts polar)*
+
+Für das Mittel mit der sauber gedruckten Viewer-Nummer (Standardweg, links alt, rechts polar) ist kaum ein Unterschied zu sehen:
+
+*Bild (lokal, nicht eingecheckt): `07-viewer-mittel-alt-vs-polar.png` – Mittel alt vs. polar*
+
+## Versuch 6: Schachbrett auf den Avatar
+
+Statt der Videotextur ein Schachbrett (Zellen 8 × 8 Texel, Rückenmitte schwarz, Vorderseite blau, grüne Linie alle 16 Zeilen) in den Atlas gelegt und im Viewer angesehen
+(`veo-szene-nah-gitter`).
+
+*Bild (lokal, nicht eingecheckt): `05-viewer-schachbrett-auf-avatar.png` – Schachbrett auf dem Avatar*
+
+Ergebnis: Die Zellen sind an der Rückenmitte etwa doppelt so hoch wie breit (gemessen im Bild: ca. 28 px × 65 px). Das Modell der Aufnahme erwartet für 8 × 8 Texel etwa
+7,6 cm × 10,6 cm (Seitenverhältnis 1 : 1,4, bei Spinelänge 0,5 m). Der Avatar zeigt etwa 6,7 cm × 13 cm. Zwei Abweichungen:
+- Avatar-Rücken ist flacher/schmaler als die Ellipse im Modell (seitlich 3,4 statt 3,8 cm je 22,5°).
+- Die Spinelänge im Avatar ist größer als im Aufnahmemodell (ca. 0,6 statt 0,5 m, grob geschätzt, nicht gemessen).
+Zusammen ergibt das eine senkrechte Streckung des Aufdrucks im Viewer um rund 1,3 bis 1,4. Die Zahlen sind aus dem Bild geschätzt.
+
+**Korrektur (nach Versuch 7):** Direkt am Netz gemessen sind die Zellen 1,1 cm hoch und 1,4 cm breit je Texel, also fast quadratisch. Die Schätzung aus dem Bild war zu grob (Perspektive, Maßstab), und diese Erklärung der Verzerrung war falsch.
+
+## Versuch 7: Aufnahme direkt auf dem echten Avatar-Netz (wie bei Videospielen)
+
+Die Frage, ob das Aufnahmemodell vom Viewer-Netz abweicht, habe ich so beantwortet, dass es sie gar nicht mehr gibt:
+- `tools/avatar_bake.py` liest aus dem laufenden Viewer (Haken `?bake=1` in `web/main.js`) das Netz in der Grundhaltung und je Bild die Knochenmatrizen aller Figuren (250 Bilder, 20 Figuren, rund 100 s).
+- `tools/avatar_mesh.py` rechnet zu jedem Texel der Kachel das Dreieck des Netzes (aus den Texturkoordinaten des Viewers) und daraus je Bild Weltpunkt und Normale mit den Hautgewichten des Viewers.
+- `veo_looks.py --netz PKL` legt die Videobilder auf genau diese Punkte. Wo das Netz keine Fläche hat (unterhalb der Hüfte, über den Schultern), bleibt das alte Modell.
+- Prüfung: Hüfte (t=0) und Schulter (t=1) des Netzes liegen bis auf 2 cm auf den Gelenkpunkten der Daten; die Spine ist im Netz 0,389 m, in den Daten 0,414 m.
+- Zeilenabstand im Netz 1,1 cm, Spaltenabstand am Rücken 1,4 cm (Verhältnis 0,8; ein 15 Texel breiter und 18 Zeilen hoher Aufdruck ist damit etwa 1 : 1 breit zu hoch).
+
+Ergebnis: Die Nummer sieht fast gleich aus (links Zylinder mit Polarwinkel, rechts echtes Netz). Der Unterschied von Modell und Netz war also **nicht** die Hauptursache.
+
+*Bild (lokal, nicht eingecheckt): `08-viewer-netzaufnahme-vs-zylinder.png` – Netzaufnahme vs. Zylinder*
+
+## Versuch 8: Was die Nummer wirklich schmal gemacht hat
+
+Einzelbild (Bild 22, own-6) in die Kachel gelegt, oben mit Zylinder, unten mit Netz: Die Nummer ist dort 15 Texel breit und 18 Zeilen hoch, also normal proportioniert.
+In der fertigen Ansichten-Textur war sie nur etwa 7 Texel breit. Der Grund steht im Filter von `view_texture`: Werte, die mehr als `VIEW_OUTLIER` vom unscharfen Mittel abweichen, zählen nicht.
+Weißer Aufdruck auf rotem Trikot liegt 150 bis 300 vom Mittel entfernt (das Mittel ist an der Stelle rosa). Mit 110 blieb nur die Mitte der Nummer stehen: schmal und hoch.
+
+*Bild (lokal, nicht eingecheckt): `09-einzelbild-atlas-zylinder-oben-netz-unten.png` – Einzelbild im Atlas*
+
+Filter für den Rumpf praktisch aus (400): Die Nummer wird breit und zusammenhängend, der Sponsor-Schriftzug darüber lesbar (rechts):
+
+*Bild (lokal, nicht eingecheckt): `10-viewer-filter-110-vs-aus.png` – Filter 110 vs. aus*
+
+Nebenwirkung: Ohne Filter färben Fremdfarben den Kopf (grüner Spieler mit rotem Gesicht, links). Deshalb jetzt je Teil: Rumpf 400, Kopf 110 (rechts).
+
+*Bild (lokal, nicht eingecheckt): `11-viewer-kopf-ohne-filter-vs-kopf-gefiltert.png` – Kopf ohne Filter vs. gefiltert*
+
+## Versuch 9: Nur ein Bild für den Rücken (`--tiefe 1`)
+
+Bis zu zwei weitere Bilder durften Lücken des besten Bilds füllen (`--tiefe 3`). Mit `--tiefe 1` kommt der Rücken nur aus dem besten Bild. Das Ergebnis im Viewer ist gleich:
+Die Nummer stammt schon bei Tiefe 3 aus einem einzigen Bild. Die Unschärfe liegt also nicht am Mischen, sondern am Quellbild.
+
+*Bild (lokal, nicht eingecheckt): `13-viewer-tiefe3-vs-tiefe1.png` – Tiefe 3 vs. Tiefe 1*
+
+Umlauf um own-6 mit der Textur aus einem Bild (Drehung −90° bis 225°): Von hinten ist die Nummer als weißer Block mit dunklen Stellen zu sehen, aus schrägen Winkeln wirkt sie wegen der Perspektive schmal.
+
+*Bild (lokal, nicht eingecheckt): `12-viewer-umlauf-eins-ansichten.png` – Umlauf*
+
+## Versuch 10: Scharfes Foto statt Videobildern (Bild-KI)
+
+Der Nutzer hat den kleinen Veo-Ausschnitt von opponent-15 (148 × 166 px, [23](23-eingabe-veo-ausschnitt-opponent-15.png)) mit Nano Banana zu einer scharfen Rückansicht aufbereitet ([22](22-eingabe-ki-rueckansicht-opponent-15.png)).
+Die Schrift darüber ist erfunden, die Nummer stimmt. `tools/looks_from_photo.py` legt dieses Foto auf den Avatar:
+- Person und Trikot im Foto finden (`models/yolo11x-seg.pt`, grüne Pixel in der Personenmaske). Saum und Kragen bestimmen die Höhe, die Breite auf halber Rumpfhöhe die Breite: das Trikot im Foto wird auf das Trikot des Avatars gelegt (wie bei einer von Hand gelegten UV-Abwicklung).
+- Jeder Texel des Rückens (Netz in der Grundhaltung, `AvatarMesh.rest_points`) liest die Farbe an seiner Stelle im Foto (Kachel in vierfacher Größe).
+- Farben auf die Videotextur angleichen (Quantile je Kanal), nur Trikotbereich, bis 75° um die Rückenmitte, weich in die Videotextur ausgeblendet.
+
+*Bild (lokal, nicht eingecheckt): `18-foto-abbildung-auf-avatar.png` – Abbildung auf dem Foto*
+*Bild (lokal, nicht eingecheckt): `19-foto-rumpfkachel-vorher-nachher.png` – Rumpfkachel: Video (links), Foto (rechts)*
+
+Im Viewer (links Video, rechts Foto; grüner Spieler = opponent-15):
+
+*Bild (lokal, nicht eingecheckt): `20-viewer-video-vs-foto.png` – Video vs. Foto*
+*Bild (lokal, nicht eingecheckt): `21-viewer-umlauf-foto.png` – Umlauf*
+
+Ergebnis: Rücken scharf, „15“ und Schrift lesbar, von allen Seiten stabil.
+
+Offen bei diesem Weg: nur Rücken des Rumpfes; Vorderseite, Seiten, Arme, Hose, Kopf aus je einem eigenen Foto; die Schrift ist von der KI erfunden (Sponsor); Hals und Übergang zur Videotextur an den Seiten leicht sichtbar.
+
+## Versuch 11: Automatisierung (Stand)
+
+Ziel: pro Spieler automatisch passende Fotos aus dem Video heraussuchen, von einer Bild-KI zu scharfen Ansichten aufbereiten lassen (mit bekannter Nummer und bekanntem Trikottext im Prompt) und auf den Avatar legen.
+- `tools/photo_candidates.py` (fertig): wählt aus den Szenendaten je Spieler die besten Ausschnitte für hinten/vorn/links/rechts (Frontalität, Größe in Pixeln, freistehend, vollständig im Bild, schärfstes unter den besten) und schneidet sie aus dem Video zu. Nahszene: 8 von 19 Spielern haben eine brauchbare Rückansicht oder mehr, der Rest steht zu weit weg (unter 60 px). Über das ganze Spiel (Spielerzuordnung über Szenen hinweg) wird es mehr.
+- `tools/looks_from_photo.py` (fertig für Rumpf hinten): legt ein Foto auf den Avatar.
+- `web/spieler.html` (fertig): ein Spieler einzeln als 3D-Modell mit Drehteller, freier Kamera, Haltung aus wählbarem Bild.
+- Offen: KI-Anbindung (Anbieter austauschbar, Zwischenspeicher, Probelauf ohne Aufruf), Prompt aus Fakten (Nummer, Farben, Trikottext je Mannschaft, Haar und Gesicht aus dem Ausschnitt), Auflegen von Vorderseite, Hose, Armen und Kopf (Gesicht, Haare).
+
+## Versuch 12: Bild-KI-Vergleich über OpenRouter (6 Fälle × 6 Modelle)
+
+`tools/photo_ai_bench.py` (Schlüssel aus `.env`), Ergebnisse unter `data/work/ki-bench/` (nicht im Repo, Kinderbilder), Bilder je Fall: `ki-vergleich-*.png` in diesem Ordner.
+Prompt aus Fakten (Ansicht, Nummer, Trikotfarben, Schrift je Mannschaft), mit Hinweis, Pose und Drehung des Ausschnitts zu ignorieren und exakt von hinten/vorn/seitlich zu stehen.
+Urteil: Claude Sonnet 5.5 als Richter (urteilt sehr nachsichtig, kaum Unterschiede bei Foto und Fehlern). Kosten: von OpenRouter (`kosten.jsonl`).
+
+| Modell | USD/Bild | Nummer/Schrift richtig (von 6) | Bemerkung |
+|---|---|---|---|
+| meta/muse-image | 0,010 | 5/5, 5/5 | billigster; nach Prompt-Zusatz gerade; Gesichter und Hintergründe natürlich |
+| openai/gpt-image-2.5-flare | 0,010–0,054 (im Mittel 0,020) | 5/6, 5/6 | Kosten schwanken je Aufruf |
+| openai/gpt-image-2.5-sunburst | 0,010–0,054 (im Mittel 0,026) | 6/6, 6/6 | |
+| google/gemini-nano-banana-2.1 | 0,039 | 6/6, 6/6 | schnellster (11 s); bei own-5 geht die Figur statt zu stehen |
+| black-forest-labs/flux-3-image | 0,048 | 5/6, 6/6 | setzt bei opponent-7 eine falsche Nummer auf die Brust |
+| x-ai/grok-imagine-image-2.0 | 0,070 | 4/6, 4/6 | teuerster, öfter falsche Nummer/Schrift |
+| microsoft/mai-image-2.7 | – | – | Inhaltsmoderation blockiert (Kind im Eingabebild) |
+
+Wichtig: Bei kleinen Ausschnitten (own-5: 80 px hoch, opponent-7 Vorderansicht: 108 px) erfindet jedes Modell Gesicht, Haarfarbe und Hautton, und die Modelle erfinden verschiedene Personen. Trikotfarbe, Nummer und Schrift sind zuverlässig (stehen im Prompt), die Person nicht.
+
+## Was bleibt
+
+- **Behoben:** Die Nummer ist nicht mehr zu schmal. Das war der Filter, nicht die Haltung und nicht das Netz.
+- **Weiter unscharf:** Ein „6“ ist nur ein weißer Block mit dunklen Stellen. Der Spieler ist 85 bis 140 px hoch, die Nummer im Video etwa 8 × 12 px. Mehr Schärfe gibt es nur über mehrere Bilder, und die liegen durch die Rumpflage um ±3 Texel seitlich und ±5 Texel senkrecht auseinander (Versuche 1 bis 4).
+- **Pragmatische Lösung:** Schriftzug und Stoff aus dem Video, Nummer als saubere Schrift vom Viewer drucken (Nummer ist bekannt). Dafür muss `looks_clean.py` nur das Nummernfeld überdecken und nicht den ganzen Rücken.
+- **Nicht gelöst:** Unterarmflecken (Armhaltung); Rumpflage je Bild (Verwindung, nicht starr).
+- **Tauglich als Werkzeug:** `avatar_bake.py` und `avatar_mesh.py` sind jetzt da und können später auch für Arme und Beine genutzt werden (`--netz`), gleiche Textur-Koordinaten wie im Viewer.
+
+## Hinweis zum Prüfen
+
+Port 8765 wird gerade von einer anderen Sitzung belegt (`matchspace.worktrees/main-view/web`, ohne meine Änderungen an `web/avatar.js`/`web/looks.js`).
+Dort zeigt der Viewer bei Ansichten-Szenen zusätzlich die gedruckte Nummer. Für diesen Bericht läuft ein eigener Server: `cd web && python3 -m http.server 8777`,
+Vergleichsseite: `http://localhost:8777/data/vergleich.html?a=SZENE&b=SZENE`.
+
+## Versuch 13: Bild-KI-Anbindung (`tools/photo_ai.py`)
+
+Rangliste des Vergleichs (6 Fälle, Urteil des Sprachmodells + deine Sterne): 1. GPT Image 2.5 Sunburst (92,5; 5,0 Sterne), 2. Nano Banana 2.1 (90,0), 3. GPT Image 2.5 Flare (87,3), 4. Meta Muse (86,3; mit 0,010 USD je Bild am billigsten), 5. FLUX 3 (81,6), 6. Grok Imagine 2.0 (77,8; teuerste, Nummer/Schrift oft falsch).
+
+Die Anbindung nutzt Sunburst, Muse als Ersatz bei Ablehnung/Ausfall. Je Spieler und Ansicht wird zwischengespeichert (Prüfsumme aus Prompt und Ausschnitt): ein zweiter Lauf kostet nichts, geänderter Prompt erzeugt nur die betroffenen Bilder neu.
+
+Lauf auf der Nahszene (11 Spieler, hinten + vorn, 17 Bilder + 8 Wiederholungen der Vorderseite nach Promptänderung): 0,32 + 0,12 USD, im Mittel 0,019 USD je Bild (Sunburst schwankt zwischen 0,010 / 0,017 / 0,054 je Aufruf).
+Ergebnis: `ki-pipeline-uebersicht.png` (Rückseiten, Nummer und Schrift stimmen), `ki-pipeline-vorn.png` (Vorderseiten).
+Erste Vorderansichten erfanden Brustlogos und eine falsche Nummer auf der Brust (opponent-1001: hinten 42, vorn 14); seitdem sagt der Prompt, was vorn auf dem Trikot steht (`front` in teams.json, Standard: schlicht, kein Aufdruck).
+Konsistenz: Die Vorderansicht bekommt die fertige Rückansicht als zweites Bild (Haare, Hautton, Statur wie dort; `ki-pipeline-hinten-vorn.png`). Kosten dieses Durchlaufs 0,12 USD für 6 Vorderansichten (Ø 0,020).
+Offen: Das Gesicht bleibt ein plausibler Ersatz aus einem 40-px-Gesicht, keine Ähnlichkeit. Bei Spielern ohne bekannte Nummer (Kennung ab 1000) liest das Modell die Nummer aus dem Ausschnitt und druckt sie trotz Anweisung teils (own-1006: 7, own-1007: 9, opponent-1001: 42); das ist nicht geprüft und kann falsch sein. Die Nummer muss aus dem Kader oder einer Ziffernerkennung kommen. Die Rückenschrift in teams.json ist noch Test-Text.
+
+## Versuch 14: Rück- und Vorderansicht der Bild-KI auf den Avatar (`tools/looks_from_photo.py`)
+
+Statt Schrift-/Trikotmasken (funktionierten nur für grüne Trikots) legt die Pose (`yolo11x-pose`: Schultern, Hüften, Knie, Knöchel; dazu Scheitel aus der Personenmaske) das Avatar-Netz ins Foto: senkrecht stückweise linear, die Breite je Ebene aus dem Abstand der Gelenke links/rechts. Die KI-Ansichten stehen gerade, die Gelenke werden mit Sicherheit 1,0 gefunden. Rumpf, Kopf, Ober- und Unterschenkel lesen ihre Farbe im Foto (nur innerhalb der Personenmaske); der Blendwinkel wählt je Texel Rück- oder Vorderansicht (weich bis 75°, an den Seiten bleibt die Videotextur). Arme bleiben aus dem Video (Grundhaltung des Avatars ist eine T-Haltung).
+Stolpersteine: Die Personenmaske bricht bei `imgsz=1280` an den Shorts ab (Beine fehlten, Gewicht 0), bei 640 ist sie vollständig; Mannschaftsfarbe darf nicht in den Code (alte Fassung ging nur für Grün).
+Aufruf für alle Spieler eines KI-Ordners: `looks_from_photo.py SZENE NETZ.pkl --ki data/work/ki-ansichten --ausgabe web/data/veo-szene-nah-ki`.
+Ergebnis: `ki-viewer-vergleich.png` (Zeilen: Videotextur / KI-Textur; Spieler opponent-7 und own-1006 in sechs Drehwinkeln): Rückenschrift, Nummer, Haare und Gesicht scharf, Kragen und Beine ohne Videoverwaschung. Im Viewer: `spieler.html?match=veo-szene-nah-ki&player=own-5`.
+Grenzen: Arme (Unterarmflecken) unverändert; Füße/Schuhe aus dem Video; Naht Rumpf/Beine sichtbar möglich; Nummern von Spielern ohne Kader-Nummer sind KI-Lesungen.
+
+## Versuch 15: Ein Befehl je Szene (`tools/looks_ki.py`)
+
+`looks_ki.py VIDEO DET KAMERA HINTERGRUND SZENE NETZ.pkl TEAMS.json --arbeit ORDNER --ausgabe AUSGABESZENE [--trocken]` verbindet die drei Schritte: Ausschnitte wählen (`photo_candidates`), Bild-KI (`photo_ai`, mit Zwischenspeicher und Kostengrenze), Ansichten auf die Avatare (`looks_from_photo --ki`). `--trocken` wählt nur die Ausschnitte und nennt Bilderzahl und Kosten (hier: 17 Bilder, Ø 0,56 USD, Obergrenze 0,92 USD), ohne KI-Aufruf. Geprüft: Lauf aus dem Zwischenspeicher erzeugt dieselbe `looks.png` wie die Einzelschritte (byte-gleich), Kosten 0.
+
+## Versuch 16: Mannschaftsdaten selbst erkennen (`tools/team_detect.py`, `tools/team_text.py`)
+
+Veo liefert im Export nur Altersklasse und Farben (`ownColor`, `opponentColor`), keine Vereinsnamen. `team_detect.py` erkennt deshalb aus dem Video:
+- **Farben** (Trikot, Hose, Stutzen) aus der Videotextur nach Farbton/Sättigung benannt (Video macht Weiß bläulich und dunkel, der Farbton bleibt). Ergebnis: Gegner grün/weiß/weiß, wir rot/rot/rot.
+- **Lange schwarze Ärmel** aus den echten Ausschnitten (dunkler Anteil an den Rumpfseiten, Median über die Spieler), nicht aus der Textur (Unterarme dort durch die Armflecken verunreinigt).
+- **Rückenschrift:** `team_text.py` entzerrt die Rückenpartie aus vielen Bildern (`team-text-stapel.png`, Schultern/Hüfte aus der Haltung, ECC-Ausrichtung); ein Bildmodell liest nur, was zu sehen ist (`?` für Unleserliches). Ergebnis hier: Gegner „SV E…“ (Sicherheit 0,3–0,35), wir „?E??A“ (0,15–0,2): nicht lesbar (Schrift 3 px stark, nur 8 Rückenansichten, die Haltung ist je Bild leicht verdreht, das Mitteln wird unscharf). Übernommen wird der Text erst ab Sicherheit 0,7 und ohne `?`, sonst bleibt der Rücken ohne Schrift (`backTextRead` hält die Lesung fest).
+Die Test-Schrift („SV Eilendorf“, „SV Beispiel“) war frei erfunden und stimmte nicht mit dem echten Aufdruck („SV E…“) überein.
+
+Prompt-Korrektur: Bei unbekannter Nummer und ohne Schrift sagt der Prompt jetzt „Rücken völlig glatt, nichts drucken“; vorher druckte das Modell trotz „keine Nummer“ eine (8, 0, 9) und bei opponent-1001 sogar „SC Leipzig“. Ergebnis: `ki-ruecken-ohne-text.png`.
+`looks_ki.py` braucht keine `teams.json` mehr (ARBEIT/teams.json wird erkannt und lässt sich dort korrigieren).
+
+## Versuch 17: Rückenschrift aus mehr Bildern derselben Kamera (`team_text.py --szene` mehrfach)
+
+Frage: Wird die Schrift lesbar, wenn man mehr Beobachtungen derselben Kamera zusammenlegt? Alle vorhandenen Szenen (Nahszene, Panorama 705 und 722), je Mannschaft 67–79 entzerrte Rückenpartien aus 13–14 Spielern, gemeinsam ausgerichtet (Verschiebung, ECC) und gemittelt. Ergebnis (`team-text-alle-szenen.png`): nein.
+- Das Mittel ist unschärfer als die besten Einzelbilder (Pose und Perspektive je Bild verschieden, eine reine Verschiebung reicht zum Ausrichten nicht).
+- Das Bildmodell liest aus dem Stapel gar nichts (Sicherheit 0,05); aus den Einzelausschnitten der Nahszene kam „SV E…“ (0,3). Mehr Bilder bringen mit dieser Kamera keine neue Information: die Schrift ist 2–4 px hoch, die Grenze liegt in der Auflösung.
+- Die Panoramaszenen enthalten Spieler bis 115 px Höhe, aber ohne erkennbare Schrift.
+Folge: Mehr Auflösung (nahe Kamera, zweite Perspektive) ist der Hebel, nicht mehr Bilder. Ein Mittel aus mehreren Kameras kann erst nach echter Registrierung (Perspektive je Bild, nicht nur Verschiebung) helfen; bei der Verschiebung allein bleibt es unscharf.
+Stolperstein: Bei Panoramaszenen gehört das Video aus `det["video"]` (z. B. `data/work/.../scene_705.mp4`), nicht das ganze Panorama; sonst stimmen die Bildnummern nicht (Rasen statt Rücken).
+
+## Versuch 18: Veo-`standard`-Video als zweite Perspektive?
+
+Der Export (`export.json`, `videos[0].url`) enthält die öffentliche Adresse des `standard`-Videos (1920×1080, 30 fps, 3,4 GB, folgt der Aktion). Ein Ausschnitt von 25 s um die Nahszene (Sekunde 1470) lässt sich ohne Anmeldung direkt aus dem Stream schneiden (`ffmpeg -ss 1470 -i URL -t 25 -c copy`, 19 MB).
+Messung (jedes 15. Bild, Personen nach Trikotfarbe grün/rot gefiltert): Spieler im Median 67 px hoch, >100 px in 45 von 50 Bildern mindestens einer, >120 px in 26 von 50. Das entspricht unserer Nahszene aus dem Panorama (120–131 px), also keine bessere Auflösung. Für 3-px-Schrift reicht das nicht. Das `standard`-Video ist damit eine zweite, unabhängige Sicht (andere Winkel, andere Momente), aber kein Auflösungsgewinn.
+
+## Versuch 19: Arme aus den KI-Ansichten (`looks_from_photo.py`)
+
+Der Avatar steht in T-Haltung, die Arme im Foto hängen. Jeder Armknochen (Schulter–Ellbogen, Ellbogen–Handgelenk) wird in der Bildebene (Drehung um die Tiefenachse, die Vorderseite bleibt vorn) aus der T-Lage in die Richtung der Pose-Punkte gedreht und auf deren Länge skaliert (`project_arm`). Ergebnis: `ki-arme-vergleich.png`: kurzer Ärmel, schwarzer Unterärmel, Hände, statt der Armflecken aus dem Video.
+Was nötig war (Reihenfolge der Fehler):
+1. Farbkorrektur nicht aus der Videotextur des Arms: Sie ist selbst verunreinigt (Armflecken); mit ihr wurden Arme des Gegners grün. Auch die Kurve vom Rumpf (fast nur Rot/Grün) verfärbt Schwarz und Haut. Es gilt jetzt ein einziger Helligkeitsfaktor (Verhältnis Video/Foto am Rumpf).
+2. Blendwinkel bis 115° (Armseiten, die weder Vorder- noch Rückfoto frontal sieht, sind fast einfarbig).
+3. Dünne Arme: Rand der Maske weg, Randtexel lesen den nächsten Punkt im Ärmelinneren (`snap_inside`).
+4. Gelbgrüne Streifen am Arm: Die Personenmaske füllt die Lücke zwischen Arm und Körper, dort steht Rasen. Alles in Rasenfarbe (Lab-Abstand < 22 zum Median außerhalb der Person) zählt bei den Armen nicht zur Person.
+Offen: Füße/Schuhe aus dem Video; Seitenansichten nicht eingebunden.

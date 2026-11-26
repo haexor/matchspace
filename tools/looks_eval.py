@@ -11,7 +11,8 @@ Textur geschoben (dadurch zählt nur der Inhalt der Textur, nicht der Fehler der
 Aufruf (Bilder und Geometrie einmal einsammeln, dauert wie veo_looks.py einen Durchgang):
     .venv/bin/python tools/looks_eval.py sammeln SZENENVIDEO DETEKTIONEN.json KAMERA.json HINTERGRUND.png SZENENORDNER AUSGABE.pkl SPIELER...
 und messen (rechnet nur noch aus der gesammelten Datei):
-    .venv/bin/python tools/looks_eval.py messen AUSGABE.pkl [BILDORDNER]
+    .venv/bin/python tools/looks_eval.py messen AUSGABE.pkl [BILDORDNER] [--masken]
+(--masken: zusätzlich Personenmasken mit models/yolo11x-seg.pt rechnen und die Variante "mit Personenmaske" messen)
 """
 import pickle
 import sys
@@ -24,10 +25,8 @@ import numpy as np
 sys.path.insert(0, str(Path(__file__).parent))
 import veo_looks as vl  # noqa: E402
 
+CROP_PAD = 24                    # Pixel Umgebung um den Spieler im gesammelten Ausschnitt (die Nachbarn müssen im Bild sein, damit die Maske sie trennt)
 TEST_BLOCK, TEST_EVERY = 25, 5   # Bilder je Block, jeder wievielte Block ist Prüfmaterial
-MAX_ALIGN = 2.5                  # Pixel: so weit darf ein Körperteil im Bild auf die Textur geschoben werden
-MIN_ALIGN_TEXELS = 24            # weniger sichtbare Stellen: kein Schieben
-RIDGE = 0.02                     # Gewicht der Bremse gegen große Verschiebungen (Anteil der Spur)
 
 
 def is_test(f):
@@ -48,13 +47,13 @@ def collect(video, det_path, camera_path, background_path, scene_dir, out_path, 
     for f, image in vl.frames(sc):
         for o in vl.observe(sc, f, image, only=ids):
             uv = o["uv"]
-            pad = int(np.ceil(2 * MAX_ALIGN)) + 2  # combined body and segment shift, plus gradient and bilinear taps
+            pad = max(CROP_PAD, int(np.ceil(2 * vl.MAX_ALIGN)) + 2)  # Umgebung für die Maske; mindestens Körper- plus Teilverschiebung samt Gradient und bilinearem Zugriff
             x0, y0 = int(max(np.floor(uv[:, 0].min() - pad), 0)), int(max(np.floor(uv[:, 1].min() - pad), 0))
             x1, y1 = int(np.ceil(uv[:, 0].max() + pad)), int(np.ceil(uv[:, 1].max() + pad))
             lens = image[o["lens"] * H:(o["lens"] + 1) * H]
             crop = lens[y0:min(y1, H), x0:x1].copy()
             data[names[o["player"]]].append({
-                "f": f, "crop": crop, "uv": (uv - (x0, y0)).astype(np.float32), "cell": o["cell"].astype(np.uint16),
+                "f": f, "crop": crop, "uv": (uv - (x0, y0)).astype(np.float32), "uv_raw": (o["uv_raw"] - (x0, y0)).astype(np.float32), "cell": o["cell"].astype(np.uint16),
                 "weight": o["weight"].astype(np.float32), "facing": o["facing"].astype(np.float16), "dist": o["dist"].astype(np.float16)})
         if f % 100 == 0:
             print(f"  Bild {f} [{time.time() - began:.0f} s]", flush=True)
@@ -63,98 +62,179 @@ def collect(video, det_path, camera_path, background_path, scene_dir, out_path, 
     print(f"-> {out_path} ({sum(len(v) for v in data.values())} Ausschnitte), {time.time() - began:.0f} s")
 
 
-def gradient(crop, uv):
-    """Farbe (N, 3) und ihre Ableitung nach x und y (N, 3) an Bildpunkten uv eines Ausschnitts."""
-    c = vl.sample(crop, uv)
-    gx = (vl.sample(crop, uv + (0.5, 0)) - vl.sample(crop, uv - (0.5, 0)))
-    gy = (vl.sample(crop, uv + (0, 0.5)) - vl.sample(crop, uv - (0, 0.5)))
-    return c, gx, gy
-
-
-def solve_shift(res, gx, gy, w, ridge, prior=None):
-    """Verschiebung d (2,), die sum w * |res + d_x gx + d_y gy|² klein macht (res = Farbe - Bezug); Bremse zieht zu `prior`."""
-    prior = np.zeros(2) if prior is None else prior
-    a = np.array([[np.sum(w[:, None] * gx * gx), np.sum(w[:, None] * gx * gy)], [np.sum(w[:, None] * gx * gy), np.sum(w[:, None] * gy * gy)]])
-    b = -np.array([np.sum(w[:, None] * gx * res), np.sum(w[:, None] * gy * res)])
-    lam = ridge * np.trace(a) + 1e-6
-    d = np.linalg.solve(a + lam * np.eye(2), b + lam * prior)
-    return np.clip(d, -MAX_ALIGN, MAX_ALIGN)
-
-
-def align(obs, ref, ref_ok, index, segment, passes=2, ridge=RIDGE, whole=True):
-    """Verschiebung (Körper gesamt, dann je Körperteil darüber hinaus) eines Ausschnitts auf den Bezug `ref` (je Stelle der Kachel).
-    Gibt die Verschiebung je sichtbarer Stelle (N, 2) zurück."""
+def align(obs, ref, ref_ok, index, segment):
+    """Verschiebung (N, 2) eines Ausschnitts auf den Bezug `ref` (je Stelle der Kachel); Rechnung wie in veo_looks.align."""
     cell = obs["cell"].astype(int)
     texel = index[cell]
-    ok = ref_ok[texel]
-    shift = np.zeros((len(cell), 2))
-    wt = obs["weight"] * ok
-    if ok.sum() < MIN_ALIGN_TEXELS:
-        return shift
-    body = np.zeros(2)
-    seg = np.zeros((segment.max() + 1, 2))
-    for _ in range(passes):
-        for stage in ((0, 1) if whole else (1,)):
-            if stage == 0:
-                uv = obs["uv"] + body
-                c, gx, gy = gradient(obs["crop"], uv)
-                good = (np.linalg.norm(c - ref[texel], axis=1) < vl.OUTLIER) & ok
-                if good.sum() >= MIN_ALIGN_TEXELS:
-                    body = body + solve_shift(c[good] - ref[texel][good], gx[good], gy[good], wt[good], ridge)
-                    body = np.clip(body, -MAX_ALIGN, MAX_ALIGN)
-            else:
-                uv = obs["uv"] + body + seg[segment[cell]]
-                c, gx, gy = gradient(obs["crop"], uv)
-                good = (np.linalg.norm(c - ref[texel], axis=1) < vl.OUTLIER) & ok
-                for s in range(len(seg)):
-                    m = good & (segment[cell] == s)
-                    if m.sum() >= MIN_ALIGN_TEXELS:
-                        seg[s] = np.clip(seg[s] + solve_shift(c[m] - ref[texel][m], gx[m], gy[m], wt[m], ridge * 5), -MAX_ALIGN, MAX_ALIGN)
-    return body + seg[segment[cell]]
+    return vl.align(obs["crop"], obs["uv"], segment[cell], obs["weight"], ref[texel], ref_ok[texel])
 
 
-def build(observations, index, segment, aligned=None, rounds=2):
+def add_masks(observations):
+    """Personenmaske je Ausschnitt (o["mask"], bool, Größe des Ausschnitts; None ohne Treffer): veo_looks.person_masks auf den gesammelten Ausschnitten."""
+    model = vl.segmenter()
+    found = 0
+    for start in range(0, len(observations), 16):
+        group = observations[start:start + 16]
+        for o, m in zip(group, vl.person_masks(model, [o["crop"] for o in group], [o["uv"] for o in group])):
+            o["mask"] = m
+            found += m is not None
+    return found
+
+
+def quality(observations, ref=None):
+    """Güte je Beobachtung und Stelle: frontal gesehen und nah (Pixel je Meter), auf das 95-%-Quantil des Spielers bezogen (höchstens 1)."""
+    q = [o["facing"].astype(np.float32) / o["dist"].astype(np.float32) for o in observations]
+    ref = ref or float(np.quantile(np.concatenate(q), 0.95))
+    return [np.minimum(x / ref, 1.0) for x in q], ref
+
+
+def build(observations, index, segment, aligned=None, rounds=2, power=0.0, use_mask=False):
     """Textur (Kachel² × 3, Gewicht) aus Ausschnitten wie in veo_looks.main: Mittel mit Gewichten, im zweiten Durchgang ohne Ausreißer.
     `aligned`: Verschiebungen je Ausschnitt (Liste von (N, 2)), sonst keine."""
     size = vl.TILE * vl.TILE
     mean = None
+    qs, _ = quality(observations)
     for rnd in range(rounds):
-        sums, wsum = np.zeros((size, 3)), np.zeros(size)
+        sums, wq, wsum = np.zeros((size, 3)), np.zeros(size), np.zeros(size)
         for k, o in enumerate(observations):
             uv = o["uv"] + (aligned[k] if aligned is not None else 0)
             colour = vl.sample(o["crop"], uv)
             texel = index[o["cell"].astype(int)]
-            w = o["weight"].astype(np.float64)
+            w0 = o["weight"].astype(np.float64)
+            if use_mask and o.get("mask") is not None:
+                mh, mw = o["mask"].shape
+                inside = o["mask"][np.clip(np.round(uv[:, 1] - 0.5).astype(int), 0, mh - 1), np.clip(np.round(uv[:, 0] - 0.5).astype(int), 0, mw - 1)]
+                w0 = w0 * inside
             if rnd > 0:
-                w = w * (np.linalg.norm(colour - mean[texel], axis=1) < vl.OUTLIER)
+                w0 = w0 * (np.linalg.norm(colour - mean[texel], axis=1) < vl.OUTLIER)
+            w = w0 * qs[k].astype(np.float64) ** power   # Güte: nahe, frontale Bilder zählen mehr ("power" = Schärfe vor Rauschen)
             for ch in range(3):
                 sums[:, ch] += np.bincount(texel, w * colour[:, ch], minlength=size)
-            wsum += np.bincount(texel, w, minlength=size)
-        mean = sums / np.maximum(wsum, 1e-9)[:, None]
+            wq += np.bincount(texel, w, minlength=size)
+            wsum += np.bincount(texel, w0, minlength=size)   # "gesehen" bleibt unabhängig von der Güte
+        mean = sums / np.maximum(wq, 1e-9)[:, None]
     return mean, wsum
 
 
-def refined(observations, index, segment, steps=3, ridge=RIDGE):
-    """Textur mit dichter Ausrichtung: erst Mittel ohne Verschiebung, dann in `steps` Runden jeden Ausschnitt auf das bisherige Mittel
-    schieben und neu mitteln."""
-    tex, wt = build(observations, index, segment)
-    for _ in range(steps):
-        sh = [align(o, tex, wt >= vl.ENOUGH, index, segment, ridge=ridge) for o in observations]
-        tex, wt = build(observations, index, segment, aligned=sh)
+def build_best(observations, index, segment, k=6, aligned=None, use_mask=False):
+    """Textur aus den `k` besten Beobachtungen je Stelle statt aus allen: Güte = frontal und nah (Pixel je Meter). Ein Mittel über Hunderte Bilder, in denen
+    das Modell leicht verschieden sitzt, verwischt; die wenigen besten Bilder tun es kaum. Ausreißer (Fremdfarben) fallen vorher gegen das
+    gewöhnliche Mittel weg. Rückgabe wie build: (Textur, Gewicht der gesehenen Stellen)."""
+    size = vl.TILE * vl.TILE
+    ref, wt = build(observations, index, segment, aligned=aligned, use_mask=use_mask)
+    qs, _ = quality(observations)
+    texel_l, q_l, col_l, w_l = [], [], [], []
+    for j, o in enumerate(observations):
+        uv = o["uv"] + (aligned[j] if aligned is not None else 0)
+        colour = vl.sample(o["crop"], uv)
+        t = index[o["cell"].astype(int)]
+        w = o["weight"].astype(np.float64) * (np.linalg.norm(colour - ref[t], axis=1) < vl.OUTLIER)
+        if use_mask and o.get("mask") is not None:
+            mh, mw = o["mask"].shape
+            w = w * o["mask"][np.clip(np.round(uv[:, 1] - 0.5).astype(int), 0, mh - 1), np.clip(np.round(uv[:, 0] - 0.5).astype(int), 0, mw - 1)]
+        keep = w > 0
+        texel_l.append(t[keep]); q_l.append(qs[j][keep]); col_l.append(colour[keep]); w_l.append(w[keep])
+    texel, q, colour, w = (np.concatenate(x) for x in (texel_l, q_l, col_l, w_l))
+    order = np.lexsort((-q, texel))
+    texel, colour, w = texel[order], colour[order], w[order]
+    first = np.r_[True, texel[1:] != texel[:-1]]
+    start = np.flatnonzero(first)
+    rank = np.arange(len(texel)) - np.repeat(start, np.diff(np.r_[start, len(texel)]))
+    top = rank < k
+    sums, wsum = np.zeros((size, 3)), np.bincount(texel[top], w[top], minlength=size)
+    for ch in range(3):
+        sums[:, ch] = np.bincount(texel[top], w[top] * colour[top][:, ch], minlength=size)
+    tex = np.where(wsum[:, None] > 0, sums / np.maximum(wsum, 1e-9)[:, None], ref)
     return tex, wt
 
 
-def error(tex, coverage, observations, index, segment, aligned):
+def tile_geometry():
+    """Je Texel der Kachel: Nummer des Körperteils (-1 = unbenutzt) und Winkelanteil um dessen Achse (0 bis 1; 0,5 = vorn, wie in veo_looks)."""
+    part = np.full(vl.TILE * vl.TILE, -1)
+    frac = np.zeros(vl.TILE * vl.TILE)
+    for s, (_, (x, y, w, h), _, _) in enumerate(vl.SEGMENTS):
+        rows, cols = np.meshgrid(np.arange(h), np.arange(w), indexing="ij")
+        at = ((y + rows) * vl.TILE + x + cols).ravel()
+        part[at], frac[at] = s, ((cols + 0.5) / w).ravel()
+    return part, frac
+
+
+def build_views(observations, index, segment, sectors=4, depth=3, use_mask=False, outlier=vl.OUTLIER):
+    """Textur aus zusammenhängenden Bildern je Ansicht: Das gemittelte Bild ist unschärfer als jedes einzelne Bild, weil dasselbe Texel in verschiedenen
+    Bildern leicht verschiedene echte Stellen trifft (Rumpfdrehung, Stoff, Modellfehler); ein einzelnes Bild verzerrt dagegen glatt und bleibt scharf.
+    Je Körperteil und Ansicht (`sectors` gleich große Winkelbereiche, weich überblendet) liefert deshalb das Bild mit der besten Güte (nah, frontal,
+    viele Stellen) alle seine Texel; fehlt dort eines, kommt es vom nächstbesten (bis `depth` Bilder). Ausreißer gegen das gewöhnliche Mittel fallen weg.
+    Rückgabe wie build: (Textur, Gewicht der gesehenen Stellen)."""
+    size = vl.TILE * vl.TILE
+    ref, wt = build(observations, index, segment, use_mask=use_mask)
+    qs, _ = quality(observations)
+    part, frac = tile_geometry()
+    centre = 0.5 + np.arange(sectors) / sectors
+    dist = np.abs((frac[None, :] - centre[:, None] + 0.5) % 1.0 - 0.5)
+    weight = np.where(dist < 1.0 / sectors, np.cos(np.pi * dist * sectors / 2) ** 2, 0.0)   # (Ansicht, Texel): Überblendung, Summe über Ansichten = 1
+    groups = len(vl.SEGMENTS) * sectors
+    data, score = [], np.zeros((groups, len(observations)))
+    for j, o in enumerate(observations):
+        t = index[o["cell"].astype(int)]
+        colour = vl.sample(o["crop"], o["uv"])
+        v = o["weight"].astype(np.float64) * (np.linalg.norm(colour - ref[t], axis=1) < outlier)
+        if use_mask and o.get("mask") is not None:
+            mh, mw = o["mask"].shape
+            v = v * o["mask"][np.clip(np.round(o["uv"][:, 1] - 0.5).astype(int), 0, mh - 1), np.clip(np.round(o["uv"][:, 0] - 0.5).astype(int), 0, mw - 1)]
+        data.append((t, colour, v))
+        for k in range(sectors):
+            score[:, j] += np.bincount(part[t] * sectors + k, weight[k, t] * v * qs[j], minlength=groups)
+    field = np.zeros((sectors, size, 3))
+    have = np.zeros((sectors, size), bool)
+    for g in range(groups):
+        s, k = divmod(g, sectors)
+        for j in np.argsort(-score[g])[:depth]:
+            if score[g, j] <= 0:
+                break
+            t, colour, v = data[j]
+            take = (part[t] == s) & (weight[k, t] > 0) & (v > 0) & ~have[k, t]
+            field[k, t[take]] = colour[take]
+            have[k, t[take]] = True
+    mix = weight * have
+    total = mix.sum(axis=0)
+    tex = np.where(total[:, None] > 0, np.einsum("kt,ktc->tc", mix, field) / np.maximum(total, 1e-9)[:, None], ref)
+    return tex, wt
+
+
+def aligned_best(observations, index, segment, k):
+    """Beste `k` Beobachtungen je Stelle, nachdem jeder Ausschnitt auf das gewöhnliche Mittel ausgerichtet wurde (dreimal, wie refined)."""
+    tex, wt = build(observations, index, segment)
+    for _ in range(2):
+        sh = [align(o, tex, wt >= vl.ENOUGH, index, segment) for o in observations]
+        tex, wt = build(observations, index, segment, aligned=sh)
+    sh = [align(o, tex, wt >= vl.ENOUGH, index, segment) for o in observations]
+    return build_best(observations, index, segment, k, aligned=sh)
+
+
+def refined(observations, index, segment, steps=3, power=0.0):
+    """Textur mit dichter Ausrichtung: erst Mittel ohne Verschiebung, dann in `steps` Runden jeden Ausschnitt auf das bisherige Mittel
+    schieben und neu mitteln."""
+    tex, wt = build(observations, index, segment, power=power)
+    for _ in range(steps):
+        sh = [align(o, tex, wt >= vl.ENOUGH, index, segment) for o in observations]
+        tex, wt = build(observations, index, segment, aligned=sh, power=power)
+    return tex, wt
+
+
+def error(tex, coverage, observations, index, segment, aligned, sharp_test=False):
     """Mittlere absolute Farbabweichung (über Kanäle und Stellen, gewichtet) der Prüfbilder zur Textur, getrennt nach Körperteilgruppe."""
     groups = {"Rumpf": ("torso",), "Kopf": ("head",), "Arme": ("upperarm", "lowerarm"), "Beine": ("thigh", "calf")}
     names = np.array([s.split("_")[0] for s in SEG_NAMES])
     sums = {g: [0.0, 0.0] for g in groups}
+    qs, _ = quality(observations)
     for k, o in enumerate(observations):
         cell = o["cell"].astype(int)
         texel = index[cell]
         uv = o["uv"] + (aligned[k] if aligned is not None else 0)
         colour = vl.sample(o["crop"], uv)
         w = o["weight"] * coverage[texel] * (o["facing"].astype(float) > 0.5)
+        if sharp_test:
+            w = w * qs[k].astype(float) ** 6   # nur die schärfsten Prüfbilder (nah und frontal) zählen
         d = np.abs(colour - tex[texel]).mean(axis=1)
         d = np.minimum(d, vl.OUTLIER)
         for g, parts in groups.items():
@@ -177,12 +257,24 @@ def sharpness(tex, wt, segment_name="torso"):
 SEG_NAMES = [s[0] for s in vl.SEGMENTS]
 
 
-def measure(pkl_path, image_dir=None):
+def measure(pkl_path, image_dir=None, masken=False):
     pack = pickle.load(open(pkl_path, "rb"))
     index, segment = pack["index"], pack["segment"]
+    if masken:
+        for pid, obs in pack["data"].items():
+            print(f"Masken {pid}: {add_masks(obs)} von {len(obs)}", flush=True)
     variants = {"Mittel (bisher)": lambda tr: build(tr, index, segment),
-                "ausgerichtet, 3 Runden": lambda tr: refined(tr, index, segment, 3),
-                "ausgerichtet, 3 Runden, streng": lambda tr: refined(tr, index, segment, 3, ridge=0.1)}
+                "mit Personenmaske": lambda tr: build(tr, index, segment, use_mask=True),
+                "Güte hoch 2": lambda tr: build(tr, index, segment, power=2),
+                "Güte hoch 4": lambda tr: build(tr, index, segment, power=4),
+                "Güte hoch 8": lambda tr: build(tr, index, segment, power=8),
+                "Ansichten: je 3 Bilder": lambda tr: build_views(tr, index, segment, 4, 3),
+                "Ansichten: je 1 Bild": lambda tr: build_views(tr, index, segment, 4, 1),
+                "beste 12 je Stelle": lambda tr: build_best(tr, index, segment, 12),
+                "beste 6 je Stelle": lambda tr: build_best(tr, index, segment, 6),
+                "beste 3 je Stelle": lambda tr: build_best(tr, index, segment, 3),
+                "ausgerichtet + beste 6": lambda tr: aligned_best(tr, index, segment, 6),
+                "ausgerichtet + Güte hoch 4": lambda tr: refined(tr, index, segment, 3, power=4)}
     rows = {v: [] for v in variants}
     for pid, obs in pack["data"].items():
         train = [o for o in obs if not is_test(o["f"])]
@@ -200,18 +292,17 @@ def measure(pkl_path, image_dir=None):
         shared_coverage = np.logical_and.reduce(list(variant_coverage.values()))
         shared_ratio = float(shared_coverage[used].mean()) if len(used) else 0.0
         print(f"  gemeinsame Abdeckung: {shared_ratio:.1%} der {len(used)} verwendeten Texel", flush=True)
+        fmt = lambda d: " ".join(f"{g} {v:5.2f}" if v is not None else f"{g}   n/a" for g, v in d.items())  # noqa: E731
         for name, (tex, wt) in textures.items():
             began = time.time()
-            nominal = error(tex, shared_coverage, test, index, segment, None)
             sh = [align(o, tex, wt >= vl.ENOUGH, index, segment) for o in test]
-            lined = error(tex, shared_coverage, test, index, segment, sh)
+            nominal = error(tex, shared_coverage, test, index, segment, sh)                      # alle Prüfbilder
+            lined = error(tex, shared_coverage, test, index, segment, sh, sharp_test=True)        # nur die schärfsten
             sharp = sharpness(tex, wt)
             rows[name].append((nominal, lined, sharp))
             coverage_ratio = float(variant_coverage[name][used].mean()) if len(used) else 0.0
-            print(f"  {name:34s} Abdeckung {coverage_ratio:5.1%} | Schärfe {sharp:5.1f} | unausgerichtet " +
-                  " ".join(f"{g} {v:5.2f}" if v is not None else f"{g}   n/a" for g, v in nominal.items()) +
-                  " | ausgerichtet " + " ".join(f"{g} {v:5.2f}" if v is not None else f"{g}   n/a" for g, v in lined.items()) +
-                  f"  [{time.time() - began:.0f} s]", flush=True)
+            print(f"  {name:34s} Abdeckung {coverage_ratio:5.1%} | Schärfe {sharp:5.1f} | alle Prüfbilder {fmt(nominal)}"
+                  f" | scharfe Prüfbilder {fmt(lined)}  [{time.time() - began:.0f} s]", flush=True)
         if image_dir:
             Path(image_dir).mkdir(parents=True, exist_ok=True)
             seg_rect = [s[1] for s in vl.SEGMENTS if s[0] in ("torso", "head")]
@@ -228,15 +319,15 @@ def measure(pkl_path, image_dir=None):
         lin = {g: [v[1][g] for v in vals if v[1][g] is not None] for g in vals[0][1]}
         nom = {g: float(np.mean(v)) if v else None for g, v in nom.items()}
         lin = {g: float(np.mean(v)) if v else None for g, v in lin.items()}
-        print(f"  {name:34s} Schärfe {np.mean([v[2] for v in vals]):5.1f} | unausgerichtet " +
-              " ".join(f"{g} {v:5.2f}" if v is not None else f"{g}   n/a" for g, v in nom.items()) +
-              " | ausgerichtet " + " ".join(f"{g} {v:5.2f}" if v is not None else f"{g}   n/a" for g, v in lin.items()))
+        fmt = lambda d: " ".join(f"{g} {v:5.2f}" if v is not None else f"{g}   n/a" for g, v in d.items())  # noqa: E731
+        print(f"  {name:34s} Schärfe {np.mean([v[2] for v in vals]):5.1f} | alle Prüfbilder {fmt(nom)} | scharfe Prüfbilder {fmt(lin)}")
 
 
 if __name__ == "__main__":
-    if len(sys.argv) >= 9 and sys.argv[1] == "sammeln":
-        collect(*sys.argv[2:8], sys.argv[8:])
-    elif len(sys.argv) in (3, 4) and sys.argv[1] == "messen":
-        measure(*sys.argv[2:])
+    args = [a for a in sys.argv if a != "--masken"]
+    if len(args) >= 9 and args[1] == "sammeln":
+        collect(*args[2:8], args[8:])
+    elif len(args) in (3, 4) and args[1] == "messen":
+        measure(*args[2:], masken="--masken" in sys.argv)
     else:
         sys.exit(__doc__)

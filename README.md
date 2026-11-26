@@ -103,6 +103,11 @@ python3 tools/convert_veo.py $V/export.json web/data/veo-2026-11-01 $W/veo_align
 # 8. Videotextur aufbereiten (Nummernfleck weg, Schuhfarbe, vierfach größer) und das Original unter die Szene legen:
 #    .venv/bin/python tools/looks_clean.py web/data/veo-szene-705-eigen
 #    .venv/bin/python tools/scene_reference.py web/data/veo-szene-705-eigen $W/camera.json $W/scene_705.mp4
+# 9. Scharfe Rück- und Vorderansichten je Spieler mit einer Bild-KI (OpenRouter, bezahlt; Schlüssel OPENROUTER_API_KEY in .env, siehe .env.example).
+#    --trocken wählt nur die Ausschnitte und nennt die Kosten; ohne --trocken wird erzeugt (Zwischenspeicher, Kostengrenze --max-kosten).
+#    Netz: tools/avatar_bake.py (einmalig, Viewer mit ?bake=1). Ergebnis: neue Szene, Einzelansicht http://localhost:8765/spieler.html?match=NAME&player=own-6
+#    .venv/bin/python tools/looks_ki.py $W/scene_705.mp4 $W/scene_705.det.json $W/camera.json $W/background.png web/data/veo-szene-705-eigen \
+#        data/work/mesh.pkl --arbeit data/work/ki-705 --ausgabe web/data/veo-szene-705-ki [--trocken]
 ```
 
 **Körpermodell einrichten (einmalig).** SAM 3D Body (Meta, SAM License; Gewichte `facebook/sam-3d-body-dinov3` bei Hugging Face nach
@@ -292,6 +297,12 @@ seinen eigenen Browser (`playwright install chromium`) und die Grafik des Rechne
   mit 128 × 128 Texeln je Spieler) und `looks` in `meta.json`. Grob, weil die Spieler im Video nur 50 bis 120
   Pixel hoch sind: Gesichter und Rückennummern sind in der Textur nicht zu erkennen (die gelesene Nummer druckt der Viewer auf),
   das Licht des Spieltags steckt in den Farben.
+- Bild-KI-Ansichten (`looks_ki.py`, Ablauf siehe Schritt 9 oben; Bericht mit Versuchen und Bildvergleich der Modelle in
+  `docs/textur-ausrichtung/README.md`): `photo_candidates.py` wählt je Spieler die besten Videobilder (Rücken, Brust, Seiten),
+  `team_detect.py` erkennt Mannschaftsfarben und lange Ärmel selbst (die Rückenschrift nur, wenn sie sicher lesbar ist, sonst bleibt der Rücken glatt),
+  `photo_ai.py` lässt eine Bild-KI (Standard GPT Image 2.5 über OpenRouter, Meta Muse als Ersatz; Vergleich in `photo_ai_bench.py`) aus Ausschnitt,
+  Farben und Nummer eine gerade Ansicht erzeugen (Vorderansicht bekommt die Rückansicht als Referenz), `looks_from_photo.py` legt die Ansichten über die Gelenkpunkte
+  auf Rumpf, Kopf, Beine und Arme des Avatars. Das Gesicht ist ein plausibler Ersatz, keine Ähnlichkeit. Die Bilder gehen an einen Dienst Dritter (Jugendspieler): bewusst entscheiden.
 - Zwischenergebnisse liegen neben den Erkennungen: `*.det.json.keypoints.npz` (Gelenkpunkte je Box),
   `*.det.json.virtual.npz` (Suche nach Spielern ohne Box) und `*.det.json.players.npz` (Gelenkpunkte,
   Körperhöhe und Liegen je Spieler, für `veo_looks.py`). Sie bleiben lokal bei den Rohdaten.

@@ -9,3 +9,9 @@ graphify-out/
 __pycache__/
 .spaex/manifest.json.lock
 .spaex/composer.log
+
+# Zugangsdaten und Schlüssel nie einchecken
+.env
+
+# lokale Umgebung (direnv/nix)
+.direnv/

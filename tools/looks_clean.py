@@ -113,7 +113,7 @@ def clean_boots(atlas, tile, columns, segments, count):
     return changed
 
 
-def main(scene_dir, factor):
+def main(scene_dir, factor, keep_print=False):
     scene_dir = Path(scene_dir)
     meta = json.loads((scene_dir / "meta.json").read_text())
     looks = meta.get("looks")
@@ -130,7 +130,7 @@ def main(scene_dir, factor):
     entities = {e["id"]: e for e in meta["entities"]}
     erased = []
     for pid, k in looks["players"].items():
-        if entities.get(pid, {}).get("number") is None:
+        if keep_print or entities.get(pid, {}).get("number") is None:
             continue
         r, c = divmod(k, columns)
         lo = atlas[r * tile + ty: r * tile + ty + th, c * tile + tx: c * tile + tx + tw]
@@ -143,7 +143,7 @@ def main(scene_dir, factor):
     looks["tile"] = tile * factor
     for s in segments:
         s["rect"] = [v * factor for v in s["rect"]]
-    looks["cleaned"] = {"factor": factor, "numberBlobErased": erased, "boots": boots}
+    looks["cleaned"] = {"factor": factor, "numberBlobErased": erased, "boots": boots, "printKept": keep_print}
     (scene_dir / "meta.json").write_text(json.dumps(meta, ensure_ascii=False, indent=1))
     print(f"Atlas {atlas.shape[1]}x{atlas.shape[0]} -> {big.shape[1]}x{big.shape[0]}; Schuhkacheln neu gemalt: {boots}; Nummernfleck entfernt: {', '.join(erased) or 'keiner'}")
 
@@ -152,5 +152,8 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("scene")
     ap.add_argument("--faktor", type=int, default=4)
+    ap.add_argument("--aufdruck-behalten", action="store_true",
+                    help="Rückenaufdruck (Nummer, Schriftzug) nicht überdecken: für scharfe Ansichtentexturen (veo_looks.py --ansichten), in denen er lesbar ist; "
+                         "der Viewer druckt dann keine eigene Nummer (meta.looks.cleaned.printKept)")
     a = ap.parse_args()
-    main(a.scene, a.faktor)
+    main(a.scene, a.faktor, a.aufdruck_behalten)

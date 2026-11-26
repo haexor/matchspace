@@ -27,7 +27,7 @@ export function createLooks(meta, base) {
     const k = LOOKS?.players?.[entity.id] ?? (entity.role === 'goalkeeper' ? undefined : LOOKS?.teams?.[entity.team]);
     if (k === undefined || !lookAtlas) return null;
     const tile = [(k % LOOKS.columns) * LOOKS.tile, Math.floor(k / LOOKS.columns) * LOOKS.tile];
-    return { map: lookAtlas, tile, size: [lookAtlas.image.width, lookAtlas.image.height],
+    return { printKept: Boolean(LOOKS.cleaned?.printKept), map: lookAtlas, tile, size: [lookAtlas.image.width, lookAtlas.image.height],
       rects: LOOKS.segments.map((s) => new THREE.Vector4(...s.rect)), ranges: LOOKS.segments.map((s) => new THREE.Vector2(...s.t)) };
   }
   /** Mittlere Farbe des Oberkopfs (oberstes Zehntel des Kopfbereichs) in der Kachel: Haarfarbe für die Augenbrauen. */
