@@ -44,7 +44,8 @@ export function createBallTrail({ scene, sample, ballIndex, fps, enabled = true 
     let run = true;      // zusammenhängend bekannt ab dem Ball: ab der ersten Lücke reißt die Spur ab
     known[0] = true;
     for (let i = 1; i <= SEGMENTS; i++) {
-      run = run && sample(ballIndex, t - (i / SEGMENTS) * span, pts[i]);
+      const at = t - (i / SEGMENTS) * span;
+      run = run && at >= 0 && sample(ballIndex, at, pts[i]);
       known[i] = run;
       if (!run) pts[i].copy(pts[i - 1]);
     }
