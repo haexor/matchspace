@@ -446,6 +446,36 @@ class RawRescueTest(_AirTruth):
         out, _ = bm.bridge(xy, z, self.FPS, None, raw)
         self.assertTrue(np.isnan(out[50:88, 0]).all())
 
+    def scene_short(self, raw_frames):
+        """Wie scene, aber die nächste gesehene Lage schon bei 3,2 s (nach der letzten Erkennung bei 2,64 s bleiben 0,56 s)."""
+        land = self.truth(1.83)[:2]
+        xy, z = self.build(range(0, 13), roll_to={f: land + [6.0, 0.0] for f in range(80, 90)})
+        raw = np.full((self.N, 2), np.nan)
+        for f in raw_frames:
+            raw[f] = land + [2.0 * (f / self.FPS - 1.83), 0.0]
+        return xy, z, raw, land
+
+    def test_after_the_last_detection_a_short_gap_is_joined_straight(self):
+        xy, z, raw, _ = self.scene_short(range(56, 67))
+        out, _ = bm.bridge(xy, z, self.FPS, np.full((self.N, 1, 2), 50.0), raw)       # kein Spieler in der Nähe
+        self.assertFalse(np.isnan(out[56:80, 0]).any())
+
+    def test_a_player_at_the_last_detection_keeps_the_rest_unknown(self):
+        xy, z, raw, _ = self.scene_short(range(56, 67))
+        players = np.full((self.N, 1, 2), 50.0)
+        players[60:80, 0] = raw[66] + [0.3, 0.0]                                       # steht am Ball, als er zuletzt zu sehen ist
+        out, _ = bm.bridge(xy, z, self.FPS, players, raw)
+        self.assertFalse(np.isnan(out[56:67, 0]).any())
+        self.assertTrue(np.isnan(out[68:79, 0]).all())
+
+    def test_a_gap_in_the_players_track_uses_his_nearest_known_place(self):
+        xy, z, raw, _ = self.scene_short(range(56, 67))
+        players = np.full((self.N, 1, 2), 50.0)
+        players[55:60, 0] = raw[66] + [0.3, 0.0]                                       # nur bis 2,4 s bekannt, am letzten Ball (2,64 s) fehlt er
+        players[60:80, 0] = np.nan
+        out, _ = bm.bridge(xy, z, self.FPS, players, raw)
+        self.assertTrue(np.isnan(out[68:79, 0]).all())
+
 
 if __name__ == "__main__":
     unittest.main()
