@@ -257,7 +257,7 @@ export async function loadAvatars(url) {
 
   /**
    * kit: { shirt, shorts, socks } als THREE.Color, optional skin und hair; number: Rückennummer oder null; seed: wählt die Frisur
-   * (und ohne Videotextur die Haarfarbe). look: Videotextur des Spielers { map, tile: [x, y], size: [Breite, Höhe], rects, ranges } oder null.
+   * (und ohne Videotextur die Haarfarbe). look: Videotextur des Spielers { map, tile: [x, y], size: [Breite, Höhe], rects, ranges, photo } oder null (photo: Gesicht aus Fotos, trägt Augen und Brauen selbst).
    */
   function create(kit, number, seed = number ?? 0, look = null) {
     const root = new THREE.Group();
@@ -275,8 +275,10 @@ export async function loadAvatars(url) {
       } else if (o.name.startsWith('Eyebrows')) {
         o.material = hairMaterial(hairColour.clone().lerp(kit.skin ?? SKIN, 0.45));   // heller als das Haar, sonst wirkt der Blick finster
         o.castShadow = false;
+        o.visible = !look?.photo;      // Gesicht aus Fotos: Brauen und Augen sind schon in der Textur, die des Modells gäben vier Augen
       } else if (o.name.startsWith('Eyes')) {
         o.castShadow = false;
+        o.visible = !look?.photo;
       } else {
         o.material = bodyMaterial(kit, look?.printKept ? null : (number ?? null), look);   // die Videotextur trägt den echten Aufdruck: keine zweite Nummer darüber
       }
