@@ -9,14 +9,79 @@ from pathlib import Path
 import numpy as np
 
 sys.path.insert(0, str(Path(__file__).parent))
+import ball_carry  # noqa: E402
+import ball_motion  # noqa: E402
 import check_motion  # noqa: E402
+import scene_quality  # noqa: E402
 from own_scene import BALL_REACH, attach_ball  # noqa: E402
 from scene_poses import CHUNK_FRAMES, MISSING, POSE_SCALE, SEEN_SHARE  # noqa: E402
 from scene_positions import OUT_FPS  # noqa: E402
 from synth_poses import BONES, JOINTS, NAMES  # noqa: E402
 
 
+RELEASE_FRAMES = 3   # Bilder vor dem Ende eines Laufs in der Hand: dort zählt ein Kontakt noch als Abwurf
+THROW_REACH = 2.5  # m: so nah muss der Werfer am Ball stehen
+CONTACT_REACH = 1.5  # m: so nah muss der Spieler bei einem Kontakt am Ball stehen (Hüfte zum Ball)
 CONTACT_PULL = 3   # Bilder vor und nach einem Kontakt, in denen der Ball an den Fuß gezogen wird
+
+
+def nearest_player(xy: np.ndarray, entities: list, ball: int, frame: int, reach: float):
+    """Kennung des Spielers (kein Ball, kein Schiedsrichter), der dem Ball im Bild am nächsten steht, höchstens `reach` m; sonst None."""
+    pos = xy[frame, ball]
+    if np.isnan(pos).any():
+        return None
+    dist = np.linalg.norm(xy[frame] - pos, axis=1)
+    for i, e in enumerate(entities):
+        if i == ball or e["kind"] != "player":
+            dist[i] = np.inf
+    dist = np.where(np.isnan(dist), np.inf, dist)
+    k = int(np.argmin(dist))
+    return entities[k]["id"] if dist[k] <= reach else None
+
+
+def ball_events(det_path, xy: np.ndarray, entities: list, ball: int, fps: float = OUT_FPS, held: list | None = None) -> dict:
+    """Ereignisse und Flugbahnen aus {det}.outlook.json (tools/ball_outlook.py) für meta.json, Zeiten als Bilder der Ausgabe. Beim Einwurf ist
+    der Werfer der Spieler, der dem Ball im Abwurfbild am nächsten steht (höchstens THROW_REACH m). Ohne die Datei: leer.
+    held: Läufe, in denen ein Spieler den Ball in der Hand hält (carry_ball); Kontakte mitten darin sind Bewegungen der Hände, keine Ballkontakte (der Abwurf am Ende bleibt)."""
+    path = Path(f"{det_path}.outlook.json")
+    if not path.exists():
+        return {}
+    data = json.loads(path.read_text())
+    total = len(xy)
+    events = []
+    for e in data["events"]:
+        frame = min(total - 1, int(round(e["time"] * fps)))
+        events.append({"kind": e["kind"], "frame": frame, "player": nearest_player(xy, entities, ball, frame, THROW_REACH), "pos": e["pos"], "height": e["height"]})
+    contacts = []
+    for c in data.get("contacts", []):
+        frame = min(total - 1, int(round(c["time"] * fps)))
+        if any(h["fromFrame"] <= frame < h["toFrame"] - RELEASE_FRAMES for h in held or []):
+            continue
+        contacts.append({"frame": frame, "kind": c["kind"], "speedIn": c["speed_in"], "speedOut": c["speed_out"], "confidence": c["confidence"],
+                         "player": nearest_player(xy, entities, ball, frame, CONTACT_REACH)})
+    flights = [{"fromFrame": int(round(f["t_start"] * fps)), "toFrame": int(round(f["t_end"] * fps)), "apex": f["apex"], "speed": f["speed"],
+                "reliable": f["reliable"], "continuation": f["continuation"]} for f in data["flights"]]
+    return {"events": events, "ballContacts": contacts, "ballFlights": flights, "ballOutlookNote": data["note"]}
+
+
+def carry_ball(run, game, result) -> list:
+    """Ball in den Händen (tools/ball_carry.py): Wo der Sehstrahl des erkannten Balls durch die Hände eines Spielers geht, folgt der Ball seinen Händen.
+    Schreibt in game.xy und game.ball_track.z; Rückgabe: Läufe als [{fromFrame, toFrame, player}]."""
+    ball, track, total = game.ball, game.ball_track, game.total
+    path = Path(f"{run.det_path}.ball.npz")
+    if ball is None or track is None or not result.hands or not path.exists():
+        return []
+    pix = np.load(path)["pixel"]
+    origin, direction, _ = ball_motion.observations(run.cam, pix)
+    vf = np.minimum(np.round(np.arange(total) * game.ratio).astype(int), len(pix) - 1)
+    names = sorted(result.hands)
+    hands = np.stack([result.hands[n] for n in names])
+    unknown = np.isnan(game.xy[:, ball, 0])
+    found, xyz = ball_carry.carry(origin[vf], direction[vf], ~np.isnan(origin[vf, 0]) & ~track.flight, hands, unknown & ~track.flight, game.xy[:, ball])
+    held = ~np.isnan(xyz[:, 0]) & ~track.flight         # im Flug gilt die Bahn der Physik
+    game.xy[held, ball] = xyz[held, :2]
+    track.z[held] = np.maximum(xyz[held, 2] - ball_motion.ball_physics.RADIUS, 0.0)
+    return [{"fromFrame": int(a), "toFrame": int(b), "player": names[p]} for a, b, p in found]
 
 
 def write_scene(run, game, result) -> None:
@@ -34,7 +99,8 @@ def write_scene(run, game, result) -> None:
             active = np.zeros(total, bool)
             for c in track.contacts:
                 active[max(0, c - CONTACT_PULL):c + CONTACT_PULL + 1] = True
-        xy[:, ball] = attach_ball(xy[:, ball], np.stack(result.toes, axis=1), OUT_FPS, active)
+        xy[:, ball] = attach_ball(xy[:, ball], np.stack(result.toes, axis=1), OUT_FPS, active, eye=np.asarray(run.cam_pos[:2], float))
+    carried = carry_ball(run, game, result)
     print(f"Ball aus {ball_source}; an den Fuß gezogen, wo er in {BALL_REACH} m Reichweite einer Fußspitze lag"
           + (f", nur rund um {len(track.contacts)} erkannte Kontakte; Höhe aus der Wurfparabel in {int(track.flight.sum())} Bildern" if track is not None else ""))
     # 2D-Gelenkpunkte je Spieler im Takt der Ausgabe, für tools/veo_looks.py (bleibt lokal bei den Rohdaten)
@@ -43,7 +109,7 @@ def write_scene(run, game, result) -> None:
     flat = np.array(game.data, np.int64).reshape(total, E, 3)
     flat[:, :, :2] = np.where(np.isnan(xy), base["tracks"]["missing"], np.round(xy / tscale))
     if ball_source == "Video":   # ohne Physik (kein .ball3d.npz): am Boden
-        flat[:, ball, 2] = 0 if track is None else np.round(track.z / tscale)
+        flat[:, ball, 2] = 0 if track is None else np.round(np.nan_to_num(track.z) / tscale)
     with open(out_dir / "tracks.bin", "wb") as f:
         array("h", flat.ravel().tolist()).tofile(f)
 
@@ -86,6 +152,11 @@ def write_scene(run, game, result) -> None:
         looks = json.loads(old_meta.read_text()).get("looks")
         if looks:
             meta["looks"] = looks
+    meta.update(ball_events(det_path, xy, meta["entities"], ball, held=carried))
+    if carried:
+        meta["ballHeld"] = carried
+    if ball is not None:
+        meta["quality"] = scene_quality.quality(meta, xy, run.cam)
     (out_dir / "meta.json").write_text(json.dumps(meta, indent=2, ensure_ascii=False) + "\n")
     report(result, total, out_dir)
 

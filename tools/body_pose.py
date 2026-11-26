@@ -71,11 +71,12 @@ SMOOTH_FRAMES = 5.0  # Bilder: Glättung der Korrektur (Gauß); das Pixelrausche
 
 
 HIP_HEIGHT = 0.85    # m: Höhe der Hüfte, in der die Bahn ins Bild gelegt wird (nur zur Zuordnung; ein paar Zentimeter spielen dort keine Rolle)
+COLOUR_REJECT = 0.12   # Farbart-Abstand (Anteile von Rot und Grün): so viel näher am Trikot einer anderen Mannschaft als an dem der Bahn, und die Lesung gehört nicht zu ihr
 MIN_APART = 0.15     # Anteil der Boxhöhe: so nah dürfen die gelesenen Hüften zweier Personen im selben Bild nicht sein (dieselbe Person doppelt gefunden)
 ASSIGN_GATE = 0.35   # Anteil der Boxhöhe: so weit darf eine gelesene Hüfte von der erwarteten Hüfte einer Bahn entfernt sein
 
 
-def assign_rows(body: dict, tracks: dict, project, gate=ASSIGN_GATE, hip_height=HIP_HEIGHT) -> tuple:
+def assign_rows(body: dict, tracks: dict, project, gate=ASSIGN_GATE, hip_height=HIP_HEIGHT, colours=None, reference=None, colour_weight=1.0) -> tuple:
     """Jede gelesene Person genau einer Bahn zuordnen, jede Bahn höchstens einer Person (ein Spieler existiert nur einmal).
     Das Modell liest jede Box für sich; steht der gesuchte Spieler fast ganz hinter einem anderen, findet es den anderen. Hier wird je Bild und
     Linse alles zusammen entschieden: Kosten = Abstand der gelesenen Hüfte zur erwarteten Hüfte der Bahn (Bahn auf Hüfthöhe ins Bild gelegt) in
@@ -83,6 +84,9 @@ def assign_rows(body: dict, tracks: dict, project, gate=ASSIGN_GATE, hip_height=
     richtigen Bahn zugeordnet, und eine doppelt gefundene bleibt bei der Bahn, die besser passt; die andere Bahn gilt in diesem Bild als verdeckt.
     Liegen zwei gelesene Hüften näher als MIN_APART Boxhöhen, ist es dieselbe Person: Es bleibt die, die besser zu ihrer Bahn passt; die andere Bahn
     gilt als verdeckt (auch wenn beide Bahnen nah beieinander liegen und jede für sich zur Hüfte passen würde).
+    Mit colours ((n, 2) Farbart des Rumpfs je Lesung, tools/body_colour.py) und reference ({Mannschaft: Farbart des Trikots}, Mannschaft = Teil der Kennung vor dem Bindestrich) zählt auch die Trikotfarbe: Die Kosten
+    steigen um colour_weight mal den Farbabstand zur Bahn. Im Zweikampf liest das Modell oft die vordere Person doppelt; nach der Hüfte allein fiele sie
+    manchmal der falschen Bahn zu, die Farbe weist sie dem richtigen Trikot zu.
     tracks: {Kennung: (total, 2) Bodenpunkt}; project(linse, (n, 3) Punkte der Welt) -> (n, 2) Pixel der Linse.
     Rückgabe: (body mit neuem player je Zeile (Index in ids = Kennungen der Bahnen) ohne die nicht zugeordneten, Zahl umgehängter Zeilen, Zahl aussortierter Zeilen)."""
     from scipy.optimize import linear_sum_assignment
@@ -108,9 +112,18 @@ def assign_rows(body: dict, tracks: dict, project, gate=ASSIGN_GATE, hip_height=
         for a, r in enumerate(rows):   # bei gleichem Abstand gewinnt die Bahn, deren Box es war
             if origin[body["player"][r]] in names:
                 cost[a, names.index(origin[body["player"][r]])] -= 0.02
-        cost = np.where(np.isnan(cost), 1e6, cost)
+        hip_cost = cost.copy()
+        cdiff = np.zeros_like(cost)
+        if colours is not None and reference:
+            dist = {t: np.linalg.norm(colours[rows] - c, axis=1) for t, c in reference.items()}
+            for b, name in enumerate(names):
+                team = name.split("-")[0]
+                others = [d for t, d in dist.items() if t != team]
+                if team in dist and others:       # wie viel näher die Lesung dem Trikot einer anderen Mannschaft ist als dem eigenen
+                    cdiff[:, b] = np.nan_to_num(np.maximum(dist[team] - np.min(others, axis=0), 0.0), nan=0.0)
+        cost = np.where(np.isnan(hip_cost), 1e6, hip_cost + colour_weight * cdiff)
         for a, b in zip(*linear_sum_assignment(np.minimum(cost, 1e3))):
-            if cost[a, b] <= gate:
+            if hip_cost[a, b] <= gate and cdiff[a, b] <= COLOUR_REJECT:   # falsche Trikotfarbe: nicht diese Bahn
                 keep[rows[a]] = True
                 player[rows[a]] = index[names[b]]
                 best[rows[a]] = cost[a, b]

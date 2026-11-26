@@ -3,6 +3,7 @@ import unittest
 import numpy as np
 
 from tests import helpers  # noqa: F401  (macht tools/ importierbar)
+import body_colour as bc
 import body_pose as bp
 
 NAMES = ["pelvis", "neck", "head", "nose", "lShoulder", "rShoulder", "lElbow", "rElbow", "lWrist", "rWrist", "lHip", "rHip",
@@ -250,6 +251,81 @@ class RefinePositionTest(unittest.TestCase):
         seen = np.full((10, 2), np.nan)
         seen[2] = (1, 0)
         np.testing.assert_array_equal(bp.refine_position(pos, seen, np.ones(10, bool)), pos)
+
+
+class ColourAssignTest(unittest.TestCase):
+    """Zwei Spieler stehen im Bild übereinander (rot vorn, grün dahinter); das Modell liest beide Boxen als dieselbe rote Person."""
+    RED, GREEN = np.array([0.6, 0.2]), np.array([0.25, 0.5])
+
+    def setUp(self):
+        self.tracks = {"red": np.array([[10.0, 0.0]]), "green": np.array([[10.1, 0.0]])}   # fast aufeinander
+        self.project = lambda lens, pts: np.column_stack([pts[:, 0] * 50, pts[:, 1] * 50])
+        hip = np.array([500.0, 0.0])
+        kp = np.zeros((2, 70, 2))
+        kp[:, 9] = hip
+        kp[:, 10] = hip
+        self.body = {"player": np.array([0, 1]), "frame": np.array([0, 0]), "lens": np.array([0, 0]), "ids": np.array(["green", "red"]),
+                     "box": np.tile([450.0, -50.0, 550.0, 50.0], (2, 1)), "kp2d": kp, "row": np.arange(2)}
+
+    def test_same_person_twice_goes_to_the_matching_jersey(self):
+        colours = np.array([self.RED, self.RED])            # beide Lesungen zeigen den roten Spieler
+        out, moved, dropped = bp.assign_rows(self.body, self.tracks, self.project, colours=colours, reference={"red": self.RED, "green": self.GREEN})
+        self.assertEqual(len(out["player"]), 1)
+        self.assertEqual(out["ids"][out["player"][0]], "red")
+        self.assertEqual(dropped, 1)
+
+    def test_without_colour_the_duplicate_can_land_on_either(self):
+        out, _, dropped = bp.assign_rows(self.body, self.tracks, self.project)
+        self.assertEqual(len(out["player"]), 1)
+        self.assertEqual(dropped, 1)
+
+    def test_each_reading_keeps_its_own_jersey(self):
+        self.body["kp2d"][1, 9:11] = [530.0, 0.0]          # zwei verschiedene Personen
+        self.tracks["green"] = np.array([[10.6, 0.0]])
+        colours = np.array([self.GREEN, self.RED])
+        out, _, dropped = bp.assign_rows(self.body, self.tracks, self.project, colours=colours, reference={"red": self.RED, "green": self.GREEN})
+        self.assertEqual(dropped, 0)
+        self.assertEqual({out["ids"][p] for p in out["player"]}, {"red", "green"})
+
+    def test_missing_reference_means_no_colour_check(self):
+        colours = np.array([self.RED, self.RED])
+        out, _, _ = bp.assign_rows(self.body, self.tracks, self.project, colours=colours, reference={})
+        self.assertEqual(len(out["player"]), 1)
+
+
+class ColourModuleTest(unittest.TestCase):
+    def test_chroma_ignores_brightness(self):
+        np.testing.assert_allclose(bc.chroma([200, 40, 40]), bc.chroma([100, 20, 20]))
+
+    def test_chroma_of_black_is_nan(self):
+        self.assertTrue(np.isnan(bc.chroma([0, 0, 0])).all())
+
+    def test_torso_rgb_measures_the_inside_of_the_quad(self):
+        img = np.zeros((100, 100, 3), np.uint8)
+        img[20:60, 30:70] = [200, 30, 30]
+        kp = np.zeros((70, 2))
+        kp[5], kp[6], kp[10], kp[9] = [30, 20], [70, 20], [70, 60], [30, 60]
+        np.testing.assert_allclose(bc.torso_rgb(img, kp), [200, 30, 30], atol=1.0)
+
+    def test_references_use_only_isolated_readings(self):
+        n = 14
+        body = {"ids": np.array(["a", "b"]), "player": np.zeros(n, int), "frame": np.arange(n), "row": np.arange(n)}
+        chroma = np.tile([0.6, 0.2], (n, 1))
+        chroma[:2] = [0.2, 0.5]                              # diese Lesungen stehen neben b: zählen nicht
+        tracks = {"a": np.zeros((n, 2)), "b": np.full((n, 2), 50.0)}
+        tracks["b"][:2] = [1.0, 0.0]
+        ref = bc.references(body, chroma, tracks)
+        np.testing.assert_allclose(ref["a"], [0.6, 0.2])
+        self.assertNotIn("b", ref)
+
+    def test_references_are_per_team(self):
+        n = 36
+        body = {"ids": np.array(["own-1", "own-2", "opponent-1"]), "player": np.repeat([0, 1, 2], 12), "frame": np.tile(np.arange(12), 3), "row": np.arange(n)}
+        chroma = np.vstack([np.tile([0.7, 0.1], (12, 1)), np.tile([0.5, 0.2], (12, 1)), np.tile([0.2, 0.6], (12, 1))])
+        tracks = {"own-1": np.full((12, 2), 0.0), "own-2": np.full((12, 2), 20.0), "opponent-1": np.full((12, 2), 40.0)}
+        ref = bc.references(body, chroma, tracks)
+        np.testing.assert_allclose(ref["own"], [0.6, 0.15])         # Mittel der beiden eigenen Bahnen
+        np.testing.assert_allclose(ref["opponent"], [0.2, 0.6])
 
 
 if __name__ == "__main__":

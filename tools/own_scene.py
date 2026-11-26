@@ -21,6 +21,8 @@ import track_players  # noqa: E402
 
 BALL_GAP = 2.0        # s: so lange Lücken der eigenen Ballspur werden gerade überbrückt
 BALL_REACH = 0.9      # m: so nah an einer Fußspitze gilt der Ball als am Fuß
+MAX_LATERAL = 0.12    # m: so weit zieht der Ball höchstens quer zur Blickrichtung an einen Fuß (dort stimmt sein Pixel)
+MAX_RADIAL = 0.6      # m: und in Blickrichtung (dort ist die Tiefe ungenau)
 BALL_AT_FOOT = 0.13   # m: Abstand Ballmitte zur Fußspitze bei Ballkontakt
 TEAM_OF_COLOUR = {0: "own", 1: "opponent", 2: "referee"}   # Trikotfarben des Heimspiels (tools/veo_colors.py): rot = wir
 KEEPER_INSIDE = 1.5   # m: so weit innerhalb der Linien muss eine solche Spur im Mittel liegen (Trainer, Betreuer stehen an der Linie)
@@ -59,10 +61,12 @@ def own_ball(out: np.ndarray, max_gap: float) -> np.ndarray:
     return filled
 
 
-def attach_ball(ball_xy: np.ndarray, feet: np.ndarray, fps: float, active: np.ndarray | None = None) -> np.ndarray:
+def attach_ball(ball_xy: np.ndarray, feet: np.ndarray, fps: float, active: np.ndarray | None = None, eye: np.ndarray | None = None) -> np.ndarray:
     """Zieht den Ball an den Fuß, wenn er in Reichweite liegt: Die Ballspur ist in Blickrichtung auf rund einen halben Meter
     genau, ein geführter Ball lag deshalb oft neben dem Spieler. feet: (T, F, 2) Fußspitzen aller Spieler (NaN = keiner).
-    active: Bilder, in denen herangezogen wird (rund um erkannte Kontakte, tools/ball_events.py); None = überall."""
+    active: Bilder, in denen herangezogen wird (rund um erkannte Kontakte, tools/ball_events.py); None = überall.
+    eye: Kamera (x, y). Mit ihr wird das Heranziehen begrenzt: Quer zur Blickrichtung ist der Ball auf wenige Zentimeter genau (sein Pixel), nur in der Tiefe
+    ungenau; deshalb höchstens MAX_LATERAL quer und MAX_RADIAL in Blickrichtung. Ohne diese Grenze zog der Ball im Gedränge zum falschen Fuß (ein Meter daneben)."""
     T = len(ball_xy)
     shift = np.zeros((T, 2))
     for t in range(T):
@@ -78,6 +82,15 @@ def attach_ball(ball_xy: np.ndarray, feet: np.ndarray, fps: float, active: np.nd
         target = feet[t, k] + toward * BALL_AT_FOOT
         w = np.clip((BALL_REACH - d[k]) / (BALL_REACH - BALL_AT_FOOT), 0, 1)
         shift[t] = (target - ball_xy[t]) * (w * w * (3 - 2 * w))
+        if eye is not None:
+            radial = ball_xy[t] - eye
+            radial = radial / max(float(np.linalg.norm(radial)), 1e-6)
+            along = float(shift[t] @ radial)
+            side = shift[t] - along * radial
+            n_side = float(np.linalg.norm(side))
+            if n_side > MAX_LATERAL:
+                side = side * (MAX_LATERAL / n_side)
+            shift[t] = float(np.clip(along, -MAX_RADIAL, MAX_RADIAL)) * radial + side
     kernel = np.hanning(7)[1:-1]
     kernel /= kernel.sum()
     shift = np.column_stack([np.convolve(shift[:, a], kernel, "same") for a in range(2)])   # nicht von Bild zu Bild springen
