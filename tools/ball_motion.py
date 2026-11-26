@@ -233,6 +233,8 @@ AIR_MIN_FIT = 4            # so viele Flugbilder braucht eine Seite mindestens
 AIR_RMS = 0.30            # m: Restfehler, bis zu dem eine Parabel beide Seiten einer Lücke erklärt
 AIR_LAND_ERR = 2.5         # m: so weit darf die Rechnung vom gesehenen Ort am anderen Ende der Lücke abweichen
 AIR_ROLL_SPEED = 5.0       # m/s: Rollen nach der Landung bis zur nächsten Lage (Zuschlag zur erlaubten Abweichung)
+CONTACT_XY = 0.8           # m: so nah (am Boden gemessen) muss der Ball einem Spieler kommen, damit der Flug dort enden kann (Ball ±0,5 m in der Tiefe, Spieler ±0,3 m)
+CONTACT_Z = 2.4            # m: bis zu dieser Höhe über dem Boden kann ein Spieler den Ball mit Kopf, Brust oder Fuß treffen (Kopf 1,75 m plus Sprung); darüber fliegt er über ihn hinweg
 
 
 def _air_side(xy: np.ndarray, z: np.ndarray, start: int, step: int) -> list:
@@ -258,11 +260,87 @@ def _air_at(p0, v, t) -> np.ndarray:
     return p0 + v * t - 0.5 * ball_physics.G * t * t * np.array([0.0, 0.0, 1.0])
 
 
-def air_bridge(xy: np.ndarray, z: np.ndarray, A: int, B: int, fps: float) -> bool:
+def _first_contact(frames, p0, v, f0, fps, players, origin: int):
+    """Erstes Bild in `frames` (in Laufrichtung des Flugs), in dem der Ball nach der Parabel (p0, v bei Bild f0) einem Spieler nahe genug kommt
+    (CONTACT_XY am Boden, Höhe bis CONTACT_Z), sonst None. Wer beim gesehenen Bild `origin` schon so nah war (der Schütze), zählt erst, wenn der Ball sich
+    von ihm entfernt hat und wiederkommt. Nach der Landung (Höhe unter dem Boden) endet die Parabel."""
+    R = ball_physics.RADIUS
+    d0 = np.linalg.norm(players[origin] - xy_of(p0, v, f0, origin, fps), axis=1)
+    armed = np.where(np.isnan(d0), False, d0 >= CONTACT_XY)
+    for f in frames:
+        pt = _air_at(p0, v, (f - f0) / fps)
+        h = pt[2] - R
+        if h < -0.05:
+            return None
+        d = np.linalg.norm(players[f] - pt[:2], axis=1)
+        inside = np.where(np.isnan(d), False, d < CONTACT_XY)
+        if (armed & inside).any() and h <= CONTACT_Z:
+            return f
+        armed |= np.where(np.isnan(d), False, d >= CONTACT_XY)
+    return None
+
+
+def xy_of(p0, v, f0, f, fps) -> np.ndarray:
+    return _air_at(p0, v, (f - f0) / fps)[:2]
+
+
+def _close_rest(xy: np.ndarray, z: np.ndarray, a: int, b: int, fps: float) -> None:
+    """Rest einer Lücke [a, b) zwischen den bekannten Lagen a-1 und b: gerade verbinden, wenn das Tempo glaubwürdig ist (der Ball nach einem Kopfball), sonst unbekannt."""
+    if b <= a:
+        return
+    T = (b - (a - 1)) / fps
+    v = float(np.linalg.norm(xy[b] - xy[a - 1])) / T
+    if T > GAP_MAX_S or v > GAP_MAX_SPEED:
+        xy[a:b], z[a:b] = np.nan, np.nan
+        return
+    s = (np.arange(a, b) - (a - 1)) / (b - (a - 1))
+    xy[a:b] = xy[a - 1] + (xy[b] - xy[a - 1]) * s[:, None]
+    z[a:b] = z[a - 1] + (z[b] - z[a - 1]) * s
+
+
+def _air_contacts(xy, z, A, B, fps, players, before, after) -> bool:
+    """Passt die Parabel nicht zum anderen Ende der Lücke, hat sich der Flug unterwegs geändert: Ein Spieler hat den Ball getroffen (ein hoher Ball wird per
+    Kopf angenommen und woanders weitergespielt). Die Lücke füllt dann der Flug bis zum ersten Spieler, den die Parabel trifft (vom Anfang her, aus dem
+    Gesehenen davor) und, rückwärts, vom Ende her bis zum letzten Spieler davor; was dazwischen liegt, wird gerade verbunden oder bleibt unbekannt.
+    Trifft die Parabel keinen Spieler, gibt es keinen Beleg für ihr Ende: False."""
+    if players is None:
+        return False
+    R = ball_physics.RADIUS
+    forward = backward = None
+    if len(before) >= AIR_MIN_FIT:
+        p0, v, rms = _air_fit(before, xy, z, fps)
+        c = _first_contact(range(A + 1, B), p0, v, before[0], fps, players, A) if rms <= AIR_RMS else None
+        forward = (c, p0, v, before[0]) if c is not None else None
+    if len(after) >= AIR_MIN_FIT:
+        p0, v, rms = _air_fit(after, xy, z, fps)
+        c = _first_contact(range(B - 1, A, -1), p0, v, after[0], fps, players, B) if rms <= AIR_RMS else None
+        backward = (c, p0, v, after[0]) if c is not None else None
+    if forward is None and backward is None:
+        return False
+    if forward is not None and backward is not None and forward[0] >= backward[0]:
+        return False
+    first_open, last_open = A + 1, B           # [first_open, last_open): was noch offen ist
+    if forward is not None:
+        c, p0, v, f0 = forward
+        n = np.arange(A + 1, c + 1)
+        pts = _air_at(p0, v, ((n - f0) / fps)[:, None])
+        xy[n], z[n] = pts[:, :2], np.maximum(pts[:, 2] - R, 0.0)
+        first_open = c + 1
+    if backward is not None:
+        c, p0, v, f0 = backward
+        n = np.arange(c, B)
+        pts = _air_at(p0, v, ((n - f0) / fps)[:, None])
+        xy[n], z[n] = pts[:, :2], np.maximum(pts[:, 2] - R, 0.0)
+        last_open = c
+    _close_rest(xy, z, first_open, last_open, fps)
+    return True
+
+
+def air_bridge(xy: np.ndarray, z: np.ndarray, A: int, B: int, fps: float, players=None) -> bool:
     """Flug durch die Lücke (A, B) rechnen, wenn ihn das Gesehene davor und/oder danach bestimmt, und die Lücke damit füllen (Rückgabe True).
     Beide Seiten im Flug: eine Parabel muss beide erklären (Restfehler AIR_RMS). Nur eine Seite im Flug (Schuss, dessen Beginn man sah, oder dessen Landung):
     die Parabel muss am Boden dort ankommen oder dort herkommen, wo die andere Seite liegt (AIR_LAND_ERR). Sonst bleibt die Lücke leer: Ohne Beleg
-    gibt es keine Bahn."""
+    gibt es keine Bahn. Mit `players` (T, P, 2): Passt die Parabel nicht, gilt der Flug bis zu einem Spieler, den sie trifft (_air_contacts)."""
     T = (B - A) / fps
     if T > AIR_MAX_S:
         return False
@@ -274,13 +352,13 @@ def air_bridge(xy: np.ndarray, z: np.ndarray, A: int, B: int, fps: float) -> boo
         frames = before + after
         p0, v, rms = _air_fit(frames, xy, z, fps)
         if rms > AIR_RMS:
-            return False
+            return _air_contacts(xy, z, A, B, fps, players, before, after)
         # Eine nach unten geöffnete Parabel hat ihr Minimum an einem Intervallrand.
         # Sind beide Randlagen über dem Boden, bleibt sie damit in der ganzen Lücke
         # physikalisch möglich; andernfalls wäre die Flugbahn unter dem Rasen.
         edge_t = np.array([A, B]) / fps - frames[0] / fps
-        if np.min(_air_at(p0, v, edge_t)[:, 2]) < R:
-            return False
+        if np.min(_air_at(p0, v, edge_t[:, None])[:, 2]) < R:
+            return _air_contacts(xy, z, A, B, fps, players, before, after)
         pts = _air_at(p0, v, ((n - frames[0]) / fps)[:, None])
         xy[A + 1:B], z[A + 1:B] = pts[:, :2], np.maximum(pts[:, 2] - R, 0.0)
         return True
@@ -320,7 +398,7 @@ def air_bridge(xy: np.ndarray, z: np.ndarray, A: int, B: int, fps: float) -> boo
             else:
                 ok = np.linalg.norm(ground_xy - xy[other]) <= AIR_LAND_ERR + AIR_ROLL_SPEED * rest
         if not ok:
-            return False
+            return _air_contacts(xy, z, A, B, fps, players, before if forward else [], [] if forward else after)
         t = (n - frames[0]) / fps
         pts = _air_at(p0, v, t[:, None])
         out_xy, out_z = pts[:, :2], np.maximum(pts[:, 2] - R, 0.0)
@@ -338,11 +416,12 @@ def air_bridge(xy: np.ndarray, z: np.ndarray, A: int, B: int, fps: float) -> boo
     return False
 
 
-def bridge(xy: np.ndarray, z: np.ndarray, fps: float) -> tuple:
+def bridge(xy: np.ndarray, z: np.ndarray, fps: float, players=None) -> tuple:
     """Lücken der Ballspur (NaN) im Takt der Ausgabe schließen, ohne den Ball durch die Gegend zu schießen. Zwischen zwei bekannten Lagen
     legt der Ball eine gerade Strecke zurück, solange das Tempo glaubwürdig ist (höchstens GAP_MAX_SPEED und GAP_MAX_S); ein schneller kurzer Weg
     zwischen Bodenlagen ist ein Flug mit Bogen. Ist das Tempo unmöglich, war der Ball nicht zu verfolgen: Die Lücke bleibt leer (der Ball ist
     dann unbekannt, nicht an einem erfundenen Ort). Anfang und Ende halten die nächste Lage nur kurz (HOLD_S).
+    players (T, P, 2): Lagen der Spieler im selben Takt; mit ihnen endet ein gerechneter Flug, wo er einen Spieler trifft (Kopfball, Annahme).
     Rückgabe: Lage (n, 2) und Höhe (n,) über dem Boden, NaN in offenen Lücken."""
     xy, z = xy.copy(), z.copy()
     known = ~np.isnan(xy[:, 0])
@@ -369,7 +448,7 @@ def bridge(xy: np.ndarray, z: np.ndarray, fps: float) -> tuple:
         A, B = a - 1, b
         T = (B - A) / fps
         v = float(np.linalg.norm(xy[B] - xy[A])) / T
-        if T > GAP_MAX_S and air_bridge(xy, z, A, B, fps):    # lange Lücke: nur ein gerechneter Flug, den das Gesehene bestimmt
+        if T > GAP_MAX_S and air_bridge(xy, z, A, B, fps, players):    # lange Lücke: nur ein gerechneter Flug, den das Gesehene bestimmt
             continue
         if v > GAP_MAX_SPEED or T > GAP_MAX_S:
             xy[a:b], z[a:b] = np.nan, np.nan
