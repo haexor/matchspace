@@ -222,7 +222,7 @@ def output_track(path, total: int, ratio: float) -> OutputTrack:
 RAW_MAX_SPEED = 15.0       # m/s: so schnell darf sich eine nicht angepasste Erkennung vom letzten bekannten Ort entfernt haben, um als Ort am Boden zu gelten
 RAW_MAX_S = 0.6            # s: so lange darf der letzte bekannte Ort zurückliegen
 GAP_MAX_SPEED = 22.0       # m/s: schneller kann der Ball eine ungesehene Lücke nicht durchquert haben (Pass eines U15-Spielers)
-GAP_MAX_S = 4.0            # s: so lange Lücken werden überbrückt, längere nicht (der Ball rollte dann nicht gleichmäßig)
+GAP_MAX_S = 0.8            # s: so lange Lücken werden überbrückt, längere nicht: Wo der Ball länger nicht zu sehen war, weiß man nicht, wohin er flog (ein Hochschlag über das Feld, ein Abpraller), und ein gerader Weg wäre erfunden
 HOLD_S = 1.0               # s: am Anfang und Ende der Szene hält der Ball so lange die nächste bekannte Lage, danach ist er unbekannt
 ARC_MAX_S = 1.2            # s: bis zu dieser Dauer wird eine schnelle Lücke zwischen Bodenlagen als Flug mit Bogen überbrückt (Scheitel g·T²/8)
 ARC_MIN_SPEED = 7.0        # m/s: langsamer rollt der Ball
