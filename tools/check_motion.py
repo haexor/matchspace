@@ -16,6 +16,7 @@ Gezählt werden Bilder je Spieler, in denen eine Regel verletzt ist:
     Rumpfdrehung   Schultern mehr als 60° gegen das Becken verdreht
     Körperdrehung  Becken dreht schneller als 720°/s
     Knochendrehung ein Knochen dreht schneller als 2000°/s
+    Arm im Rumpf   Unterarm oder Hand mehr als 3 cm tief im eigenen Rumpf (Ellipsenzylinder um die Linie Becken–Hals, tools/pose_selfcontact.py)
     Schweben       beide Füße länger als 0,6 s mehr als 15 cm über dem Rasen
 
 Aufruf:
@@ -31,9 +32,13 @@ from pathlib import Path
 
 import numpy as np
 
+sys.path.insert(0, str(Path(__file__).parent))
+import pose_selfcontact  # noqa: E402
+
 DEG = np.pi / 180
 MAX_SPEED, MAX_ACCEL, MAX_STEP = 9.0, 9.0, 0.5
-RULES = ("Tempo", "Antritt", "Sprung", "Knochenlänge", "Boden", "Knie", "Hüfte", "Hals", "Rumpfdrehung", "Körperdrehung", "Knochendrehung", "Schweben", "Gleichgewicht")
+ARM_IN_TORSO = 0.03          # m: so tief darf ein Arm in den Rumpf ragen
+RULES = ("Tempo", "Antritt", "Sprung", "Knochenlänge", "Boden", "Knie", "Hüfte", "Hals", "Rumpfdrehung", "Körperdrehung", "Knochendrehung", "Schweben", "Gleichgewicht", "Arm im Rumpf")
 MASS = (("pelvis", "neck", 0.50), ("head", "head", 0.08), ("lShoulder", "lElbow", 0.027), ("rShoulder", "rElbow", 0.027), ("lElbow", "lWrist", 0.022),
         ("rElbow", "rWrist", 0.022), ("lHip", "lKnee", 0.10), ("rHip", "rKnee", 0.10), ("lKnee", "lAnkle", 0.047), ("rKnee", "rAnkle", 0.047),
         ("lAnkle", "lToe", 0.014), ("rAnkle", "rToe", 0.014))     # Körperteile: von, bis, Anteil an der Masse
@@ -186,7 +191,9 @@ def check(folder, start=None, end=None):
         with np.errstate(invalid="ignore"):
             lean, _ = balance(j, n, np.where(here[..., None], xy, np.nan), fps)
             found["Gleichgewicht"] = np.nan_to_num(lean) > 0.30
-        values.update({"Knochenlänge": dev, "Boden": low, "Knie": knee / DEG, "Hüfte": hip / DEG, "Hals": neck / DEG, "Rumpfdrehung": twist / DEG,
+        inner = np.stack([pose_selfcontact.penetration(j[:, k]) for k in range(j.shape[1])], axis=1).max(axis=2)      # tiefster Arm im Rumpf (m)
+        found["Arm im Rumpf"] = inner > ARM_IN_TORSO
+        values.update({"Arm im Rumpf": inner * 100, "Knochenlänge": dev, "Boden": low, "Knie": knee / DEG, "Hüfte": hip / DEG, "Hals": neck / DEG, "Rumpfdrehung": twist / DEG,
                        "Körperdrehung": turn / DEG, "Knochendrehung": spin / DEG, "Schweben": feet, "Gleichgewicht": np.nan_to_num(lean)})
     # Übergänge an Anfang und Ende der Anwesenheit zählen nicht
     edge = here & np.roll(here, 1, axis=0)

@@ -25,6 +25,7 @@ import overlap  # noqa: E402
 import ground_motion  # noqa: E402
 import pose_fit  # noqa: E402
 import pose_limits  # noqa: E402
+import pose_selfcontact  # noqa: E402
 import track_limits  # noqa: E402
 import veo_camera  # noqa: E402
 from own_scene import MIN_APPEARANCE  # noqa: E402
@@ -180,6 +181,7 @@ def fit_poses(run, observed, smooth, joints, floor, game) -> PoseResult:
         joint_pos, before, after, count = foot_planting.plant_feet(pose_limits.build(d, lengths), pos, OUT_FPS, lengths, skip=down)
         # Das Festhalten der Füße kann die Hüfte überdehnen: Grenzen ein letztes Mal anwenden (der Fuß gibt dann nach)
         joint_pos = pose_limits.build(pose_limits.limit_directions(pose_limits.directions_of(joint_pos), allowed), lengths)
+        joint_pos = np.where(down[:, None, None], joint_pos, pose_selfcontact.keep_arms_out(joint_pos))   # Hände und Unterarme nicht durch den eigenen Rumpf (am Boden: andere Lage, bleibt)
         if foot_out is not None and not sam.any():   # Ferse und Zehe aus dem Bild statt aus der Laufrichtung
             joint_pos, fed = foot_fit.apply(joint_pos, pos, foot_out, lens_feet, cam, NAMES, veo_camera.rays)
             result.feet_from_video += fed
