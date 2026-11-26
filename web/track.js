@@ -14,6 +14,13 @@ try {
   $('status').textContent = `Spieldaten unter ${base} nicht gefunden. Siehe README.`;
   throw err;
 }
+// Ferne Szenen (Spieler am Ball unter ~80 px) oder Szenen mit springendem Ball sind nicht zuverlässig: nur mit &ferne=1 öffnen.
+if (meta.quality && !meta.quality.ok && query.get('ferne') !== '1') {
+  const q = meta.quality;
+  const why = !q.near ? `zu fern (Spieler am Ball ${q.leadHeightPx ?? '?'} px hoch, nötig ab ${q.minPx})` : `Ball springt in ${q.ballJumps} Bildern`;
+  $('status').textContent = `Szene nicht geladen: ${why}. Mit &ferne=1 trotzdem öffnen.`;
+  throw new Error('Szene nicht zuverlässig');
+}
 export const N = meta.frames;
 export const ENTITIES = meta.entities;
 const STRIDE = ENTITIES.length * 3;

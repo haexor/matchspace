@@ -17,6 +17,7 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).parent))
 import body_build  # noqa: E402
+import body_colour  # noqa: E402
 import body_pose  # noqa: E402
 import foot_fit  # noqa: E402
 import foot_planting  # noqa: E402
@@ -42,6 +43,7 @@ class PoseResult:
     buf: array
     toes: list
     views: dict
+    hands: dict = field(default_factory=dict)   # Kennung -> (total, 2, 3) Handgelenke links, rechts (Meter), NaN wo der Spieler fehlt; für den Ball in der Hand
     estimated: int = 0
     present_total: int = 0
     summary: dict = field(default_factory=dict)
@@ -87,9 +89,14 @@ def fit_poses(run, observed, smooth, joints, floor, game) -> PoseResult:
     body_data = load_body(run)
     if body_data is not None:   # jede gelesene Person genau einer Bahn, jede Bahn höchstens einer Person
         by_id = {e["id"]: xy[:, i] for i, e in enumerate(base["entities"]) if e["kind"] == "player"}
-        body_data, moved, dropped = body_pose.assign_rows(body_data, by_id, lambda lens, pts: veo_camera.project(cam, ("left", "right")[lens], pts))
+        project = lambda lens, pts: veo_camera.project(cam, ("left", "right")[lens], pts)   # noqa: E731
+        body_data["row"] = np.arange(len(body_data["player"]))
+        first, _, _ = body_pose.assign_rows(body_data, by_id, project)   # nach der Hüfte allein; daraus die Trikotfarbe je Bahn
+        colours = body_colour.torso_chroma(run.video, body_data)
+        reference = body_colour.references(first, colours, by_id)
+        body_data, moved, dropped = body_pose.assign_rows(body_data, by_id, project, colours=colours, reference=reference)
         print(f"Körpermodell: {len(body_data['player'])} Personen den Bahnen zugeordnet, {moved} davon einer anderen Bahn als der Box; "
-              f"{dropped} aussortiert (zu weit von jeder Bahn oder doppelt gefunden)", flush=True)
+              f"{dropped} aussortiert (zu weit von jeder Bahn, doppelt gefunden oder falsche Trikotfarbe; Trikotfarbe von {len(reference)} Mannschaften bekannt)", flush=True)
     builds = body_build.measure(body_data) if body_data is not None else {}
     nearest = np.minimum(np.round(np.arange(total) * ratio).astype(int), n - 1)
     for slot, entity in enumerate(slots):
@@ -178,6 +185,10 @@ def fit_poses(run, observed, smooth, joints, floor, game) -> PoseResult:
             result.feet_from_video += fed
         for side in "lr":
             result.toes.append(joint_pos[:, NAMES.index(side + "Toe"), :2] + pos)
+        wrists = np.stack([joint_pos[:, NAMES.index(side + "Wrist")] for side in "lr"], axis=1)
+        wrists[:, :, :2] += pos[:, None, :]
+        wrists[~present] = np.nan
+        result.hands[e["id"]] = wrists
         result.slip_before += before
         result.slip_after += after
         result.slip_frames += count

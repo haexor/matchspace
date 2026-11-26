@@ -9,7 +9,7 @@ Die Lage am Boden wäre bei einem Ball in der Luft stark verzerrt.
 Aufruf:  .venv/bin/python tools/ball_motion.py KAMERA.json DETEKTIONEN.json   (liest DETEKTIONEN.json.ball.npz, schreibt .ball3d.npz)
 """
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import numpy as np
@@ -24,6 +24,8 @@ GROUND, FLIGHT = 1, 2      # kind je Bild; 0 = unbekannt
 EXTEND = 6                 # Bilder, die eine angepasste Bahn über die letzte Beobachtung hinaus weitergeführt wird (Ausholen bis zum Kontakt)
 JUMP_M = 1.5              # m: größte Lücke zwischen zwei Stücken am Kontakt
 MARGIN = 1                 # Bilder rund um einen Kontakt, die nicht in die Anpassung eingehen (der Fuß verdeckt den Ball)
+REACH_TOL = 0.10           # m: so nah am Sehstrahl darf ein Beobachtung liegen, damit der Flug sie noch mit abdeckt (Abwurf, Landung)
+MERGE_RMS = 0.02           # m: erklärt ein einziger Flug die Spur beidseits eines „Kontakts“ so genau, war es keiner
 
 
 @dataclass
@@ -33,6 +35,7 @@ class Motion:
     inferred: np.ndarray   # (n,) True, wo der Ball nicht gesehen und aus der Bahn erschlossen wurde
     z_sigma: np.ndarray    # (n,) Unsicherheit der Höhe in m (0 am Boden)
     segments: list
+    contacts: list = field(default_factory=list)   # Kontakte, die übrig blieben
 
 
 def observations(cam, pix: np.ndarray) -> tuple:
@@ -82,6 +85,62 @@ def drop_discontinuous(pieces: list, fps: float, jump: float = JUMP_M) -> int:
     return removed
 
 
+def prune_flight_contacts(origin, direction, rng, found: np.ndarray, contacts: list, fps: float) -> list:
+    """Entfernt Kontakte, die keine sind: Die Suche nach Kontakten (tools/ball_events.py) arbeitet auf der Spur im Bild, und ein
+    Flug ändert dort seine scheinbare Geschwindigkeit (Höhe, Entfernung), ohne dass ihn jemand berührt. Ein echter Kontakt
+    knickt die Bahn: Eine einzige Wurfparabel über die Spur davor und danach passt dann nicht. Passt sie dagegen auf MERGE_RMS genau
+    (und ist sie als Flug plausibel), fliegt der Ball durch und der Kontakt fällt weg. Der Reihe nach, die sicheren zuletzt."""
+    n = len(found)
+    kept = sorted(contacts, key=lambda c: c.frame)
+    for c in sorted(contacts, key=lambda c: c.confidence):
+        i = kept.index(c)
+        a = kept[i - 1].frame if i else -1
+        b = kept[i + 1].frame if i + 1 < len(kept) else n
+        idx = np.flatnonzero(found[a + 1:b]) + a + 1
+        if len(idx) < ball_physics.MIN_OBS:
+            continue
+        kind, fit = ball_physics.choose(origin[idx], direction[idx], idx / fps, rng[idx])
+        if kind == "flight" and fit.rms <= MERGE_RMS:
+            kept.remove(c)
+    return kept
+
+
+def reach(fit, origin, direction, found: np.ndarray, frm: int, limit: int, fps: float, tol: float = REACH_TOL) -> int:
+    """Wie weit ein angepasster Flug von Bild `frm` aus in Richtung `limit` (ausschließlich) noch zur Spur passt: das letzte Bild,
+    dessen Fund höchstens `tol` Meter vom Flug entfernt am Sehstrahl liegt, ohne dass ein schlechterer Fund dazwischen liegt.
+    Dort beginnt der Wurf, wo der Ball die Hand verlässt (davor liegt der Ball in der Hand und folgt keiner Parabel)."""
+    step = 1 if limit > frm else -1
+    last = frm
+    for f in range(frm + step, limit, step):
+        if not found[f]:
+            continue
+        miss = float(np.linalg.norm(np.cross(fit.at(f / fps) - origin[f], direction[f])))
+        if miss > tol:
+            break
+        last = f
+    return last
+
+
+def fill_raw(xyz, kind, inferred, z_sigma, origin, direction, rng, found: np.ndarray, fps: float) -> int:
+    """Erkennungen, die in keinem angepassten Stück liegen (zu wenige Beobachtungen am Stück, Gedränge), als Lage am Boden übernehmen, wenn sie
+    zum letzten bekannten Ort passen (höchstens RAW_MAX_SPEED und RAW_MAX_S entfernt). Sonst blieb der Ball dort unbekannt und die Ausgabe überbrückte
+    geradeaus bis zum nächsten bekannten Ort, auch wo der Ball im Video gar nicht weiterzog. Schreibt in xyz/kind/inferred; Rückgabe: Zahl übernommener Bilder."""
+    taken, last, last_f = 0, None, None
+    for f in range(len(found)):
+        if kind[f] != 0:
+            last, last_f = xyz[f].copy(), f
+            continue
+        if not found[f]:
+            continue
+        point = origin[f] + direction[f] * rng[f]
+        point[2] = ball_physics.RADIUS
+        if last is not None and (f - last_f) / fps <= RAW_MAX_S and np.linalg.norm(point[:2] - last[:2]) / max((f - last_f) / fps, 1e-3) <= RAW_MAX_SPEED:
+            xyz[f], kind[f], inferred[f], z_sigma[f] = point, GROUND, False, 0.0
+            last, last_f = point, f
+            taken += 1
+    return taken
+
+
 def build(cam, pix: np.ndarray, contacts: list, fps: float) -> Motion:
     n = len(pix)
     origin, direction, rng = observations(cam, pix)
@@ -90,9 +149,11 @@ def build(cam, pix: np.ndarray, contacts: list, fps: float) -> Motion:
     kind = np.zeros(n, np.uint8)
     inferred = np.zeros(n, bool)
     z_sigma = np.zeros(n)
+    contacts = prune_flight_contacts(origin, direction, rng, found, contacts, fps)
     cuts = [0] + sorted(c.frame for c in contacts) + [n]
     pieces = []
-    for a, b in zip(cuts[:-1], cuts[1:]):
+    for i, (a, b) in enumerate(zip(cuts[:-1], cuts[1:])):
+        before = cuts[i - 1] if i > 1 else -1      # Kontakt vor dem davor: so weit darf ein Flug zurückreichen
         lo, hi = (a + MARGIN if a else 0), (b - MARGIN if b < n else n)
         idx = np.flatnonzero(found[lo:hi]) + lo
         if len(idx) < ball_physics.MIN_OBS:
@@ -103,9 +164,17 @@ def build(cam, pix: np.ndarray, contacts: list, fps: float) -> Motion:
                 continue
             first = max(a if seg.start == idx[0] else seg.start, seg.start - EXTEND)   # bis zum Kontakt, aber nicht weit ins Leere
             last = min(b if seg.stop == idx[-1] + 1 else seg.stop, seg.stop + EXTEND)
+            if seg.kind == "flight":
+                first = min(first, reach(seg.fit, origin, direction, found, seg.start, before, fps))
+                last = max(last, reach(seg.fit, origin, direction, found, seg.stop - 1, b, fps) + 1)
+                if first < lo and a:     # der Kontakt davor war der Abwurf, der Flug beginnt früher: den Kontakt dorthin legen
+                    moved = [c for c in contacts if c.frame == a]
+                    for c in moved:
+                        c.frame, c.time = int(first), first / fps
             pieces.append({"seg": seg, "frames": np.arange(first, min(last, n))})
     drop_discontinuous(pieces, fps)
     segments = []
+    pieces_end = len(pieces)
     for pc in pieces:
         seg, frames = pc["seg"], pc["frames"]
         at = seg.fit.at(frames / fps)
@@ -114,7 +183,8 @@ def build(cam, pix: np.ndarray, contacts: list, fps: float) -> Motion:
         z_sigma[frames] = seg.fit.z_sigma if seg.kind == "flight" else 0.0
         inferred[frames] = ~found[frames]
         segments.append((int(frames[0]), int(frames[-1]) + 1, seg.kind, round(seg.rms, 3), round(seg.z_sigma, 2), round(float(at[:, 2].max()), 2)))
-    return Motion(xyz, kind, inferred, z_sigma, segments)
+    fill_raw(xyz, kind, inferred, z_sigma, origin, direction, rng, found, fps)
+    return Motion(xyz, kind, inferred, z_sigma, segments, contacts)
 
 
 @dataclass
@@ -149,6 +219,57 @@ def output_track(path, total: int, ratio: float) -> OutputTrack:
                        z["kind"][near] == FLIGHT, contacts[(contacts >= 0) & (contacts < total)])
 
 
+RAW_MAX_SPEED = 15.0       # m/s: so schnell darf sich eine nicht angepasste Erkennung vom letzten bekannten Ort entfernt haben, um als Ort am Boden zu gelten
+RAW_MAX_S = 0.6            # s: so lange darf der letzte bekannte Ort zurückliegen
+GAP_MAX_SPEED = 22.0       # m/s: schneller kann der Ball eine ungesehene Lücke nicht durchquert haben (Pass eines U15-Spielers)
+GAP_MAX_S = 4.0            # s: so lange Lücken werden überbrückt, längere nicht (der Ball rollte dann nicht gleichmäßig)
+HOLD_S = 1.0               # s: am Anfang und Ende der Szene hält der Ball so lange die nächste bekannte Lage, danach ist er unbekannt
+ARC_MAX_S = 1.2            # s: bis zu dieser Dauer wird eine schnelle Lücke zwischen Bodenlagen als Flug mit Bogen überbrückt (Scheitel g·T²/8)
+ARC_MIN_SPEED = 7.0        # m/s: langsamer rollt der Ball
+
+
+def bridge(xy: np.ndarray, z: np.ndarray, fps: float) -> tuple:
+    """Lücken der Ballspur (NaN) im Takt der Ausgabe schließen, ohne den Ball durch die Gegend zu schießen. Zwischen zwei bekannten Lagen
+    legt der Ball eine gerade Strecke zurück, solange das Tempo glaubwürdig ist (höchstens GAP_MAX_SPEED und GAP_MAX_S); ein schneller kurzer Weg
+    zwischen Bodenlagen ist ein Flug mit Bogen. Ist das Tempo unmöglich, war der Ball nicht zu verfolgen: Die Lücke bleibt leer (der Ball ist
+    dann unbekannt, nicht an einem erfundenen Ort). Anfang und Ende halten die nächste Lage nur kurz (HOLD_S).
+    Rückgabe: Lage (n, 2) und Höhe (n,) über dem Boden, NaN in offenen Lücken."""
+    xy, z = xy.copy(), z.copy()
+    known = ~np.isnan(xy[:, 0])
+    n = len(xy)
+    idx = np.flatnonzero(known)
+    if not len(idx):
+        return xy, z
+    hold = int(HOLD_S * fps)
+    runs, start = [], None
+    for f in range(n + 1):
+        gap = f < n and not known[f]
+        if gap and start is None:
+            start = f
+        if not gap and start is not None:
+            runs.append((start, f))
+            start = None
+    for a, b in runs:
+        if a == 0 or b == n:                        # Anfang oder Ende: die nächste Lage nur kurz halten, sonst unbekannt
+            src = b if a == 0 else a - 1
+            held = slice(max(a, b - hold), b) if a == 0 else slice(a, min(b, a + hold))
+            xy[a:b], z[a:b] = np.nan, np.nan
+            xy[held], z[held] = xy[src], z[src]
+            continue
+        A, B = a - 1, b
+        T = (B - A) / fps
+        v = float(np.linalg.norm(xy[B] - xy[A])) / T
+        if v > GAP_MAX_SPEED or T > GAP_MAX_S:
+            xy[a:b], z[a:b] = np.nan, np.nan
+            continue
+        s = (np.arange(a, b) - A) / (B - A)
+        xy[a:b] = xy[A] + (xy[B] - xy[A]) * s[:, None]
+        z[a:b] = z[A] + (z[B] - z[A]) * s
+        if T <= ARC_MAX_S and v >= ARC_MIN_SPEED and max(z[A], z[B]) < 0.3:
+            z[a:b] += 4 * (ball_physics.G * T * T / 8) * s * (1 - s)
+    return xy, z
+
+
 def main(camera_path, det_path) -> None:
     cam = veo_camera.load(camera_path)
     z = np.load(f"{det_path}.ball.npz")
@@ -156,8 +277,8 @@ def main(camera_path, det_path) -> None:
     contacts = ball_events.find_contacts(angular_track(cam, pix), fps)
     m = build(cam, pix, contacts, fps)
     np.savez_compressed(f"{det_path}.ball3d.npz", xyz=m.xyz, kind=m.kind, inferred=m.inferred, z_sigma=m.z_sigma, fps=fps,
-                        contacts=np.array([[c.frame, c.speed_in, c.speed_out, c.jump, c.confidence] for c in contacts]))
-    print(f"{len(contacts)} Kontakte; Stücke (von, bis, Art, Restfehler m, Höhenunsicherheit m, größte Höhe m):")
+                        contacts=np.array([[c.frame, c.speed_in, c.speed_out, c.jump, c.confidence] for c in m.contacts]))
+    print(f"{len(m.contacts)} Kontakte (von {len(contacts)} Kandidaten); Stücke (von, bis, Art, Restfehler m, Höhenunsicherheit m, größte Höhe m):")
     for s in m.segments:
         if s[2] == "flight":
             print("  ", s)
