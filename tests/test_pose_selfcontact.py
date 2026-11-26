@@ -39,6 +39,10 @@ class SelfContactTest(unittest.TestCase):
         self.assertLess(sc.penetration(p).max(), 0.01)
         np.testing.assert_allclose(sc.keep_arms_out(p), p)
 
+    def test_penetration_depth_uses_the_players_scale(self):
+        p = hands_in_belly(1)
+        np.testing.assert_allclose(sc.penetration(p * 2), sc.penetration(p) * 2, atol=1e-6)
+
     def test_hand_in_the_belly_is_moved_out_and_bone_lengths_stay(self):
         p = hands_in_belly()
         self.assertGreater(sc.penetration(p)[:, 0].min(), 0.03)
@@ -84,6 +88,24 @@ class SceneFileTest(unittest.TestCase):
             self.assertTrue((np.fromfile(src / "poses" / "000.bin", "<i2") == raw.ravel()).all())      # die Quelle bleibt unverändert
             fixed = np.fromfile(out / "poses" / "000.bin", "<i2").reshape(2, 1, 20, 3) * 0.001
             self.assertLess(sc.penetration(fixed[:, 0]).max(), 0.01)
+
+    def test_a_player_on_the_ground_is_left_unchanged(self):
+        import json
+        import tempfile
+        from pathlib import Path
+        p = hands_in_belly(1)
+        p[:, :, 2] -= 0.6
+        raw = np.round(p / 0.001).astype("<i2")[:, None]
+        meta = {"frames": 1, "entities": [{"kind": "player", "id": "own-1"}],
+                "poses": {"chunks": 1, "chunkFrames": 1500, "path": "poses/{chunk}.bin", "missing": -32768, "scale": 0.001}}
+        with tempfile.TemporaryDirectory() as tmp:
+            src, out = Path(tmp) / "src", Path(tmp) / "out"
+            (src / "poses").mkdir(parents=True)
+            (src / "meta.json").write_text(json.dumps(meta))
+            raw.tofile(src / "poses" / "000.bin")
+            sc.fix_scene(src, out)
+            actual = np.fromfile(out / "poses" / "000.bin", "<i2")
+            np.testing.assert_array_equal(actual, raw.ravel())
 
 
 if __name__ == "__main__":
