@@ -6,7 +6,15 @@ Becken–Hals gelegt (Maße aus dem Avatarnetz), jeder Arm bekommt seine Dicke, 
 liegt. Knochenlängen bleiben, nur die Richtung ändert sich, und nur so viel wie nötig.
 
 Achsen wie in tools/pose_limits.py: Haltungen (T, 20, 3) in der Reihenfolge synth_poses.NAMES, z hoch.
+
+tools/scene_poses.py wendet es beim Aufbau einer Szene an. Für eine fertige Szene, die ohne diesen Schritt gebaut wurde (ohne die Haltungen neu zu rechnen):
+    .venv/bin/python tools/pose_selfcontact.py SZENENORDNER AUSGABEORDNER
 """
+import argparse
+import json
+import shutil
+from pathlib import Path
+
 import numpy as np
 
 from synth_poses import NAMES
@@ -111,3 +119,35 @@ def keep_arms_out(p, passes=PASSES):
             break
     out[ok] = x
     return out
+
+
+def fix_scene(scene, out):
+    """Haltungsdateien einer fertigen Szene (Viewer-Format) mit `keep_arms_out` überarbeiten; Rest der Szene wird kopiert. Rückgabe: (Bilder davor, danach) mit Arm im Rumpf."""
+    scene, out = Path(scene), Path(out)
+    meta = json.loads((scene / "meta.json").read_text())
+    poses = meta["poses"]
+    shutil.copytree(scene, out, dirs_exist_ok=True)
+    players = sum(1 for e in meta["entities"] if e["kind"] == "player")
+    before = after = 0
+    for k in range(poses["chunks"]):
+        path = out / poses["path"].format(chunk=f"{k:03d}")
+        raw = np.fromfile(path, "<i2").reshape(-1, players, len(NAMES), 3)
+        arr = np.where(raw == poses["missing"], np.nan, raw * poses["scale"])
+        frames = min(len(arr), meta["frames"] - k * poses["chunkFrames"])
+        fixed = arr.copy()
+        for p in range(players):
+            fixed[:frames, p] = keep_arms_out(arr[:frames, p])
+            before += int((penetration(arr[:frames, p]) > 0.03).any(axis=1).sum())
+            after += int((penetration(fixed[:frames, p]) > 0.03).any(axis=1).sum())
+        values = np.where(np.isnan(fixed), poses["missing"], np.clip(np.round(np.nan_to_num(fixed) / poses["scale"]), -32767, 32767)).astype("<i2")
+        values.tofile(path)
+    return before, after
+
+
+if __name__ == "__main__":
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("szene")
+    ap.add_argument("ausgabe")
+    a = ap.parse_args()
+    before, after = fix_scene(a.szene, a.ausgabe)
+    print(f"Spieler-Bilder mit Arm mehr als 3 cm im Rumpf: {before} -> {after}  ({a.ausgabe})")

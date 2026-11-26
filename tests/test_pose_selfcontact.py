@@ -65,5 +65,26 @@ class SelfContactTest(unittest.TestCase):
         self.assertEqual(sc.penetration(p)[1].tolist(), [0.0, 0.0])
 
 
+class SceneFileTest(unittest.TestCase):
+    def test_a_finished_scene_is_rewritten_in_a_new_folder(self):
+        import json
+        import tempfile
+        from pathlib import Path
+        p = hands_in_belly(2)
+        raw = np.round(p / 0.001).astype("<i2")[:, None]          # (Bilder, Spieler = 1, 20, 3)
+        meta = {"frames": 2, "entities": [{"kind": "player", "id": "own-1"}],
+                "poses": {"chunks": 1, "chunkFrames": 1500, "path": "poses/{chunk}.bin", "missing": -32768, "scale": 0.001}}
+        with tempfile.TemporaryDirectory() as tmp:
+            src, out = Path(tmp) / "src", Path(tmp) / "out"
+            (src / "poses").mkdir(parents=True)
+            (src / "meta.json").write_text(json.dumps(meta))
+            raw.tofile(src / "poses" / "000.bin")
+            before, after = sc.fix_scene(src, out)
+            self.assertEqual((before, after), (2, 0))
+            self.assertTrue((np.fromfile(src / "poses" / "000.bin", "<i2") == raw.ravel()).all())      # die Quelle bleibt unverändert
+            fixed = np.fromfile(out / "poses" / "000.bin", "<i2").reshape(2, 1, 20, 3) * 0.001
+            self.assertLess(sc.penetration(fixed[:, 0]).max(), 0.01)
+
+
 if __name__ == "__main__":
     unittest.main()
