@@ -226,6 +226,110 @@ GAP_MAX_S = 0.8            # s: so lange Lücken werden überbrückt, längere n
 HOLD_S = 1.0               # s: am Anfang und Ende der Szene hält der Ball so lange die nächste bekannte Lage, danach ist er unbekannt
 ARC_MAX_S = 1.2            # s: bis zu dieser Dauer wird eine schnelle Lücke zwischen Bodenlagen als Flug mit Bogen überbrückt (Scheitel g·T²/8)
 ARC_MIN_SPEED = 7.0        # m/s: langsamer rollt der Ball
+AIR_MAX_S = 3.5            # s: so lange darf ein Flug durch eine Lücke gerechnet werden (Scheitel 15 m: obere Grenze für einen Schlag im Jugendfußball)
+AIR_MIN_Z = 0.25           # m: Höhe, ab der ein Bild als Flug gilt
+AIR_FIT_FRAMES = 8         # Bilder vor und hinter der Lücke, aus denen die Parabel stammt
+AIR_MIN_FIT = 4            # so viele Flugbilder braucht eine Seite mindestens
+AIR_RMS = 0.30            # m: Restfehler, bis zu dem eine Parabel beide Seiten einer Lücke erklärt
+AIR_LAND_ERR = 2.5         # m: so weit darf die Rechnung vom gesehenen Ort am anderen Ende der Lücke abweichen
+AIR_ROLL_SPEED = 5.0       # m/s: Rollen nach der Landung bis zur nächsten Lage (Zuschlag zur erlaubten Abweichung)
+
+
+def _air_side(xy: np.ndarray, z: np.ndarray, start: int, step: int) -> list:
+    """Bilder im Flug (Höhe ≥ AIR_MIN_Z) lückenlos ab `start` in Richtung `step`, höchstens AIR_FIT_FRAMES; zeitlich geordnet."""
+    out, f = [], start
+    while 0 <= f < len(xy) and len(out) < AIR_FIT_FRAMES and not np.isnan(xy[f, 0]) and z[f] >= AIR_MIN_Z:
+        out.append(f)
+        f += step
+    return sorted(out)
+
+
+def _air_fit(frames: list, xy: np.ndarray, z: np.ndarray, fps: float) -> tuple:
+    """Wurfparabel (feste Schwerkraft) durch die Lagen: p0 (3,) bei Zeit des ersten Bildes, v (3,), Restfehler. Höhe = Mittelpunkt des Balls."""
+    t = (np.array(frames) - frames[0]) / fps
+    pts = np.column_stack([xy[frames], z[frames] + ball_physics.RADIUS])
+    y = pts + 0.5 * ball_physics.G * (t ** 2)[:, None] * np.array([0.0, 0.0, 1.0])
+    A = np.column_stack([np.ones_like(t), t])
+    coef, *_ = np.linalg.lstsq(A, y, rcond=None)
+    return coef[0], coef[1], float(np.sqrt(((y - A @ coef) ** 2).sum(axis=1).mean()))
+
+
+def _air_at(p0, v, t) -> np.ndarray:
+    return p0 + v * t - 0.5 * ball_physics.G * t * t * np.array([0.0, 0.0, 1.0])
+
+
+def air_bridge(xy: np.ndarray, z: np.ndarray, A: int, B: int, fps: float) -> bool:
+    """Flug durch die Lücke (A, B) rechnen, wenn ihn das Gesehene davor und/oder danach bestimmt, und die Lücke damit füllen (Rückgabe True).
+    Beide Seiten im Flug: eine Parabel muss beide erklären (Restfehler AIR_RMS). Nur eine Seite im Flug (Schuss, dessen Beginn man sah, oder dessen Landung):
+    die Parabel muss am Boden dort ankommen oder dort herkommen, wo die andere Seite liegt (AIR_LAND_ERR). Sonst bleibt die Lücke leer: Ohne Beleg
+    gibt es keine Bahn."""
+    T = (B - A) / fps
+    if T > AIR_MAX_S:
+        return False
+    before, after = _air_side(xy, z, A, -1), _air_side(xy, z, B, +1)
+    R = ball_physics.RADIUS
+    g = ball_physics.G
+    n = np.arange(A + 1, B)
+    if len(before) >= AIR_MIN_FIT and len(after) >= AIR_MIN_FIT:
+        frames = before + after
+        p0, v, rms = _air_fit(frames, xy, z, fps)
+        if rms > AIR_RMS:
+            return False
+        pts = _air_at(p0, v, ((n - frames[0]) / fps)[:, None])
+        xy[A + 1:B], z[A + 1:B] = pts[:, :2], np.maximum(pts[:, 2] - R, 0.0)
+        return True
+    if len(before) >= AIR_MIN_FIT or len(after) >= AIR_MIN_FIT:
+        forward = len(before) >= AIR_MIN_FIT
+        frames = before if forward else after
+        p0, v, rms = _air_fit(frames, xy, z, fps)
+        if rms > AIR_RMS:
+            return False
+        # Zeit (ab frames[0]), zu der der Mittelpunkt wieder auf Bodenhöhe ist: z0 + vz t - g t²/2 = R
+        disc = v[2] ** 2 + 2 * g * (p0[2] - R)
+        if disc < 0:
+            return False
+        roots = ((v[2] - np.sqrt(disc)) / g, (v[2] + np.sqrt(disc)) / g)      # früher, später
+        other = B if forward else A
+        t_other = (other - frames[0]) / fps
+        if forward:
+            t_ground = roots[1]
+            if not ((A - frames[0]) / fps < t_ground <= t_other):
+                return False
+            rest = t_other - t_ground
+            ground_xy = p0[:2] + v[:2] * t_ground
+            if z[other] >= AIR_MIN_Z or np.isnan(xy[other, 0]):
+                ok = np.linalg.norm(_air_at(p0, v, t_other)[:2] - xy[other]) <= AIR_LAND_ERR and abs(_air_at(p0, v, t_other)[2] - R - z[other]) <= 0.8
+                rest = 0.0
+            else:
+                ok = np.linalg.norm(ground_xy - xy[other]) <= AIR_LAND_ERR + AIR_ROLL_SPEED * rest
+        else:
+            t_ground = roots[0]
+            if not (t_other <= t_ground < (B - frames[0]) / fps):
+                return False
+            rest = t_ground - t_other
+            ground_xy = p0[:2] + v[:2] * t_ground
+            if z[other] >= AIR_MIN_Z or np.isnan(xy[other, 0]):
+                ok = np.linalg.norm(_air_at(p0, v, t_other)[:2] - xy[other]) <= AIR_LAND_ERR and abs(_air_at(p0, v, t_other)[2] - R - z[other]) <= 0.8
+                rest = 0.0
+            else:
+                ok = np.linalg.norm(ground_xy - xy[other]) <= AIR_LAND_ERR + AIR_ROLL_SPEED * rest
+        if not ok:
+            return False
+        t = (n - frames[0]) / fps
+        pts = _air_at(p0, v, t[:, None])
+        out_xy, out_z = pts[:, :2], np.maximum(pts[:, 2] - R, 0.0)
+        rolled = (t > t_ground) if forward else (t < t_ground)    # nach der Landung (oder vor dem Abschlag) bis zur anderen Seite am Boden entlang
+        if rolled.any():
+            if rest > GAP_MAX_S:     # zwischen Landung und nächster Lage zu lange ungesehen: der Flug zählt, das Rollen danach nicht
+                out_xy[rolled], out_z[rolled] = np.nan, np.nan
+            else:
+                span = max(abs(t_other - t_ground), 1e-9)
+                w = (np.abs(t - t_ground) / span)[rolled]
+                out_xy[rolled] = ground_xy + (xy[other] - ground_xy) * w[:, None]
+                out_z[rolled] = 0.0
+        xy[A + 1:B], z[A + 1:B] = out_xy, out_z
+        return True
+    return False
 
 
 def bridge(xy: np.ndarray, z: np.ndarray, fps: float) -> tuple:
@@ -259,6 +363,8 @@ def bridge(xy: np.ndarray, z: np.ndarray, fps: float) -> tuple:
         A, B = a - 1, b
         T = (B - A) / fps
         v = float(np.linalg.norm(xy[B] - xy[A])) / T
+        if T > GAP_MAX_S and air_bridge(xy, z, A, B, fps):    # lange Lücke: nur ein gerechneter Flug, den das Gesehene bestimmt
+            continue
         if v > GAP_MAX_SPEED or T > GAP_MAX_S:
             xy[a:b], z[a:b] = np.nan, np.nan
             continue

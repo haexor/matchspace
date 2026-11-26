@@ -283,3 +283,70 @@ class FlightContactsTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class AirBridgeTest(unittest.TestCase):
+    """Ein Hochschuss: Der Anfang des Flugs ist zu sehen, dann nicht mehr; die Lücke wird aus der Wurfparabel gefüllt, wenn das Gesehene sie bestimmt."""
+    FPS = 25.0
+    V = np.array([8.0, 2.0, 9.0])       # m/s: Abschuss aus dem Stand vom Boden, Flugdauer 2*9/9,81 = 1,83 s
+
+    def truth(self, t):
+        c = ball_zero = bm.ball_physics.RADIUS
+        pos = np.array([0.0, 0.0, c]) + self.V * t - 0.5 * bm.ball_physics.G * t * t * np.array([0.0, 0.0, 1.0])
+        return pos
+
+    def build(self, seen, n=100, roll_to=None):
+        xy, z = np.full((n, 2), np.nan), np.zeros(n)
+        for f in seen:
+            p = self.truth(f / self.FPS)
+            xy[f], z[f] = p[:2], max(p[2] - bm.ball_physics.RADIUS, 0.0)
+        if roll_to is not None:
+            for f, q in roll_to.items():
+                xy[f], z[f] = q, 0.0
+        return xy, z
+
+    def test_start_of_flight_seen_and_landing_seen_fills_the_arc(self):
+        land = self.truth(1.83)[:2]
+        xy, z = self.build(range(0, 13), roll_to={f: land + [0.4 * (f - 50) / 25, 0] for f in range(50, 60)})     # Beginn 0–0,5 s, Ball wieder ab 2,0 s am Boden (Landung 1,83 s)
+        out, oz = bm.bridge(xy, z, self.FPS)
+        self.assertFalse(np.isnan(out[13:50, 0]).any())
+        self.assertGreater(oz[13:50].max(), 3.5)                         # der Scheitel liegt bei 4,1 m
+        self.assertAlmostEqual(float(oz[34]), self.truth(34 / self.FPS)[2] - bm.ball_physics.RADIUS, delta=0.15)
+
+    def test_long_unseen_roll_after_the_landing_stays_empty(self):
+        land = self.truth(1.83)[:2]
+        xy, z = self.build(range(0, 13), roll_to={f: land + [3.0, 0] for f in range(90, 100)})     # Landung bei 1,83 s, nächste Lage erst bei 3,6 s
+        out, oz = bm.bridge(xy, z, self.FPS)
+        self.assertFalse(np.isnan(out[14:44, 0]).any())          # der Flug bis zur Landung wird gezeichnet
+        self.assertGreater(oz[14:44].max(), 3.5)
+        self.assertTrue(np.isnan(out[50:88, 0]).all())            # das Rollen danach nicht
+
+    def test_both_sides_in_the_air_one_parabola(self):
+        xy, z = self.build(list(range(0, 10)) + list(range(36, 44)))     # Lücke 0,4–1,4 s = 1 s
+        out, oz = bm.bridge(xy, z, self.FPS)
+        self.assertFalse(np.isnan(out[10:36, 0]).any())
+        for f in (15, 25, 30):
+            np.testing.assert_allclose(out[f], self.truth(f / self.FPS)[:2], atol=0.1)
+            self.assertAlmostEqual(float(oz[f]), self.truth(f / self.FPS)[2] - bm.ball_physics.RADIUS, delta=0.1)
+
+    def test_landing_far_from_the_calculated_place_leaves_the_gap_empty(self):
+        xy, z = self.build(range(0, 13), roll_to={f: np.array([-30.0, 20.0]) for f in range(50, 60)})
+        out, _ = bm.bridge(xy, z, self.FPS)
+        self.assertTrue(np.isnan(out[14:49, 0]).all())
+
+    def test_flight_seen_only_after_the_gap_comes_from_the_ground_where_it_was(self):
+        xy, z = self.build(range(0, 0))
+        xy[:6], z[:6] = np.array([0.0, 0.0]), 0.0                        # Ball liegt bis 0,2 s ruhig am Boden
+        for f in range(30, 40):                                           # Flug ab 1,2 s zu sehen
+            p = self.truth(f / self.FPS - 0.2 - 0.0)                       # Abschuss bei 0,2 s
+            if p[2] > bm.ball_physics.RADIUS + 0.3:
+                xy[f], z[f] = p[:2] - self.truth(0.0)[:2], p[2] - bm.ball_physics.RADIUS
+        xy[30:40, :] = np.where(np.isnan(xy[30:40]), np.nan, xy[30:40])
+        out, oz = bm.bridge(xy, z, self.FPS)
+        self.assertFalse(np.isnan(out[10:30, 0]).any())
+        self.assertGreater(oz[10:30].max(), 0.5)
+
+    def test_too_few_flight_frames_do_not_make_a_flight(self):
+        xy, z = self.build(range(0, 3), roll_to={f: np.array([14.0, 3.0]) for f in range(50, 60)})
+        out, _ = bm.bridge(xy, z, self.FPS)
+        self.assertTrue(np.isnan(out[5:49, 0]).all())
