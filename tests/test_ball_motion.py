@@ -281,8 +281,8 @@ class FlightContactsTest(unittest.TestCase):
         self.assertEqual(bm.reach(fit, o, d, np.ones(len(r), bool), 14, 8, self.FPS), 9)
 
 
-class AirBridgeTest(unittest.TestCase):
-    """Ein Hochschuss: Der Anfang des Flugs ist zu sehen, dann nicht mehr; die Lücke wird aus der Wurfparabel gefüllt, wenn das Gesehene sie bestimmt."""
+class _AirTruth(unittest.TestCase):
+    """Hilfe für die Flugtests: ein Schuss vom Boden mit bekannter Parabel (kein eigener Test)."""
     FPS = 25.0
     V = np.array([8.0, 2.0, 9.0])       # m/s: Abschuss aus dem Stand vom Boden, Flugdauer 2*9/9,81 = 1,83 s
 
@@ -300,6 +300,10 @@ class AirBridgeTest(unittest.TestCase):
             for f, q in roll_to.items():
                 xy[f], z[f] = q, 0.0
         return xy, z
+
+
+class AirBridgeTest(_AirTruth):
+    """Ein Hochschuss: Der Anfang des Flugs ist zu sehen, dann nicht mehr; die Lücke wird aus der Wurfparabel gefüllt, wenn das Gesehene sie bestimmt."""
 
     def test_start_of_flight_seen_and_landing_seen_fills_the_arc(self):
         land = self.truth(1.83)[:2]
@@ -346,6 +350,65 @@ class AirBridgeTest(unittest.TestCase):
         xy, z = self.build(range(0, 3), roll_to={f: np.array([14.0, 3.0]) for f in range(50, 60)})
         out, _ = bm.bridge(xy, z, self.FPS)
         self.assertTrue(np.isnan(out[5:49, 0]).all())
+
+
+class AirContactTest(_AirTruth):
+    """Ein hoher Ball wird per Kopf angenommen: Der Flug gilt bis zum Spieler, danach geht der Ball woanders hin als gerechnet."""
+    N = 100
+
+    def players_at(self, *points):
+        return np.tile(np.array(points, float)[None], (self.N, 1, 1))
+
+    def mismatch(self, near=None):
+        """Flug bis 0,5 s gesehen; später Lage am Boden 6 m von der gerechneten Landung (14,6 / 3,7) entfernt, ab 2,0 s."""
+        land = self.truth(1.83)[:2]
+        return self.build(range(0, 13), roll_to={f: (land + [-6.0, 0.0] if near is None else near) for f in range(50, 60)})
+
+    def test_flight_is_drawn_to_the_player_who_heads_it_then_goes_straight_to_the_next_seen_place(self):
+        xy, z = self.mismatch()
+        head = self.truth(1.56)                                        # beim Abstieg in 2,3 m Höhe
+        out, oz = bm.bridge(xy, z, self.FPS, self.players_at(head[:2], [40.0, 40.0]))
+        contact = int(round(1.56 * self.FPS))
+        self.assertFalse(np.isnan(out[13:50, 0]).any())
+        for f in (20, 30, contact - 2):
+            np.testing.assert_allclose(out[f], self.truth(f / self.FPS)[:2], atol=0.05)
+        self.assertLess(np.linalg.norm(out[contact + 1] - head[:2]), 1.5)    # danach nicht mehr auf der Parabel: gerade zur nächsten Lage
+        self.assertGreater(np.linalg.norm(out[48] - self.truth(48 / self.FPS)[:2]), 3.0)
+
+    def test_unknown_after_the_contact_when_the_next_place_is_too_far(self):
+        xy, z = self.mismatch(near=np.array([-30.0, 20.0]))
+        out, _ = bm.bridge(xy, z, self.FPS, self.players_at(self.truth(1.56)[:2]))
+        contact = int(round(1.56 * self.FPS))
+        self.assertFalse(np.isnan(out[13:contact, 0]).any())
+        self.assertTrue(np.isnan(out[contact + 2:49, 0]).all())
+
+    def test_ball_flying_over_the_player_is_no_contact(self):
+        xy, z = self.mismatch()
+        out, _ = bm.bridge(xy, z, self.FPS, self.players_at(self.truth(1.2)[:2]))     # dort in 3,8 m Höhe
+        self.assertTrue(np.isnan(out[14:49, 0]).all())
+
+    def test_the_kicker_at_the_start_is_not_a_contact(self):
+        xy, z = self.mismatch()
+        out, _ = bm.bridge(xy, z, self.FPS, self.players_at([0.0, 0.0]))
+        self.assertTrue(np.isnan(out[14:49, 0]).all())
+
+    def test_without_players_nothing_changes(self):
+        xy, z = self.mismatch()
+        out, _ = bm.bridge(xy, z, self.FPS)
+        self.assertTrue(np.isnan(out[14:49, 0]).all())
+
+    def test_flight_seen_before_and_after_with_a_header_in_between(self):
+        # Flug 1 bis 0,5 s gesehen, Kopfball bei 1,56 s, danach Flug mit anderer Richtung ab 2,0 s gesehen (steigt wieder bis 2,6 s)
+        xy, z = self.build(range(0, 13))
+        head = self.truth(1.56)
+        for f in range(50, 60):
+            t = (f - 39) / self.FPS
+            p = np.array([head[0] - 3.0 * t, head[1] + 1.0 * t, head[2] + 5.0 * t - 0.5 * bm.ball_physics.G * t * t])
+            xy[f], z[f] = p[:2], p[2] - bm.ball_physics.RADIUS
+        out, oz = bm.bridge(xy, z, self.FPS, self.players_at(head[:2]))
+        self.assertFalse(np.isnan(out[13:50, 0]).any())
+        np.testing.assert_allclose(out[30], self.truth(30 / self.FPS)[:2], atol=0.05)
+        self.assertLess(np.linalg.norm(out[45] - (head[:2] + [-3.0, 1.0] * np.array([6 / self.FPS] * 2))), 1.0)
 
 
 if __name__ == "__main__":

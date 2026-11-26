@@ -6,6 +6,7 @@ import { buildStadium } from './stadium.js';
 import { numberSprite, ballTexture } from './props.js';
 import { createLooks } from './looks.js';
 import { createReference } from './reference.js';
+import { createBallTrail } from './ball-trail.js';
 import { createContactShadows } from './contact-shadows.js';
 
 const $ = (id) => document.getElementById(id);
@@ -127,6 +128,7 @@ const actors = ENTITIES.map((e, index) => {
   return { group, body, label, halo, kind: e.kind };
 });
 const ballIndex = ENTITIES.findIndex((e) => e.kind === 'ball');
+const ballTrail = createBallTrail({ scene, sample, ballIndex, fps: meta.fps, enabled: query.get('trail') !== '0' });   // trail=0: ohne Spur
 const pickable = actors.filter((a) => a.kind === 'player').map((a) => a.body);
 
 // Skelette: je Knochen ein Zylinder, je Gelenk eine Kugel, alle Spieler in zwei Instanz-Meshes.
@@ -408,6 +410,7 @@ function frame(now) {
     poseChunk(t + POSES.chunkFrames); // nächsten Block vorladen
   }
   rollBall();
+  ballTrail.update(t, camera);
   const target = selected >= 0 && actors[selected].group.visible ? actors[selected].group.position : null;
   marker.visible = !!target && mode !== 'fp' && MARKS;
   if (target) marker.position.set(target.x, 0.03, target.z);
