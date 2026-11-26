@@ -275,6 +275,12 @@ def air_bridge(xy: np.ndarray, z: np.ndarray, A: int, B: int, fps: float) -> boo
         p0, v, rms = _air_fit(frames, xy, z, fps)
         if rms > AIR_RMS:
             return False
+        # Eine nach unten geöffnete Parabel hat ihr Minimum an einem Intervallrand.
+        # Sind beide Randlagen über dem Boden, bleibt sie damit in der ganzen Lücke
+        # physikalisch möglich; andernfalls wäre die Flugbahn unter dem Rasen.
+        edge_t = np.array([A, B]) / fps - frames[0] / fps
+        if np.min(_air_at(p0, v, edge_t)[:, 2]) < R:
+            return False
         pts = _air_at(p0, v, ((n - frames[0]) / fps)[:, None])
         xy[A + 1:B], z[A + 1:B] = pts[:, :2], np.maximum(pts[:, 2] - R, 0.0)
         return True

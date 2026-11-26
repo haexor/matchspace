@@ -281,10 +281,6 @@ class FlightContactsTest(unittest.TestCase):
         self.assertEqual(bm.reach(fit, o, d, np.ones(len(r), bool), 14, 8, self.FPS), 9)
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class AirBridgeTest(unittest.TestCase):
     """Ein Hochschuss: Der Anfang des Flugs ist zu sehen, dann nicht mehr; die Lücke wird aus der Wurfparabel gefüllt, wenn das Gesehene sie bestimmt."""
     FPS = 25.0
@@ -350,3 +346,7 @@ class AirBridgeTest(unittest.TestCase):
         xy, z = self.build(range(0, 3), roll_to={f: np.array([14.0, 3.0]) for f in range(50, 60)})
         out, _ = bm.bridge(xy, z, self.FPS)
         self.assertTrue(np.isnan(out[5:49, 0]).all())
+
+
+if __name__ == "__main__":
+    unittest.main()
