@@ -32,10 +32,12 @@ def main(a):
     cands = work / "kandidaten"
     if a.neu or not (cands / "index.json").exists():
         photo_candidates.main(a.video, a.detektionen, a.kamera, a.hintergrund, a.szenenordner, str(cands), set())
-    teams = Path(a.teams) if a.teams else work / "teams.json"
+    # Ein Trockenlauf darf keine Modellaufrufe auslösen und soll eine spätere
+    # reguläre Erkennung nicht mit den unvollständigen Planungsdaten blockieren.
+    teams = Path(a.teams) if a.teams else work / ("teams.plan.json" if a.trocken else "teams.json")
     if not a.teams and (a.neu or not teams.exists()):
         team_text.main([(a.video, a.detektionen, a.kamera, a.hintergrund, a.szenenordner)], str(work / "team-text"), 40)
-        team_detect.main(a.szenenordner, str(teams), str(work / "team-text"), str(cands), True)
+        team_detect.main(a.szenenordner, str(teams), str(work / "team-text"), str(cands), not a.trocken, infer=not a.trocken)
     ai = argparse.Namespace(kandidaten=str(cands), teams=str(teams), ausgabe=str(work / "ki"), ansichten=a.ansichten, spieler=None,
                             modell=a.modell, ersatz=a.ersatz, max_kosten=a.max_kosten, trocken=a.trocken)
     photo_ai.cmd_lauf(ai)

@@ -129,12 +129,12 @@ def read_text(image_paths):
     return data.get("line1", ""), data.get("line2", ""), float(data.get("confidence", 0)), data.get("notes", "")
 
 
-def main(scene_dir, out_path, back_dir, cand_dir, read):
+def main(scene_dir, out_path, back_dir, cand_dir, read, infer=True):
     teams = colours(scene_dir)
     for team, entry in teams.items():
         entry.update({"backText": [], "front": None})
         entry.pop("front")
-        if cand_dir and black_sleeves(cand_dir, team):
+        if infer and cand_dir and black_sleeves(cand_dir, team):
             entry["extra"] = "black long undershirt sleeves"
         if not read:
             continue
