@@ -68,6 +68,9 @@ class PlanTest(unittest.TestCase):
             (out / "own-6" / "hinten.png").write_bytes(b"x")
             index = {"own-6": {"hinten": {"ok": True, "model": photo_ai.MODEL, "digest": jobs[0]["digest"]}}}
             self.assertTrue(photo_ai.cached(index, jobs[0], photo_ai.MODEL, out))
+            fallback_index = {"own-6": {"hinten": dict(index["own-6"]["hinten"], model=photo_ai.FALLBACK)}}
+            self.assertTrue(photo_ai.cached(fallback_index, jobs[0], (photo_ai.MODEL, photo_ai.FALLBACK), out))
+            self.assertFalse(photo_ai.cached(fallback_index, jobs[0], photo_ai.MODEL, out))
             self.assertFalse(photo_ai.cached(index, other[0], photo_ai.MODEL, out))
             self.assertFalse(photo_ai.cached(index, jobs[0], "other/model", out))
 

@@ -159,9 +159,11 @@ def fill_estimate(cand_dir, views, only, folder):
     return gen, mirror
 
 
-def cached(index, job, model, folder):
+def cached(index, job, models, folder):
     e = index.get(job["case"]["player"], {}).get(job["case"]["view"])
-    return bool(e and e.get("ok") and e.get("digest") == job["digest"] and e.get("model") == model and (folder / job["case"]["player"] / f"{job['case']['view']}.png").exists())
+    if isinstance(models, str):
+        models = (models,)
+    return bool(e and e.get("ok") and e.get("digest") == job["digest"] and e.get("model") in models and (folder / job["case"]["player"] / f"{job['case']['view']}.png").exists())
 
 
 def cmd_plan(a, jobs_=None):
@@ -170,7 +172,8 @@ def cmd_plan(a, jobs_=None):
     folder = Path(getattr(a, "ausgabe", None) or "/nonexistent")
     todo = jobs(a.kandidaten, teams, views, set(a.spieler or []), folder)
     index = json.loads((folder / "index.json").read_text()) if (folder / "index.json").exists() else {}
-    new = [j for j in todo if not cached(index, j, a.modell, folder)]
+    models = tuple(m for m in (a.modell, a.ersatz) if m)
+    new = [j for j in todo if not cached(index, j, models, folder)]
     players = sorted({j["case"]["player"] for j in todo})
     stats = price_stats(a.modell)
     if not stats:   # kein Vergleichslauf vorhanden: Preisliste von OpenRouter (frei abrufbar)
@@ -213,6 +216,7 @@ def cmd_lauf(a):
     index = json.loads(index_path.read_text()) if index_path.exists() else {}
     known = {m["id"]: m for m in bench.image_models()}
     models = [a.modell] + ([a.ersatz] if a.ersatz else [])
+    cache_models = tuple(models)
     missing = [m for m in models if m not in known]
     if missing:
         sys.exit(f"Unbekannt bei OpenRouter: {missing}")
@@ -264,12 +268,12 @@ def cmd_lauf(a):
     def crop_stage(stage):
         nonlocal index
         index = json.loads(index_path.read_text()) if index_path.exists() else index
-        run([j for j in jobs(a.kandidaten, teams, views, only, folder) if j["case"]["view"] in stage and not cached(index, j, a.modell, folder)])
+        run([j for j in jobs(a.kandidaten, teams, views, only, folder) if j["case"]["view"] in stage and not cached(index, j, cache_models, folder)])
 
     def fill_stage(stage):
         nonlocal index
         index = json.loads(index_path.read_text()) if index_path.exists() else index
-        run([j for j in fill_jobs(a.kandidaten, teams, views, only, folder, stage) if not cached(index, j, a.modell, folder)])
+        run([j for j in fill_jobs(a.kandidaten, teams, views, only, folder, stage) if not cached(index, j, cache_models, folder)])
 
     crop_stage(("hinten",))
     crop_stage(("vorn",))
