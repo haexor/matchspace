@@ -285,3 +285,13 @@ Rückmeldung: Hals und Kopf wirkten falsch, teils „zwei Nasen, vier Augen“, 
 6. **Rumpflücken** (vom Arm verdeckt) füllt der Median der direkten Nachbarn, nicht der ganzen Zeile (die Rückennummer zog Weiß in die Seiten).
 Verworfen: Halshaut schon ab `t > 1.05` oder mit Radiusbedingung (grüne/rosa Flecken an den Schultern).
 Offen (Geometrie, keine Textur): An Ellbogen, Hüfte, Schulterrand und zwischen Kopf und Hals durchdringen sich die Röhren des Avatars (Arm im Rumpf, Hals im Kopf); die Teile zeigen sich dort gegenseitig durch (schwarze/rote Zacken, rosa Streifen am Saum). Das lässt sich nur im Netz oder in der Pose beheben. Das Gesicht belegt nur etwa 40 Pixel der Kopfkachel.
+
+## Versuch 23: Saubere Teilegrenzen im Netz und größerer Kopfbereich
+
+Die Zacken an Ellbogen, Knie und Hals (Versuch 22, „offen“) kamen nicht aus der Textur, sondern aus der Teilung des Viewer-Netzes (`web/avatar-look.js`): Jeder Netzpunkt gehört nach dem größten Hautgewicht zu einem Teil der Textur, der Shader bekommt Teil und Koordinaten (Winkel, t) der drei Punkte eines Dreiecks und interpoliert sie. Punkte am Gelenk rechneten ihre Koordinaten für das Nachbarteil: zwei Achsen mischten sich im Dreieck, der Rand zwischen Sockenband und Haut oder Ärmel und Unterärmel lief als Sägezahn in Dreiecksgröße.
+Jetzt (`splitSeams`):
+- An Gelenken (Oberarm/Unterarm, Oberschenkel/Unterschenkel) ist die Grenze eine Ebene senkrecht zur Achse des oberen Teils. Dreiecke, die sie schneiden, werden an der Ebene geteilt (neue Punkte je Seite, Lage und Normale interpoliert, Hautgewichte vom näheren Punkt). Die Grenze ist ein glatter Ring.
+- An den übrigen Teilegrenzen (Rumpf/Oberschenkel, Hals/Kopf) gehört ein Dreieck zum Teil der Mehrheit seiner Punkte; die fremden Punkte bekommen Kopien mit den Koordinaten dieses Teils.
+- Das Netz hat danach mehr Punkte; `tools/avatar_bake.py` liest es unverändert aus (neu backen: `avatar_bake.py SZENE OUT.pkl --von 0 --bis 1`, für Spielerfotos reicht ein Bild).
+Größerer Kopf: Das Gesicht belegte nur etwa 32 Pixel der Kopfkachel. Der Kopfbereich liegt jetzt in der freien rechten unteren Ecke der Kachel (`veo_looks.SEGMENTS`, 256 × 256 statt 128 × 128 Pixel bei Kachel 512), das Gesicht bekommt etwa 64 Pixel. Szenen im alten Layout werden von `looks_from_photo.migrate_layout` beim Übertragen umgestellt (Kopfbereich hochskaliert kopiert, Meta angepasst); der Viewer liest die Rechtecke aus dem Meta.
+Bleibt: Durchdringungen, wo sich Teile wirklich durchstoßen (Unterarm hinter dem Rumpf an der Hüfte).

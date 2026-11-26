@@ -200,6 +200,21 @@ class PhotoMappingTest(unittest.TestCase):
         self.assertFalse(like[0, 1])
         self.assertFalse(like[0, 2])
 
+    def test_old_scene_layout_gets_the_big_head_area(self):
+        f = 4
+        looks = {"tile": 512, "columns": 2, "segments": [{"name": "torso", "rect": [0, 0, 256, 256], "t": [-0.45, 1.25]}, {"name": "head", "rect": [256, 0, 128, 128], "t": [0.0, 1.0]}]}
+        atlas = np.zeros((512, 1024, 3), np.uint8)
+        atlas[0:128, 256:384] = (10, 20, 30)           # alter Kopfbereich, Spieler 0
+        atlas[0:128, 768:896] = (40, 50, 60)           # Spieler 1
+        out, new = lfp.migrate_layout(atlas, looks, f)
+        want = next(tuple(v * f for v in rect) for name, rect, _, _ in lfp.vl.SEGMENTS if name == "head")
+        self.assertEqual(tuple(new["segments"][1]["rect"]), want)
+        x, y, w, h = want
+        self.assertTrue((out[y + 5, x + 5] == (10, 20, 30)).all())
+        self.assertTrue((out[y + 5, 512 + x + 5] == (40, 50, 60)).all())
+        again, same = lfp.migrate_layout(out, new, f)
+        self.assertIs(same, new)                          # schon im neuen Layout: nichts ändert sich
+
 
 if __name__ == "__main__":
     unittest.main()
