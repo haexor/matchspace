@@ -55,6 +55,12 @@ class QualityTest(unittest.TestCase):
         meta = {"entities": [{"kind": "player"}], "fps": 25}
         self.assertFalse(sq.quality(meta, np.zeros((3, 1, 2)), None)["ok"])
 
+    def test_ball_without_players_gives_no_height(self):
+        meta = {"entities": [{"kind": "ball"}], "fps": 25}
+        q = sq.quality(meta, np.zeros((3, 1, 2)), None)
+        self.assertIsNone(q["leadHeightPx"])
+        self.assertFalse(q["ok"])
+
 
 if __name__ == "__main__":
     unittest.main()

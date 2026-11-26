@@ -44,6 +44,8 @@ def pixel_height(cam, xy: np.ndarray) -> float | None:
 def lead_height(cam, xy: np.ndarray, kinds: list, ball: int) -> float | None:
     """Mittlere Höhe (Median, Pixel) des Spielers am Ball über alle Bilder, in denen der Ball da ist und ein Spieler höchstens NEAR_BALL_M entfernt steht."""
     players = [i for i, k in enumerate(kinds) if k == "player"]
+    if not players:
+        return None
     heights = []
     for f in range(len(xy)):
         b = xy[f, ball]
