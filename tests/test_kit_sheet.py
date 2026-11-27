@@ -116,6 +116,38 @@ class ShortsShapeTest(unittest.TestCase):
         self.assertIsNone(kit_sheet.shorts_shape(m))
 
 
+class ToSceneTest(unittest.TestCase):
+    def sheet_with_sleeves(self):
+        """Blatt mit sechs Stücken; die Trikots haben Ärmel (sonst ist die Trikotform nicht lesbar)."""
+        img = np.full((1024, 1024, 3), 217, np.uint8)
+        for x0 in (106, 519):
+            cv2.fillPoly(img, [np.array([[x0 + 80, 30], [x0 + 320, 30], [x0 + 320, 120], [x0 + 400, 150], [x0 + 400, 100], [x0 + 320, 60],
+                                         [x0 + 320, 380], [x0 + 80, 380], [x0 + 80, 60], [x0, 100], [x0, 150], [x0 + 80, 120]], np.int32)], (40, 40, 160))
+        for y, h in [(430, 250), (700, 290)]:
+            cv2.rectangle(img, (150, y), (450, y + h), (40, 40, 160), -1)
+            cv2.rectangle(img, (570, y), (870, y + h), (40, 40, 160), -1)
+        return img
+
+    def test_a_scene_without_looks_gets_the_team_kit(self):
+        import json
+        import tempfile
+        from pathlib import Path
+        with tempfile.TemporaryDirectory() as tmp:
+            scene = Path(tmp) / "scene"
+            scene.mkdir()
+            (scene / "meta.json").write_text(json.dumps({"teams": {}}))      # Szene ohne Videotexturen: kein "looks"
+            sheet = Path(tmp) / "own_kit.png"
+            cv2.imwrite(str(sheet), self.sheet_with_sleeves())
+            try:
+                kit_sheet.to_scene(sheet, scene, "own")
+            except SystemExit as stop:
+                self.fail(f"Blatt nicht lesbar: {stop}")
+            team = json.loads((scene / "meta.json").read_text())["looks"]["kit"]["teams"]["own"]
+            self.assertEqual(set(team["boxes"]), {"shirtFront", "shirtBack", "shortsFront", "shortsBack", "sockL", "sockR"})
+            self.assertIn("sleeveW", team["shape"])
+            self.assertTrue((scene / "kit" / "own.png").exists())
+
+
 class SpeckTest(unittest.TestCase):
     def sheet(self):
         img = np.full((1024, 1024, 3), 217, np.uint8)

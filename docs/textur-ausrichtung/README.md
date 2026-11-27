@@ -379,3 +379,12 @@ Rückmeldung: Arme noch deutlich zu muskulös ("Fußballer, keine Bodybuilder"),
 6. **Schuhe**: Der Schuh endet 2,5 cm tiefer als das Schuhfeld (`BOOT_DROP`; der Stutzen läuft entsprechend tiefer), hat eine überstehende Sohle (`SOLE`), eine dunkle Stollenplatte und eine leicht hellere Schnürung. Die Zonen entstehen im Fragmentshader aus Höhe und Normale der Grundhaltung (Farbwechsel je Eckpunkt zackte, weil das Netz des Fußes grob ist). Sohle hell bei dunklem Schuh, dunkel bei hellem.
 7. **Prüfen**: `spieler.html?...&cam=Höhe,Abstand,Richtung` richtet die Kamera auf einen Körperausschnitt (zum Prüfen von Saum, Ärmeln, Schuhen).
 Offen: Zwischen Ärmel und Rumpf bleibt eine Stufe im Ton (Ärmel etwas dunkler als der Rumpf im Blatt), Schuhe nur einfarbig mit Zonen, kein Schuh je Spieler aus einem Blatt; die Arme verändern das Netz: Das Netz für die Übertragung wurde nicht neu gebacken (Hautfarbe an Armen und Händen liegt dadurch bis etwa 1 cm daneben).
+
+## Versuch 33: Jede Figur trägt das Mannschaftskit
+
+Rückmeldung: Das Kit ist je Mannschaft einmal da, ein Spieler ohne Videotextur muss deshalb nicht verschwommen aussehen. Vorher war das Kit nur mit `&kit=1` an, das Blatt stand in der Szene, für die es erzeugt wurde, und Figuren ohne Videotextur bekamen nur einfarbige Flächen.
+Jetzt:
+- **Standard** (`web/avatar.js`): Kleidung als Hüllen ist immer an, `?kit=0` zeigt die alte Körpertextur.
+- **Jede Figur** (`outfitOf` in `web/looks.js`): Kit-Blatt der Mannschaft, mit Rückennummer nur, wenn sie aus dem Video gelesen ist (nie erfunden). Torwart, Schiedsrichter und Mannschaften ohne Blatt tragen einfarbige Hüllen (Mannschaftsfarbe, gleiche Form und Saumschatten, `kit.flat` in `web/garments.js`). Videotexturen liefern nur noch Gesicht und Haut.
+- **Ein Blatt je Mannschaft für alle Szenen eines Spiels**: `tools/kit_sheet.py MANNSCHAFT ... --szene web/data/SZENE` kopiert das Blatt samt Maßen in jede Szene (ohne neue Bildgenerierung); Szenen ohne `looks` (4928) bekommen den Eintrag neu angelegt.
+Offen: Der Torwart trägt eine andere Farbe als sein Team; ohne Blatt je Torwart bleibt er in der Teamfarbe. Standard-Haut und -Haar für Figuren ohne Foto sind die des Modells.

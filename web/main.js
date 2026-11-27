@@ -190,7 +190,7 @@ function drawSkeleton(slot, visible) {
 let avatarFactory = null;
 const avatars = new Map();
 // Aussehen je Spieler aus dem Video (web/looks.js)
-const { loadLooks, lookOf, hairOf, kitOf } = createLooks(meta, base);
+const { loadLooks, lookOf, hairOf, kitOf, outfitOf } = createLooks(meta, base);
 if (POSES) {
   Promise.all([loadAvatars('models/player/player.glb'), loadLooks()]).then(([factory]) => { avatarFactory = factory; })
     .catch((err) => console.warn('Körpermodell nicht geladen, zeige Skelette:', err));
@@ -384,7 +384,7 @@ function frame(now) {
         const e = ENTITIES[i];
         const kit = kitOf(e), look = lookOf(e);
         if (look) kit.hair = hairOf(look);
-        avatar = avatarFactory.create(kit, e.label ? null : e.number, e.id, look);
+        avatar = avatarFactory.create(kit, e.label ? null : e.number, e.id, look, outfitOf(e));
         scene.add(avatar.root);
         avatars.set(i, avatar);
       }
