@@ -49,6 +49,8 @@ EAR_MESH_X, EAR_MESH_Y = 0.075, (1.64, 1.73)      # m: Ohrnetz (Abstand von der 
 FACE_Z, FACE_TOP, FACE_X = (0.0, 0.03), (1.75, 1.79), (0.082, 0.1)      # m: Gesichtsfläche am Kopf (Vorderseite: z ab, bis zur Höhe, Abstand von der Mittelebene bis); Übergänge weich
 BACK_LIFT = 0.085          # m: Mitte der Rückenpartie über der Mitte zwischen Schulter und Hüfte
 BACK_HALF, BACK_CELL, BACK_COLUMNS = 0.15, 256, 8      # Rückenpartie: halbe Seitenlänge (m), Feldgröße (Pixel) und Felder je Zeile in backs.png (Maße wie plate in web/avatar.js)
+GARMENT_WAIST, GARMENT_SEAM, GARMENT_SEAM_MARGIN = 0.954, 0.12, 12.0      # Naht Trikot/Hose: Höhe der Hüfte (m, Grundhaltung: Beckenknochen + 5 mm), Breite des Bandes um sie (m), Abstand in Lab, um den die andere Stoffarbe näher sein muss
+GARMENT_SKIN_CHROMA, GARMENT_DARK_L, GARMENT_DARK_REL, GARMENT_MAX_Y = 16.0, 45.0, 0.7, 1.49      # Stoff: Farbabstand (a, b in Lab) zur Haut, unter dem ein Texel als Haut gilt; Helligkeit (0 bis 255), unter der Stoff als dunkel gilt, und Anteil der Stoffhelligkeit, unter dem ein Texel als Fehler gilt; Höhe (m) ab der der Halsausschnitt beginnt
 GAP_SPREAD = 17            # Texel: so weit reicht die Hautfarbe über den Rand der Netzfläche hinaus (Kopf/Hals, Hals/Rumpf)
 NECKLINE, NECKLINE_EDGE = (0.018, 0.55, 0.3), 0.008      # Halsausschnitt des Trikots wie im Viewer (fields in web/avatar.js): Höhe über dem Halsknochen, Anstieg je m seitlich, Anstieg je m nach hinten (bis 6 cm); weicher Rand in m
 NECK_RADII, NECK_EDGE = (0.09, 0.09), (1.0, 1.25)      # m: Halsröhre: Halbachsen (x, z) um den Halsknochen; Haut bis zum Rand (Anteil, weich von bis)
@@ -61,6 +63,7 @@ HEAD_NECK_T = 0.1          # Kopfachse: bis hier ist es der Halsansatz
 CROWN_T = 0.92             # Kopfachse: ab hier ist es der Scheitel
 NECK_T = 1.22              # Rumpfachse: ab hier ist der Rumpf nur noch Hals (Haut)
 FILL_MIN_COVERAGE = 0.6    # ab diesem Anteil der Texel eines Teils aus Fotos werden die übrigen aus den Nachbarn gefüllt (sonst bleibt das Video)
+GARMENT_SEGMENTS = ("torso", "thigh_l", "thigh_r", "calf_l", "calf_r")
 PARTS = ("torso", "head", "thigh_l", "thigh_r", "calf_l", "calf_r", "foot_l", "foot_r") + tuple(ARMS)
 
 
@@ -132,6 +135,55 @@ def back_patch(fm, image, yc, half=BACK_HALF, size=BACK_CELL):
     P = np.stack([x, y, np.zeros_like(x)], axis=1)
     u, v = project(fm, P)
     return np.clip(vl.sample(image, np.c_[u, v] + 0.5), 0, 255).astype(np.uint8).reshape(size, size, 3)
+
+
+def garment_cleanup(tile, wear, ok, P, skin_lab, skin_bgr):
+    """Löcher, Zacken und Flecken in Trikot, Hose und Stutzen beseitigen: Das Netz weiß je Texel, was dort getragen wird (`wear`: Trikot, Hose, Stutzen; Meter, positiv = bedeckt, wie
+    `fields` in web/avatar.js). Texel eines Kleidungsstücks, die hautfarben oder (bei hellem Stoff) schwarz sind, bekommen die Stoffarbe (Median der übrigen Texel des Stücks); Texel ohne
+    Kleidung (Beine zwischen Hose und Stutzen, Knie) insgesamt die Hautfarbe des Spielers. Das Foto trifft Saum und Hüfte nicht genau, und was der Arm oder ein anderer Spieler verdeckt, stand als Haut
+    oder Schwarz im Stoff (Zacken am Saum, Streifen an der Hüfte, Risse am Knie). Echte Muster (Streifen, Nummer, Kragen) sind weder hautfarben noch schwarz und bleiben."""
+    h, w = tile.shape[:2]
+    lab = cv2.cvtColor(tile, cv2.COLOR_BGR2LAB).astype(np.float32).reshape(-1, 3)
+    chroma = np.linalg.norm(lab[:, 1:] - skin_lab[1:], axis=1)
+    skin_like_t = (chroma < GARMENT_SKIN_CHROMA) & (np.abs(lab[:, 0] - skin_lab[0]) < 90)
+    dark_t = lab[:, 0] < GARMENT_DARK_L
+    shirt = np.nan_to_num(wear[:, 0]) > 0.003
+    shorts = (np.nan_to_num(wear[:, 1]) > 0.003) & ~shirt
+    sock = (np.nan_to_num(wear[:, 2]) > 0.003) & ~shirt & ~shorts
+    cloth = shirt | shorts | sock
+    below_neck = np.nan_to_num(P[:, 1]) < GARMENT_MAX_Y        # Halsausschnitt und Kragen (auch schwarzer Rand) bleiben, wie sie sind
+    flat = tile.reshape(-1, 3).astype(np.float32).copy()
+    changed = np.zeros(len(flat), bool)
+    refs = {}
+    for name_, group in (("shirt", shirt), ("shorts", shorts), ("sock", sock)):
+        members = group & ok & below_neck
+        good = members & ~skin_like_t & ~dark_t
+        if good.sum() < 20:
+            continue
+        ref = np.median(flat[good], axis=0)
+        refs[name_] = (members, ref, lab[good].mean(axis=0) if False else np.median(lab[good], axis=0))
+        ref_l = float(cv2.cvtColor(np.uint8([[ref]]), cv2.COLOR_BGR2LAB)[0, 0, 0])
+        too_dark = lab[:, 0] < GARMENT_DARK_REL * ref_l if ref_l > GARMENT_DARK_L + 30 else np.zeros(len(flat), bool)      # viel dunkler als der Stoff (Schwarz, Schatten des Arms); dunkler Stoff: kein Fehler
+        bad = members & (skin_like_t | too_dark)
+        flat[bad] = ref
+        changed |= bad
+    # Naht zwischen Trikot und Hose: Am Saum stehen Hosenfarbe im Trikot und Trikotfarbe in der Hose (das Foto trifft die Höhe nicht genau): dort gilt die Farbe des Stücks, zu dem der Texel gehört
+    if "shirt" in refs and "shorts" in refs:
+        waist_band = np.abs(np.nan_to_num(P[:, 1]) - GARMENT_WAIST) < GARMENT_SEAM
+        lab_shirt, lab_shorts = refs["shirt"][2], refs["shorts"][2]
+        d_shirt, d_shorts = np.linalg.norm(lab - lab_shirt, axis=1), np.linalg.norm(lab - lab_shorts, axis=1)
+        for key, other_closer in (("shirt", d_shorts + GARMENT_SEAM_MARGIN < d_shirt), ("shorts", d_shirt + GARMENT_SEAM_MARGIN < d_shorts)):
+            fix = refs[key][0] & waist_band & other_closer & ~changed
+            flat[fix] = refs[key][1]
+            changed |= fix
+    bare = ok & ~cloth & below_neck & (np.nan_to_num(wear[:, 3]) <= 0.003)
+    if bare.sum() >= 20:
+        flat[bare] = skin_bgr      # ganz: Das Foto gibt am Knie nur Schatten, Schmutz und Reste von Hose und Stutzen
+        changed |= bare
+    if not changed.any():
+        return tile
+    weight = cv2.GaussianBlur(changed.reshape(h, w).astype(np.float32), (0, 0), 1.2)[..., None]
+    return np.clip(tile.astype(np.float32) * (1.0 - weight) + flat.reshape(h, w, 3) * weight, 0, 255).astype(np.uint8)
 
 
 def smooth(x, lo, hi):
@@ -433,6 +485,7 @@ def main(scene_dir, player, photos, mesh_path, out_dir, debug=None):
     fits = {v: fit(mesh, str(p), v) for v, p in photos.items()}
     images = {v: cv2.imread(str(p)).astype(np.float32) for v, p in photos.items()}
     skin = skin_reference(fits, images)
+    skin_lab = None if skin is None else np.asarray(skin, np.float32)
     skin_bgr = None if skin is None else cv2.cvtColor(np.uint8([[np.clip(skin, 0, 255)]]), cv2.COLOR_LAB2BGR)[0, 0].astype(np.float32)      # Hautton des Spielers (Nase, Wange im Foto)
     out = atlas.copy()
     q = np.linspace(0, 100, 101)
@@ -575,6 +628,9 @@ def main(scene_dir, player, photos, mesh_path, out_dir, debug=None):
             tile_new = paint_ear(tile_new, ear_mesh.reshape(h, w), cheek.reshape(h, w))
             ear_zone = (ok & np.any([(px > x0) & (py > y0) & (py < y1) for x0, y0, y1 in EAR_ZONE], axis=0)).reshape(h, w)
             tile_new = remove_ear_flecks(tile_new, ear_zone)      # Reste (einzelne dunkle Punkte am Ohrrand) nach dem Anmalen
+        if name in GARMENT_SEGMENTS and skin_bgr is not None and mesh.wear is not None:
+            wear = mesh.texel_wear(index)
+            tile_new = garment_cleanup(tile_new, wear, ok, P, skin_lab, skin_bgr)
         if name == "torso" and skin_bgr is not None:      # Hals zuletzt, aus demselben Grund
             tile_new = model_neck(tile_new, P, skin_bgr, ok, J["neck_01"])
         out[ty + y:ty + y + h, tx + x:tx + x + w] = tile_new

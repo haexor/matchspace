@@ -24,6 +24,7 @@ class AvatarMesh:
         self.skin_i = st["skinIndex"].reshape(-1, 4).astype(int)
         self.skin_w = st["skinWeight"].reshape(-1, 4).astype(float)
         self.look = st["look"].reshape(-1, 4).astype(float)
+        self.wear = np.asarray(st["wear"], float).reshape(-1, 4) if st.get("wear") is not None else None      # Kleidungsfelder je Punkt (Meter, positiv = bedeckt): Trikot, Hose, Stutzen, Schuh
         self.faces = st["index"].reshape(-1, 3).astype(int)
         self.nbones = len(st["bones"])
         self.bone_names = list(st["bones"])
@@ -117,6 +118,16 @@ class AvatarMesh:
         p[~ok] = np.nan
         n[~ok] = np.nan
         return p, n
+
+    def texel_wear(self, index):
+        """Kleidungsfelder (Trikot, Hose, Stutzen, Schuh; Meter, positiv = bedeckt) an den Texeln `index`; NaN, wo das Netz keinen Texel hat; None ohne Daten im Netz."""
+        if self.wear is None:
+            return None
+        tri, bary = self.tri[index], self.bary[index]
+        ok = tri[:, 0] >= 0
+        out = (self.wear[np.where(ok[:, None], tri, 0)] * bary[..., None]).sum(axis=1)
+        out[~ok] = np.nan
+        return out
 
     def joints(self):
         """Gelenke der Grundhaltung (Meter, Welt der Bindung: y oben, +z vorn, links = +x) nach Knochenname."""

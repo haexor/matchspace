@@ -158,6 +158,48 @@ class BackPatchTest(unittest.TestCase):
         self.assertAlmostEqual(float(patch[16, 16, 1]), 200.0, delta=6.0)      # Höhe 1,5 m -> v 200
 
 
+class GarmentCleanupTest(unittest.TestCase):
+    SKIN_BGR = np.array([114.0, 137.0, 199.0], np.float32)
+
+    def setUp(self):
+        n = 40
+        self.n = n
+        self.skin_lab = cv2.cvtColor(np.uint8([[self.SKIN_BGR]]), cv2.COLOR_BGR2LAB)[0, 0].astype(np.float32)
+        self.tile = np.full((n, n, 3), (30, 30, 200), np.uint8)               # rotes Trikot
+        self.P = np.zeros((n * n, 3))
+        self.P[:, 1] = 1.2                                                  # Rumpfhöhe, unter dem Halsausschnitt
+        self.ok = np.ones(n * n, bool)
+        self.wear = np.zeros((n * n, 4))
+        self.wear[:, 0] = 0.1                                               # alles Trikot
+
+    def clean(self):
+        return lfp.garment_cleanup(self.tile, self.wear, self.ok, self.P, self.skin_lab, self.SKIN_BGR)
+
+    def test_skin_coloured_texels_in_the_shirt_get_the_shirt_colour(self):
+        self.tile[8:20, 8:20] = self.SKIN_BGR.astype(np.uint8)            # Haut im Trikot (Arm verdeckt, Saum daneben)
+        out = self.clean()
+        self.assertTrue((np.abs(out[14, 14].astype(int) - np.array((30, 30, 200))) < 12).all())
+
+    def test_black_stroke_in_a_light_shirt_is_removed_pattern_stays(self):
+        self.tile[20:24, 5:35] = (5, 5, 5)                                  # schwarzer Streifen
+        self.tile[30:34, 5:35] = (240, 240, 240)                            # weißer Streifen (echtes Muster)
+        out = self.clean()
+        self.assertGreater(int(out[22, 20].mean()), 40)
+        self.assertGreater(int(out[32, 20].mean()), 200)
+
+    def test_bare_legs_get_flat_skin(self):
+        self.wear[:] = 0.0                                                  # keine Kleidung
+        self.tile[:] = (60, 60, 60)
+        out = self.clean()
+        self.assertTrue((np.abs(out[20, 20].astype(int) - self.SKIN_BGR.astype(int)) < 6).all())
+
+    def test_neck_region_stays(self):
+        self.P[:, 1] = 1.55                                                 # Halsausschnitt, Kragen
+        self.tile[10:14, 10:14] = (5, 5, 5)                                 # schwarzer Kragenrand
+        out = self.clean()
+        self.assertTrue((out == self.tile).all())
+
+
 class ProjectionTest(unittest.TestCase):
     def fm(self, with_eyes):
         y = [1.45, 1.81]
