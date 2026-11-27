@@ -68,10 +68,25 @@ def boxes_of(sheet, threshold=18, min_area=800):
     return out
 
 
+def _run_around(rows, centre):
+    """Der zusammenhängende Bereich der Zeilen (Pixel), in dem `centre` liegt, als (erste, letzte): vereinzelte Ausreißer zählen nicht."""
+    have = set(int(r) for r in rows)
+    c = int(round(centre))
+    if c not in have:
+        c = min(have, key=lambda r: abs(r - c))
+    lo = hi = c
+    while lo - 1 in have:
+        lo -= 1
+    while hi + 1 in have:
+        hi += 1
+    return lo, hi
+
+
 def shirt_shape(mask):
     """Form des Trikots auf dem Blatt aus seiner Silhouette (bool, Höhe × Breite des Trikotrechtecks), alles als Anteil des Rechtecks (x, y):
     body = [linker Rand, rechter Rand, Oberkante des Rumpfs] (Mittel über die Zeilen 55 bis 75 % der Höhe bzw. die Mittelspalte),
-    sleeveS = Ansatz des linken Ärmels (Mitte des Ärmels an der Rumpfkante), sleeveC = Mitte seines Bündchens (äußerste 6 % der Breite). None, wenn das Trikot keinen Ärmel hat."""
+    sleeveS = Ansatz des linken Ärmels (Mitte des Ärmels an der Rumpfkante), sleeveC = Mitte seines Bündchens (äußerste 6 % der Breite),
+    sleeveW = Höhe des Ärmels (Anteil der Rechteckhöhe) am Ansatz und am Bündchen (der Viewer hält damit die Abbildung in der Ärmelfläche). None, wenn das Trikot keinen Ärmel hat."""
     h, w = mask.shape
     rows = range(int(0.55 * h), int(0.75 * h))
     left = float(np.median([np.nonzero(mask[r])[0].min() for r in rows if mask[r].any()])) / w
@@ -87,8 +102,28 @@ def shirt_shape(mask):
     edge = np.nonzero(mask[:, max(0, int(left * w) - 3)])[0]
     if not cuff.any() or not len(edge):
         return None
-    return {"body": [round(left, 4), round(right, 4), round(top, 4)], "sleeveS": [round(left, 4), round(float(edge.mean()) / h, 4)],
-            "sleeveC": [round(float(ox[cuff].mean()) / w, 4), round(float(oy[cuff].mean()) / h, 4)]}
+    seam = _run_around(edge, np.median(edge))
+    rim = _run_around(oy[cuff], np.median(oy[cuff]))
+    return {"body": [round(left, 4), round(right, 4), round(top, 4)], "sleeveS": [round(left, 4), round((seam[0] + seam[1]) / 2 / h, 4)],
+            "sleeveC": [round(float(ox[cuff].mean()) / w, 4), round((rim[0] + rim[1]) / 2 / h, 4)],
+            "sleeveW": [round((seam[1] - seam[0] + 1) / h, 4), round((rim[1] - rim[0] + 1) / h, 4)]}
+
+
+SHORTS_ROWS = 8
+
+
+def shorts_shape(mask):
+    """Umriss der Hose auf dem Blatt (bool, Höhe × Breite ihres Rechtecks): linker und rechter Rand (Anteil der Breite) in SHORTS_ROWS gleich verteilten Höhen (Mitte der jeweiligen Zeilengruppe).
+    Der Bund ist schmaler als der Saum; ohne das tastete die Hülle neben der Hose den hellen Grund ab. None, wenn eine Zeile leer ist."""
+    h, w = mask.shape
+    rows = []
+    for k in range(SHORTS_ROWS):
+        band = mask[int(h * (k + 0.25) / SHORTS_ROWS):max(int(h * (k + 0.75) / SHORTS_ROWS), int(h * (k + 0.25) / SHORTS_ROWS) + 1)]
+        cols = np.nonzero(band.any(axis=0))[0]
+        if not len(cols):
+            return None
+        rows.append([round(float(cols.min()) / w, 4), round(float(cols.max() + 1) / w, 4)])
+    return rows
 
 
 def extend_edges(sheet, threshold=18):
@@ -97,6 +132,35 @@ def extend_edges(sheet, threshold=18):
     item = (np.linalg.norm(sheet.astype(float) - background, axis=2) > threshold).astype(np.uint8)
     item = cv2.erode(cv2.morphologyEx(item, cv2.MORPH_CLOSE, np.ones((5, 5), np.uint8)), np.ones((3, 3), np.uint8))     # Rand innen: ohne den hellen Saum
     return cv2.inpaint(sheet, (1 - item).astype(np.uint8), 12, cv2.INPAINT_TELEA)
+
+
+SPECK_BRIGHT = 55            # ein Fleck ist so viel heller (Helligkeitsstufen) als der Stoff des Stücks
+SPECK_DARK = 80              # oder so viel dunkler (schwarzes Etikett an weißer Hose)
+SPECK_AREA = 0.008           # und höchstens so groß (Anteil der Stückfläche) und kompakt (ausgefüllter Anteil des Umrissrechtecks, Seitenverhältnis): Etikett, Punkt, Lichtreflex; kein Streifen, Bündchen oder Kragen
+SPECK_FILL = 0.6
+SPECK_ASPECT = 5
+
+
+def remove_specks(sheet, boxes):
+    """Blatt ohne kleine helle oder dunkle Flecken auf dem Stoff (Etikett an der Hose, Lichtpunkte): Sie wären auf der Hülle als weiße Marken zu sehen. Streifen und größere Muster bleiben."""
+    grey = cv2.cvtColor(sheet, cv2.COLOR_BGR2GRAY).astype(float)
+    out = sheet.copy()
+    for x, y, w, h in boxes.values():
+        part = grey[y:y + h, x:x + w]
+        item = np.linalg.norm(sheet[y:y + h, x:x + w].astype(float) - np.median(sheet[5:25, 5:25].reshape(-1, 3), axis=0), axis=2) > 18
+        if item.sum() < 100:
+            continue
+        median = np.median(part[item])
+        bright = ((part > median + SPECK_BRIGHT) | (part < median - SPECK_DARK)) & item
+        count, labels, stats, _ = cv2.connectedComponentsWithStats(bright.astype(np.uint8))
+        mask = np.zeros(part.shape, np.uint8)
+        for k in range(1, count):
+            area, bw, bh = stats[k, cv2.CC_STAT_AREA], stats[k, cv2.CC_STAT_WIDTH], stats[k, cv2.CC_STAT_HEIGHT]
+            if area <= SPECK_AREA * item.sum() and area >= SPECK_FILL * bw * bh and max(bw, bh) <= SPECK_ASPECT * min(bw, bh):
+                mask[labels == k] = 1
+        if mask.any():
+            out[y:y + h, x:x + w] = cv2.inpaint(out[y:y + h, x:x + w], cv2.dilate(mask, np.ones((5, 5), np.uint8)), 4, cv2.INPAINT_TELEA)
+    return out
 
 
 def to_scene(sheet_path, scene_dir, team):
@@ -112,7 +176,10 @@ def to_scene(sheet_path, scene_dir, team):
     shape = shirt_shape(np.linalg.norm(sheet[y:y + h, x:x + w].astype(float) - background, axis=2) > 18)
     if shape is None:
         sys.exit(f"{sheet_path}: Trikotform nicht lesbar (kein Ärmel gefunden); Blatt neu erzeugen (--neu)")
-    cv2.imwrite(str(scene_dir / "kit" / f"{team}.png"), extend_edges(sheet))
+    for key in ("shortsFront", "shortsBack"):
+        bx, by, bw, bh = boxes[key]
+        shape[key] = shorts_shape(np.linalg.norm(sheet[by:by + bh, bx:bx + bw].astype(float) - background, axis=2) > 18)
+    cv2.imwrite(str(scene_dir / "kit" / f"{team}.png"), extend_edges(remove_specks(sheet, boxes)))
     meta_path = scene_dir / "meta.json"
     meta = json.loads(meta_path.read_text())
     meta["looks"].setdefault("kit", {}).setdefault("teams", {})[team] = {"file": f"kit/{team}.png", "size": [sheet.shape[1], sheet.shape[0]], "boxes": boxes, "shape": shape}
