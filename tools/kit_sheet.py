@@ -139,6 +139,7 @@ SPECK_DARK = 80              # oder so viel dunkler (schwarzes Etikett an weiße
 SPECK_AREA = 0.008           # und höchstens so groß (Anteil der Stückfläche) und kompakt (ausgefüllter Anteil des Umrissrechtecks, Seitenverhältnis): Etikett, Punkt, Lichtreflex; kein Streifen, Bündchen oder Kragen
 SPECK_FILL = 0.4
 SPECK_ASPECT = 5
+SPECK_ELONGATION = 2.5      # Verhältnis der Hauptachsen: ein diagonaler Streifen kann im achsparallelen Umriss kompakt aussehen
 
 
 def remove_specks(sheet, boxes):
@@ -157,8 +158,15 @@ def remove_specks(sheet, boxes):
         count, labels, stats, _ = cv2.connectedComponentsWithStats(bright.astype(np.uint8))
         mask = np.zeros(part.shape, np.uint8)
         for k in range(1, count):
-            area, bw, bh = stats[k, cv2.CC_STAT_AREA], stats[k, cv2.CC_STAT_WIDTH], stats[k, cv2.CC_STAT_HEIGHT]
-            if area <= SPECK_AREA * item.sum() and area >= SPECK_FILL * bw * bh and max(bw, bh) <= SPECK_ASPECT * min(bw, bh):
+            area, x, y, bw, bh = (stats[k, cv2.CC_STAT_AREA], stats[k, cv2.CC_STAT_LEFT], stats[k, cv2.CC_STAT_TOP],
+                                  stats[k, cv2.CC_STAT_WIDTH], stats[k, cv2.CC_STAT_HEIGHT])
+            ys, xs = np.nonzero(labels[y:y + bh, x:x + bw] == k)
+            points = np.column_stack((xs, ys)).astype(float)
+            centered = points - points.mean(axis=0)
+            axes = np.linalg.eigvalsh(centered.T @ centered / area)
+            elongation = np.sqrt(axes[1] / axes[0]) if axes[0] > 1e-8 else float("inf")
+            if (area <= SPECK_AREA * item.sum() and area >= SPECK_FILL * bw * bh
+                    and max(bw, bh) <= SPECK_ASPECT * min(bw, bh) and elongation <= SPECK_ELONGATION):
                 mask[labels == k] = 1
         if mask.any():
             out[y:y + h, x:x + w] = cv2.inpaint(out[y:y + h, x:x + w], cv2.dilate(mask, np.ones((5, 5), np.uint8)), 4, cv2.INPAINT_TELEA)
