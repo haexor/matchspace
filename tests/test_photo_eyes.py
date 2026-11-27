@@ -1,6 +1,7 @@
-"""Augenhöhe als Abbildungsebene beim Übertragen der Fotos (looks_from_photo.py): Augen und Ohren des Fotos landen auf denen des Avatarnetzes."""
+"""Augen- und Ohrhöhe als Abbildungsebenen beim Übertragen der Fotos (looks_from_photo.py): Augen und Ohren des Fotos landen auf denen des Avatarnetzes; dunkle Flecken am Ohr."""
 import unittest
 
+import cv2
 import numpy as np
 
 from tests import helpers  # noqa: F401  (macht tools/ importierbar)
@@ -31,6 +32,37 @@ class EyeLineTest(unittest.TestCase):
     def test_no_certain_eye_gives_none(self):
         kp, conf = keypoints((100, 200), (140, 210), conf_l=0.1, conf_r=0.2)
         self.assertIsNone(lfp.eye_line(kp, conf, 0.5))
+
+
+class EarPointTest(unittest.TestCase):
+    def test_uses_the_certain_ear_only(self):
+        kp, conf = np.zeros((17, 2)), np.zeros(17)
+        kp[3], kp[4] = (575, 164), (568, 149)
+        conf[3], conf[4] = 0.98, 0.01
+        self.assertEqual(lfp.ear_point(kp, conf, 0.4), (164.0, 575.0))
+
+    def test_no_certain_ear_gives_none(self):
+        self.assertIsNone(lfp.ear_point(np.zeros((17, 2)), np.zeros(17) + 0.1, 0.4))
+
+
+class EarFleckTest(unittest.TestCase):
+    def tile(self):
+        tile = np.full((60, 60, 3), (90, 140, 200), np.uint8)       # Hautton
+        tile[:, :12] = 10                                             # breite dunkle Fläche: Haar
+        tile[20:40, 30:32] = 5                                        # dünner schwarzer Strich
+        return tile
+
+    def test_thin_dark_line_in_the_zone_is_removed_hair_stays(self):
+        zone = np.zeros((60, 60), bool)
+        zone[:, 12:] = True
+        out = lfp.remove_ear_flecks(self.tile(), zone)
+        self.assertGreater(int(out[30, 30].mean()), 80)
+        self.assertLess(int(out[30, 5].mean()), 20)
+
+    def test_outside_the_zone_nothing_changes(self):
+        tile = self.tile()
+        out = lfp.remove_ear_flecks(tile, np.zeros((60, 60), bool))
+        self.assertTrue((out == tile).all())
 
 
 class ProjectionTest(unittest.TestCase):

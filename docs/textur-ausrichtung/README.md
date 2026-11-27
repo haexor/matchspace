@@ -309,3 +309,10 @@ Rückmeldung zu Versuch 24: Der Kopf hatte vier Ohren, vier Augenbrauen und eine
 Jetzt: Die Augenpunkte der Posenerkennung (`eye_line`) sind eine weitere Abbildungsebene auf der Augenhöhe des Netzes (`EYE_ABOVE_HEAD`). Von vorn nur bei sicheren Augen (beide ≥ 0,5), von der Seite reicht ein sicheres Auge (≥ 0,3); von hinten bleibt es beim Scheitel (die Augenpunkte wären geraten). Gesicht, Brauen und Ohren sitzen damit auf denen des Netzes.
 Stiernacken: `NECK_T` von 1,15 auf 1,22. Die Schulterkante des Netzes (±19 cm Breite bei 1,52 m, Hals ±6 cm) wurde als Haut gelesen und wirkte wie ein breiter Hals; jetzt deckt das Trikot sie. Mit 1,3 erscheint ein roter Streifen seitlich am Hals.
 Bleibt: kleine dunkle Flecken am Ohr (Seitenfoto), Haaransatz im Nacken als Zackenlinie, die Frisurform ist weiterhin die des Modells.
+
+## Versuch 26: Ohren passend, keine schwarzen Striche am Ohr
+
+Rückmeldung zu Versuch 25: Die Ohren passen noch nicht ganz, schwarze Zacken vor dem Ohr. Zwei Ursachen:
+1. **Ohrhöhe**: Das Ohr sitzt im Foto etwa 2,4 cm unter der Augenlinie, am Netz nur 1,3 cm; mit der Augenhöhe allein lag das Foto-Ohr gut 1 cm unter dem Netzohr. Im Seitenfoto gilt jetzt das Ohr als Abbildungsebene (`ear_point`, Ohrpunkte der Posenerkennung ≥ 0,4, Ohrmitte des Netzes `EAR_Y`/`EAR_Z`); ohne sicheres Ohr bleibt die Augenhöhe.
+2. **Schwarze Striche** (Haarsträhnen, Ohrrand, Ohrring des Seitenfotos, auf die Wange vor dem Ohr gestreckt): `remove_ear_flecks` füllt kleine dunkle Flecken (unter 150 Texel zusammenhängend, Helligkeit unter 60) in der Ohrgegend aus der Umgebung; die Ohrgegend ist über die Netzpunkte des Kopfes definiert (`EAR_ZONE`), Augen und Brauen liegen außerhalb. Große dunkle Flächen (Haar) bleiben.
+Ergebnis in der Nahszene: je ein Ohr aus dem Foto auf dem Netzohr, saubere Wange; beide Seiten und acht weitere Spieler angesehen.
