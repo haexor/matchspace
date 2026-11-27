@@ -82,7 +82,25 @@ function hash(text) {
 // vom Kopf des Körpernetzes entfernt liegt, wird auf diese Dicke an den Kopf herangezogen: die Frisur liegt am Schädel an, ihre Form (Ansatz, Seiten) bleibt.
 const HAIR_THICKNESS = 0.012;   // m
 const HEAD_FROM = 1.6;   // m: ab dieser Höhe (Grundhaltung) zählen Körperpunkte zum Kopf
+// Die Frisur reicht an den Seiten über das Ohr (Strähnen am Ohr, im Netz ein zweites ohrförmiges Gebilde): Dreiecke, deren Mitte im Ohrbereich liegt, entfallen,
+// das Ohr des Kopfes bleibt frei. Maße in m, Grundhaltung: Abstand von der Mittelebene ab, Höhe von bis, z von bis.
+const EAR_CLEAR = { x: 0.065, y: [1.64, 1.725], z: [-0.05, 0.04] };
+function clearEars(geometry) {
+  const position = geometry.attributes.position, index = geometry.index;
+  if (!index) return;
+  const keep = [];
+  for (let t = 0; t < index.count; t += 3) {
+    let x = 0, y = 0, z = 0;
+    for (let k = 0; k < 3; k++) { const v = index.getX(t + k); x += Math.abs(position.getX(v)); y += position.getY(v); z += position.getZ(v); }
+    x /= 3; y /= 3; z /= 3;
+    const inEar = x > EAR_CLEAR.x && y > EAR_CLEAR.y[0] && y < EAR_CLEAR.y[1] && z > EAR_CLEAR.z[0] && z < EAR_CLEAR.z[1];
+    if (!inEar) keep.push(index.getX(t), index.getX(t + 1), index.getX(t + 2));
+  }
+  geometry.setIndex(keep);
+}
+
 function hugHead(hair, body) {
+  clearEars(hair.geometry);
   const bp = body.geometry.attributes.position, head = [];
   for (let i = 0; i < bp.count; i++) if (bp.getY(i) > HEAD_FROM && Math.abs(bp.getX(i)) < 0.13) head.push(new THREE.Vector3().fromBufferAttribute(bp, i));
   const position = hair.geometry.attributes.position, p = new THREE.Vector3(), d = new THREE.Vector3();

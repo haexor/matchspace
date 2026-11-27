@@ -45,6 +45,7 @@ INPAINT_FLAG = cv2.INPAINT_TELEA
 FLECK_AREA = 150           # Texel: kleinere dunkle Flecken in der Ohrgegend werden gefüllt
 FLECK_LUMA = 60            # Helligkeit (0 bis 255), unter der ein Texel als dunkel gilt (Haar, Strich am Ohr)
 EAR_ZONE = ((0.066, 1.55, 1.745), (0.052, 1.55, 1.715))      # m: Ohrgegend am Kopf als Ausschnitte (Abstand von der Mittelebene ab, Höhe von bis; Grundhaltung); Augen und Brauen liegen innerhalb von 0,05 bzw. über 1,715 m
+EAR_MESH_X, EAR_MESH_Y = 0.075, (1.64, 1.73)      # m: Ohrnetz (Abstand von der Mittelebene ab, Höhe von bis; Grundhaltung)
 EAR_Y, EAR_Z = 1.686, -0.016      # m: Mitte der Ohren des Netzes in der Grundhaltung (Ohrnetz y 1,658 bis 1,715, z -0,031 bis -0,001)
 EYE_ABOVE_HEAD = 0.099      # m: Augenhöhe des Avatars über dem Kopfgelenk (Augennetz 1,684 bis 1,714 m bei Kopfgelenk 1,600 m)
 HEAD_NECK_T = 0.1          # Kopfachse: bis hier ist es der Halsansatz
@@ -434,6 +435,8 @@ def main(scene_dir, player, photos, mesh_path, out_dir, debug=None):
                     valid |= skin_rows
             if name == "head" and fm.get("side"):
                 valid &= np.abs(np.nan_to_num(N[:, 2])) < HEAD_SIDE_NZ
+            if name == "head" and not fm.get("side"):      # Netzohr: nur aus den Seitenfotos (Vorder-/Rückfoto strecken die Haare dahinter als dunkle Rippen über die Rückseite des Ohrs)
+                valid &= ~(ok & (np.abs(np.nan_to_num(P[:, 0])) > EAR_MESH_X) & (np.nan_to_num(P[:, 1]) > EAR_MESH_Y[0]) & (np.nan_to_num(P[:, 1]) < EAR_MESH_Y[1]))
             neck_ok = np.zeros(len(index), bool) if skin_rows is None else (skin_rows & valid)      # Halsröhre: auch ihre Seiten lesen die Haut vom Vorder-/Rückfoto (sonst Lücken, aus dem Trikot gefüllt: Zackenring)
             if name == "torso" and fm.get("side"):      # Hals und Kragen nur aus Vorder-/Rückfoto: die Seitenfotos bilden den Hals nicht genau genug ab (gezackter Ring an der Naht)
                 valid &= np.nan_to_num(P[:, 1]) <= J["neck_01"][1] - 0.01
