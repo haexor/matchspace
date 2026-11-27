@@ -42,6 +42,10 @@ HEAD_SIDE_NZ = 0.2         # Kopf: Seitenfotos nur für den seitlichen Streifen 
 TORSO_MIN_FACING = 0.3      # Rumpf aus Vorder-/Rückfoto nur, wo die Fläche dem Foto zugewandt ist (cos)
 TORSO_FILL = "inpaint"       # Rumpflücken (vom Arm verdeckt): "inpaint" (weicher Verlauf aus dem Rand) oder "median"
 INPAINT_FLAG = cv2.INPAINT_TELEA
+FLECK_AREA = 150           # Texel: kleinere dunkle Flecken in der Ohrgegend werden gefüllt
+FLECK_LUMA = 60            # Helligkeit (0 bis 255), unter der ein Texel als dunkel gilt (Haar, Strich am Ohr)
+EAR_ZONE = ((0.066, 1.55, 1.745), (0.052, 1.55, 1.715))      # m: Ohrgegend am Kopf als Ausschnitte (Abstand von der Mittelebene ab, Höhe von bis; Grundhaltung); Augen und Brauen liegen innerhalb von 0,05 bzw. über 1,715 m
+EAR_Y, EAR_Z = 1.686, -0.016      # m: Mitte der Ohren des Netzes in der Grundhaltung (Ohrnetz y 1,658 bis 1,715, z -0,031 bis -0,001)
 EYE_ABOVE_HEAD = 0.099      # m: Augenhöhe des Avatars über dem Kopfgelenk (Augennetz 1,684 bis 1,714 m bei Kopfgelenk 1,600 m)
 HEAD_NECK_T = 0.1          # Kopfachse: bis hier ist es der Halsansatz
 CROWN_T = 0.92             # Kopfachse: ab hier ist es der Scheitel
@@ -77,9 +81,30 @@ def arm_band(kp, conf, scale, shape):
     return band > 0
 
 
+def remove_ear_flecks(tile, zone):
+    """Kleine dunkle Flecken (Zusammenhang unter FLECK_AREA Texeln) in der Ohrgegend `zone` (bool wie tile) mit der Umgebung füllen. Dort liegen Haarsträhnen, Ohrränder und
+    Ohrring des Seitenfotos, die auf der Wange vor dem Ohr als schwarze Zacken stehen; große dunkle Flächen (Haar) bleiben."""
+    dark = (cv2.cvtColor(tile, cv2.COLOR_BGR2GRAY) < FLECK_LUMA).astype(np.uint8)
+    count, labels, stats, _ = cv2.connectedComponentsWithStats(dark, connectivity=8)
+    small = np.isin(labels, [i for i in range(1, count) if stats[i, cv2.CC_STAT_AREA] < FLECK_AREA])
+    fleck = small & zone
+    if not fleck.any():
+        return tile
+    fleck = cv2.dilate(fleck.astype(np.uint8), np.ones((3, 3), np.uint8))
+    return cv2.inpaint(tile, fleck, 3, cv2.INPAINT_TELEA)
+
+
 def eye_line(kp, conf, min_conf):
     """Höhe v der Augen im Foto (Mittel der sicher gefundenen Augenpunkte) und ihre Bildspalte u; None, wenn kein Auge sicher gefunden wurde."""
     use = [i for i in (1, 2) if conf[i] >= min_conf]
+    if not use:
+        return None
+    return float(np.mean([kp[i][1] for i in use])), float(np.mean([kp[i][0] for i in use]))
+
+
+def ear_point(kp, conf, min_conf):
+    """Bildpunkt (v, u) der Ohren im Seitenfoto (Mittel der sicher gefundenen Ohrpunkte); None, wenn keines sicher gefunden wurde."""
+    use = [i for i in (3, 4) if conf[i] >= min_conf]
     if not use:
         return None
     return float(np.mean([kp[i][1] for i in use])), float(np.mean([kp[i][0] for i in use]))
@@ -103,21 +128,26 @@ def fit_side(mesh, photo_path, view):
     world = (np.concatenate([mesh.rest, np.ones((len(mesh.rest), 1))], axis=1) @ mesh.bind.T)[:, :3]
     sh, hip = levels[3], levels[2]
     scale = (hip["v"] - sh["v"]) / (sh["y"] - hip["y"])
-    top_rows = ys < v_top + 0.08 * (ys.max() - v_top)
-    top = {"y": float(world[head, 1].max()), "z": J["Head"][2], "v": v_top, "u": float(np.median(xs[top_rows]))}
-    levels.append(top)
-    # Augenhöhe: Das Foto zeigt die Haare mit ihrem Volumen, der Scheitel der Maske liegt über dem Schädel des Avatars. Mit nur dem Scheitel als obere Ebene rutschen Augen, Brauen
-    # und Ohren des Fotos zu tief (zweites Augenpaar und zweite Ohren neben denen des Netzes). Die Augen des Fotos werden deshalb auf die Augenhöhe des Netzes gelegt.
-    eyes = eye_line(kp, conf, 0.3)
-    if eyes is not None and top["v"] < eyes[0] < sh["v"]:
-        levels.append({"y": J["Head"][1] + EYE_ABOVE_HEAD, "z": J["Head"][2], "v": eyes[0], "u": top["u"]})
-    levels.sort(key=lambda q: q["y"])
     hip_u = np.mean([kp[i][0] for i in (11, 12) if conf[i] >= 0.3] or [hip["u"]])
     expected = -1.0 if view == "links" else 1.0
     direction = expected
     if conf[0] >= 0.3 and abs(kp[0][0] - hip_u) > 0.01 * mask.shape[1]:
         direction = 1.0 if kp[0][0] > hip_u else -1.0
     actual = "links" if direction < 0 else "rechts"
+    top_rows = ys < v_top + 0.08 * (ys.max() - v_top)
+    top = {"y": float(world[head, 1].max()), "z": J["Head"][2], "v": v_top, "u": float(np.median(xs[top_rows]))}
+    levels.append(top)
+    # Augenhöhe: Das Foto zeigt die Haare mit ihrem Volumen, der Scheitel der Maske liegt über dem Schädel des Avatars. Mit nur dem Scheitel als obere Ebene rutschen Augen, Brauen
+    # und Ohren des Fotos zu tief (zweites Augenpaar und zweite Ohren neben denen des Netzes). Die Augen des Fotos werden deshalb auf die Augenhöhe des Netzes gelegt.
+    eyes = eye_line(kp, conf, 0.3)
+    # Seitlich zählt das Ohr: Es sitzt im Foto etwa 2,4 cm unter der Augenlinie, am Netz nur 1,3 cm. Mit der Augenhöhe allein liegt das Foto-Ohr gut 1 cm unter dem Netzohr (zwei Ohren
+    # übereinander). Das Ohr des Fotos wird deshalb auf die Ohrmitte des Netzes gelegt (EAR_Y, EAR_Z); nur ohne sicheres Ohr gilt die Augenhöhe.
+    ear = ear_point(kp, conf, 0.4)
+    if ear is not None and top["v"] < ear[0] < sh["v"] and abs(ear[1] - top["u"]) < 0.08 * mask.shape[1]:
+        levels.append({"y": EAR_Y, "z": EAR_Z, "v": ear[0], "u": ear[1]})
+    elif eyes is not None and top["v"] < eyes[0] < sh["v"]:
+        levels.append({"y": J["Head"][1] + EYE_ABOVE_HEAD, "z": J["Head"][2], "v": eyes[0], "u": top["u"]})
+    levels.sort(key=lambda q: q["y"])
     return {"kp": kp, "conf": conf, "mask": mask, "side": True, "dir": direction, "scale": scale, "view": actual, "label": view, "arm_mask": arm_band(kp, conf, scale, mask.shape),
             "y": np.array([q["y"] for q in levels]), "v": np.array([q["v"] for q in levels]), "u": np.array([q["u"] for q in levels]), "z": np.array([q["z"] for q in levels])}
 
@@ -438,6 +468,9 @@ def main(scene_dir, player, photos, mesh_path, out_dir, debug=None):
         if name == "head":      # Scheitel (die letzten Zeilen): im Foto knapp am Rand der Personenmaske, dort steht Himmel zwischen den Haaren; die Haarzeile darunter fortsetzen
             tile_new[int(CROWN_T * h):] = tile_new[int(CROWN_T * h) - 1]
             tile_new[:int(HEAD_NECK_T * h)] = tile_new[int(HEAD_NECK_T * h)]      # Halsansatz am Kopf: die Zeile darüber fortsetzen (dort schimmerte das Trikot als Zackenring durch)
+            px, py = np.abs(np.nan_to_num(P[:, 0])), np.nan_to_num(P[:, 1])
+            ear_zone = (ok & np.any([(px > x0) & (py > y0) & (py < y1) for x0, y0, y1 in EAR_ZONE], axis=0)).reshape(h, w)
+            tile_new = remove_ear_flecks(tile_new, ear_zone)
         if coverage >= FILL_MIN_COVERAGE:
             hole = (ok & ~has).reshape(h, w).astype(np.uint8)
             if hole.any():
