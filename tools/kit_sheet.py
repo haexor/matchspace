@@ -166,7 +166,7 @@ def remove_specks(sheet, boxes):
 
 
 def to_scene(sheet_path, scene_dir, team):
-    """Kit-Blatt in eine Szene legen (web/data/SZENE/kit/MANNSCHAFT.png mit fortgesetzten Rändern) und Rechtecke in meta.json eintragen (looks.kit.teams): der Viewer zeigt sie mit ?kit=1."""
+    """Kit-Blatt in eine Szene legen (web/data/SZENE/kit/MANNSCHAFT.png mit fortgesetzten Rändern) und Rechtecke in meta.json eintragen (looks.kit.teams): der Viewer zeigt sie standardmäßig."""
     sheet = cv2.imread(str(sheet_path))
     boxes = boxes_of(sheet)
     if boxes is None:

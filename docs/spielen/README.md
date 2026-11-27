@@ -1,6 +1,6 @@
 # Spieler steuern (Vorschau)
 
-`web/spielen.html?match=SZENE&player=own-6` zeigt einen Spieler mit seinem Outfit auf dem Platz der Szene und lässt ihn selbst laufen. Die T-Haltung mit allen Schichten (Körper, Kleidung) steht in `web/spieler.html?...&tpose=1&kit=1` (Link „Steuern“ führt hierher, „T-Haltung ansehen“ zurück).
+`web/spielen.html?match=SZENE&player=own-6` zeigt einen Spieler mit seinem Outfit auf dem Platz der Szene und lässt ihn selbst laufen. Die T-Haltung mit allen Schichten (Körper, Kleidung) steht in `web/spieler.html?...&tpose=1` (Link „Steuern“ führt hierher, „T-Haltung ansehen“ zurück).
 
 ## Bedienung
 
