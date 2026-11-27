@@ -97,7 +97,7 @@ export function reshape(template, meshes) {
  * Zieht das Körpernetz an: Unter Trikot und Hose wird das Muskelrelief geglättet, dann trägt die Kleidung auf.
  * Punkte, die im Netz doppelt vorkommen (Nähte der Textur), werden gemeinsam bewegt; die Normalen entstehen neu.
  */
-export function dress(mesh, wear, extra) {
+export function dress(mesh, wear, extra, padded = true) {
   const geometry = mesh.geometry, position = geometry.attributes.position, n = position.count;
   const group = new Int32Array(n), keys = new Map();
   for (let i = 0; i < n; i++) {
@@ -111,7 +111,7 @@ export function dress(mesh, wear, extra) {
     const k = group[i], shirt = wear[i * 4], shorts = wear[i * 4 + 1], sock = wear[i * 4 + 2], boot = wear[i * 4 + 3];
     P[k * 3] = position.getX(i); P[k * 3 + 1] = position.getY(i); P[k * 3 + 2] = position.getZ(i);
     cloth[k] = Math.max(cloth[k], Math.min(1, Math.max(shirt, shorts, 0) / 0.04), Math.min(1, Math.max(boot, 0) / 0.02));   // zum Saum hin läuft die Glättung aus; im Schuh verschwinden die Zehen
-    pad[k] = Math.max(pad[k], shirt > 0 ? (PAD.shirt + extra[i]) * ramp(shirt) : shorts > 0 ? PAD.shorts + extra[i] : boot > 0 ? PAD.boot : sock > 0 ? PAD.sock : 0);
+    if (padded) pad[k] = Math.max(pad[k], shirt > 0 ? (PAD.shirt + extra[i]) * ramp(shirt) : shorts > 0 ? PAD.shorts + extra[i] : boot > 0 ? PAD.boot : sock > 0 ? PAD.sock : 0);
   }
   const index = geometry.index.array, near = Array.from({ length: g }, () => new Set());
   for (let t = 0; t < index.length; t += 3) {

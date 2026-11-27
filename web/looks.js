@@ -5,10 +5,26 @@ import * as THREE from 'three';
 /** Zustand für ein Spiel: lädt looks.png und liefert Aussehen, Haarfarbe und Trikot je Figur. */
 export function createLooks(meta, base) {
   const LOOKS = meta.looks ?? null;
-  let lookAtlas = null, lookPixels = null;
+  let lookAtlas = null, lookPixels = null, backAtlas = null;
+  const kitSheets = new Map();        // Kit-Blätter je Mannschaft (Bilder), kitCache: fertige Kleidung je Spieler
+  const kitCache = new Map();
   function loadLooks() {
     if (!LOOKS) return Promise.resolve();
-    return new THREE.TextureLoader().loadAsync(`${base}${LOOKS.file}?tile=${LOOKS.tile}`).then((tex) => {
+    // Rückenpartie aus dem Foto (scharfe Nummer): eigene Bilddatei, ein Feld je Spieler (tools/looks_from_photo.py)
+    const backs = LOOKS.backPatch ? new THREE.TextureLoader().loadAsync(`${base}${LOOKS.backPatch.file}?v=${LOOKS.backPatch.cell}`).then((tex) => {
+      tex.flipY = false;
+      tex.colorSpace = THREE.SRGBColorSpace;
+      tex.generateMipmaps = false;
+      tex.minFilter = THREE.LinearFilter;
+      tex.magFilter = THREE.LinearFilter;
+      tex.needsUpdate = true;
+      backAtlas = tex;
+    }).catch((err) => console.warn('Rückenpartie nicht geladen:', err)) : Promise.resolve();
+    // Mannschaftsblätter der Bild-KI (looks.kit.teams, tools/kit_sheet.py): ein Bild je Mannschaft; die Rückennummer wird je Spieler aufgedruckt (kitFor)
+    const kits = Object.entries(LOOKS.kit?.teams ?? {}).map(([team, k]) => new THREE.TextureLoader().loadAsync(`${base}${k.file}`).then((tex) => {
+      kitSheets.set(team, tex.image);
+    }).catch((err) => console.warn('Kit-Blatt nicht geladen:', err)));
+    return Promise.all([backs, ...kits]).then(() => new THREE.TextureLoader().loadAsync(`${base}${LOOKS.file}?tile=${LOOKS.tile}`).then((tex) => {
       tex.flipY = false;
       tex.colorSpace = THREE.SRGBColorSpace;
       tex.generateMipmaps = false;
@@ -21,13 +37,45 @@ export function createLooks(meta, base) {
       const g = cv.getContext('2d');
       g.drawImage(tex.image, 0, 0);
       lookPixels = g.getImageData(0, 0, cv.width, cv.height);
-    }).catch((err) => console.warn('Videotextur nicht geladen, zeige Mannschaftsfarben:', err));
+    })).catch((err) => console.warn('Videotextur nicht geladen, zeige Mannschaftsfarben:', err));
+  }
+  /** Kleidung eines Spielers aus dem Blatt seiner Mannschaft: Textur mit seiner Rückennummer, dazu was er laut Textur zusätzlich trägt (Unterhemd, Handschuhe, Schuhe); null ohne Blatt. */
+  function kitFor(entity) {
+    const sheet = kitSheets.get(entity.team), meta = LOOKS.kit?.teams?.[entity.team];
+    if (!sheet || !meta) return null;
+    if (!kitCache.has(entity.id)) {
+      const cv = document.createElement('canvas');
+      cv.width = sheet.width; cv.height = sheet.height;
+      const g = cv.getContext('2d');
+      g.drawImage(sheet, 0, 0);
+      const number = entity.number != null && !entity.label ? String(entity.number) : null;
+      if (number) {
+        const [x, y, w, h] = meta.boxes.shirtBack, size = Math.round(0.34 * h);
+        const sample = g.getImageData(x + Math.round(0.4 * w), y + Math.round(0.4 * h), Math.round(0.2 * w), Math.round(0.1 * h)).data;
+        let lum = 0;
+        for (let i = 0; i < sample.length; i += 4) lum += 0.2126 * sample[i] + 0.7152 * sample[i + 1] + 0.0722 * sample[i + 2];
+        lum /= sample.length / 4;
+        g.fillStyle = lum > 150 ? '#1a1a1a' : '#f4f4f4';      // Aufdruck gegen den Stoff: hell auf dunklem, dunkel auf hellem Trikot
+        g.font = `700 ${size}px "Arial Narrow", "Helvetica Neue", Arial, sans-serif`;
+        g.textAlign = 'center';
+        g.textBaseline = 'middle';
+        g.fillText(number, x + w / 2, y + 0.46 * h, 0.5 * w);
+      }
+      const texture = new THREE.CanvasTexture(cv);
+      texture.flipY = false;      // Texturkoordinaten zählen von oben (Pixel des Blatts)
+      texture.colorSpace = THREE.SRGBColorSpace;
+      texture.anisotropy = 4;
+      kitCache.set(entity.id, { texture, boxes: meta.boxes, shape: meta.shape, size: meta.size, variant: LOOKS.kit?.players?.[entity.id] ?? {} });
+    }
+    return kitCache.get(entity.id);
   }
   function lookOf(entity) {
     const k = LOOKS?.players?.[entity.id] ?? (entity.role === 'goalkeeper' ? undefined : LOOKS?.teams?.[entity.team]);
     if (k === undefined || !lookAtlas) return null;
     const tile = [(k % LOOKS.columns) * LOOKS.tile, Math.floor(k / LOOKS.columns) * LOOKS.tile];
-    return { printKept: Boolean(LOOKS.cleaned?.printKept), photo: Boolean(LOOKS.fromPhoto?.[entity.id]?.vorn) && !LOOKS.faceFromModel, map: lookAtlas, tile, size: [lookAtlas.image.width, lookAtlas.image.height],
+    const bp = LOOKS.backPatch, cell = bp?.players?.[entity.id];
+    const back = backAtlas && cell !== undefined ? { map: backAtlas, cell: new THREE.Vector4((cell % bp.columns) * bp.cell, Math.floor(cell / bp.columns) * bp.cell, bp.cell, bp.half), y: bp.y, size: new THREE.Vector2(backAtlas.image.width, backAtlas.image.height) } : null;
+    return { kit: kitFor(entity), back, printKept: Boolean(LOOKS.cleaned?.printKept), photo: Boolean(LOOKS.fromPhoto?.[entity.id]?.vorn) && !LOOKS.faceFromModel, map: lookAtlas, tile, size: [lookAtlas.image.width, lookAtlas.image.height],
       rects: LOOKS.segments.map((s) => new THREE.Vector4(...s.rect)), ranges: LOOKS.segments.map((s) => new THREE.Vector2(...s.t)) };
   }
   /** Mittlere Farbe des Oberkopfs (oberstes Zehntel des Kopfbereichs) in der Kachel: Haarfarbe für die Augenbrauen. */

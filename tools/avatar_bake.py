@@ -28,7 +28,7 @@ STATIC = """() => {
   first.root.traverse((o) => { if (o.isSkinnedMesh && !o.name.startsWith('Hair_') && !o.name.startsWith('Eyebrows') && !o.name.startsWith('Eyes') && o.geometry.attributes.position.count > 4000) body = o; });
   const g = body.geometry, a = g.attributes;
   return { position: Array.from(a.position.array), normal: Array.from(a.normal.array), skinIndex: Array.from(a.skinIndex.array), skinWeight: Array.from(a.skinWeight.array),
-           look: Array.from(a.look.array), index: Array.from(g.index.array), bones: body.skeleton.bones.map((b) => b.name),
+           look: Array.from(a.look.array), wear: a.wear ? Array.from(a.wear.array) : null, index: Array.from(g.index.array), bones: body.skeleton.bones.map((b) => b.name),
            boneInverses: body.skeleton.boneInverses.flatMap((m) => Array.from(m.elements)), bind: Array.from(body.bindMatrix.elements) };
 }"""
 

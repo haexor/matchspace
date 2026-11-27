@@ -15,6 +15,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from './vendor/loaders/GLTFLoader.js';
 import * as SkeletonUtils from './vendor/utils/SkeletonUtils.js';
 import { PAD, partOf, reshape, dress } from './avatar-body.js';
+import { garmentBases, dressUp } from './garments.js';
 import { lookCoordinates, LOOK_GLSL, LOOK_VERTEX, LOOK_PASS, lookUniforms } from './avatar-look.js';
 
 // Name im Programm -> Knochen des Modells
@@ -30,6 +31,10 @@ const PARENT = { Hips: null, Spine: 'Hips', Spine1: 'Spine', Spine2: 'Spine1', N
   LeftUpLeg: 'Hips', LeftLeg: 'LeftUpLeg', LeftFoot: 'LeftLeg', LeftToeBase: 'LeftFoot',
   RightUpLeg: 'Hips', RightLeg: 'RightUpLeg', RightFoot: 'RightLeg', RightToeBase: 'RightFoot' };
 const SKIN = new THREE.Color(0xd8a583), BOOT = new THREE.Color(0x141414);
+// Schichten ansehen (Hilfsansicht): ?layer=skin zeigt den Körper ohne Kleidung (Hautfarbe, ohne Stoffaufpolsterung), ?layer=cloth nur die Kleidungsstücke (Trikot, Hose, Stutzen, Schuhe)
+const LAYER = typeof location === 'undefined' ? null : new URLSearchParams(location.search).get('layer');
+// ?kit=1: Kleidung als eigene Hüllen mit der Textur des Kit-Blatts der Bild-KI (web/garments.js) statt in der Körpertextur
+const KIT = typeof location === 'undefined' ? false : new URLSearchParams(location.search).get('kit') === '1';
 const HAIR_COLOURS = [0x2a1c13, 0x3b2a1b, 0x4c3521, 0x6a4b2c, 0x8a6a3f, 0x1b1613].map((c) => new THREE.Color(c));
 const HAIR_STYLES = ['Hair_SimpleParted', 'Hair_SimpleParted', 'Hair_Buzzed'];
 const FINGERS = ['index', 'middle', 'ring', 'pinky'];
@@ -192,10 +197,11 @@ export async function loadAvatars(url) {
   }
   // Wo die Rückennummer sitzt (Grundhaltung): halbe Breite, Mitte in der Höhe, halbe Höhe
   const plate = new THREE.Vector4(0.13, (shoulderY + rest.Hips.p.y) / 2 + 0.05, 0.13, 1);
-  dress(body, wear, extra);
+  if (LAYER !== 'skin') dress(body, wear, extra, !KIT);      // Kit-Hüllen tragen selbst auf: unter ihnen wird das Muskelrelief nur geglättet      // nackt: ohne Aufpolsterung und Glättung unter dem Stoff
   body.geometry.setAttribute('wear', new THREE.BufferAttribute(wear, 4));
   for (const h of hairs) hugHead(h, body);
   lookCoordinates(template, [body, ...hairs], body, 0.035);
+  const kitBases = KIT ? garmentBases(body, { sleeve, wristX: rest.LeftHand.p.x }) : null;
 
   // Entspannte Hände: Finger leicht gebeugt statt gestreckt wie in der Grundhaltung.
   for (const s of ['l', 'r']) {
@@ -243,9 +249,10 @@ export async function loadAvatars(url) {
     const material = new THREE.MeshStandardMaterial({ roughness: 0.78, metalness: 0 });
     const uniforms = { numberMap: { value: number === null ? blank : numberTexture(String(number)) }, plate: { value: number === null ? new THREE.Vector4(1, 0, 1, 0) : plate },
       kitSkin: { value: kit.skin ?? SKIN }, kitShirt: { value: kit.shirt }, kitShorts: { value: kit.shorts }, kitSock: { value: kit.socks }, kitBoot: { value: BOOT },
+      backMap: { value: look?.back?.map ?? blank }, backCell: { value: look?.back?.cell ?? new THREE.Vector4(0, 0, 1, 1) }, backY: { value: look?.back?.y ?? 0 }, backSize: { value: look?.back?.size ?? new THREE.Vector2(1, 1) },
       ...(look ? lookUniforms(look) : {}) };
     // Mit Videotextur: Farbe von dort (Licht des Spieltags steckt schon darin, deshalb etwas aufgehellt); sonst Mannschaftsfarben je Kleidungsstück
-    const colour = look ? 'vec3 kitColour = lookColour() * 1.15;' : `vec3 kitColour = mix(kitSkin, kitSock, covered(vWear.z));
+    const colour = LAYER === 'skin' ? 'vec3 kitColour = kitSkin;' : look ? 'vec3 kitColour = lookColour() * 1.15;' : `vec3 kitColour = mix(kitSkin, kitSock, covered(vWear.z));
           kitColour = mix(kitColour, kitBoot, covered(vWear.w));
           kitColour = mix(kitColour, kitShorts, covered(vWear.y));
           kitColour = mix(kitColour, kitShirt, covered(vWear.x));`;
@@ -257,7 +264,7 @@ export async function loadAvatars(url) {
       shader.fragmentShader = shader.fragmentShader
         .replace('#include <common>', `#include <common>
           varying vec4 vWear; varying vec3 vRest; varying float vBack;
-          uniform sampler2D numberMap; uniform vec4 plate; uniform vec3 kitSkin, kitShirt, kitShorts, kitSock, kitBoot;
+          uniform sampler2D numberMap, backMap; uniform vec4 plate, backCell; uniform float backY; uniform vec2 backSize; uniform vec3 kitSkin, kitShirt, kitShorts, kitSock, kitBoot;
           float covered(float d) { return smoothstep(-0.5, 0.5, d / max(fwidth(d), 1e-5)); }
           ${look ? LOOK_GLSL : ''}`)
         .replace('#include <color_fragment>', `${colour}
@@ -266,9 +273,18 @@ export async function loadAvatars(url) {
             vec4 digit = texture2D(numberMap, plateUv);
             kitColour = mix(kitColour, digit.rgb, digit.a);
           }
+          ${LAYER === 'cloth' ? 'if (max(max(vWear.x, vWear.y), max(vWear.z, vWear.w)) <= 0.0) discard;' : ''}
+          ${look?.back && LAYER !== 'skin' ? `
+          // Rückenpartie aus dem Foto (Nummer scharf): derselbe Rückenausschnitt wie das Foto, weicher Rand, nur auf der Rückseite des Trikots
+          vec2 bu = vec2(0.5 - vRest.x / (2.0 * backCell.w), 0.5 + (vRest.y - backY) / (2.0 * backCell.w));
+          if (bu.x > 0.0 && bu.x < 1.0 && bu.y > 0.0 && bu.y < 1.0) {
+            float edge = min(min(bu.x, 1.0 - bu.x), min(bu.y, 1.0 - bu.y));
+            float on = smoothstep(0.0, 0.1, edge) * smoothstep(0.25, 0.6, -vBack) * covered(vWear.x);
+            kitColour = mix(kitColour, texture2D(backMap, (backCell.xy + vec2(bu.x, 1.0 - bu.y) * backCell.z) / backSize).rgb * 1.15, on);
+          }` : ''}
           diffuseColor.rgb *= kitColour;`);
     };
-    material.customProgramCacheKey = () => (look ? 'matchspace-player-body-look' : 'matchspace-player-body');
+    material.customProgramCacheKey = () => (look ? (look.back ? 'matchspace-player-body-look-back' : 'matchspace-player-body-look') : 'matchspace-player-body');
     return material;
   }
   // Haare mit Videotextur: Strähnen aus der Haartextur des Modells, Farbe vom Oberkopf im Video
@@ -327,6 +343,13 @@ export async function loadAvatars(url) {
       }
     });
     for (const o of drop) o.removeFromParent();
+    if (kitBases && look?.kit) {
+      let bodyMesh = null;
+      model.traverse((o) => { if (o.isSkinnedMesh && o.name === body.name) bodyMesh = o; });
+      if (LAYER !== 'skin') for (const m of dressUp(kitBases, bodyMesh, look.kit)) bodyMesh.parent.add(m);
+      if (LAYER === 'cloth') bodyMesh.visible = false;
+    }
+    if (LAYER === 'cloth') model.traverse((o) => { if (o.isSkinnedMesh && /^(Hair_|Eyebrows|Eyes)/.test(o.name)) o.visible = false; });
     const bones = {};
     for (const name of DRIVEN) bones[name] = model.getObjectByName(BONE[name]);
     const delta = Object.fromEntries(DRIVEN.map((n) => [n, new THREE.Quaternion()]));
