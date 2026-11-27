@@ -1,9 +1,10 @@
-// Kleidungsstücke als eigene Hüllen über dem Körper (Trikot, Unterhemd, Hose, Stutzen, Schuhe), mit der Textur des Kit-Blatts der Bild-KI (tools/kit_sheet.py).
+// Kleidungsstücke als eigene Hüllen über dem Körper (Trikot, Hose, Stutzen mit der Textur des Mannschaftsblatts der Bild-KI, tools/kit_sheet.py; Unterhemd, Handschuhe, Schuhe
+// einfarbig nach dem, was der Spieler laut tools/kit_player.py trägt).
 // Statt Körper und Kleidung in einer Textur zu mischen (Zacken am Saum, Stutzen laufen in die Schuhe) ist jedes Stück ein Netz mit eigener Kante: Die Hülle liegt dort, wo das
 // Kleidungsfeld des Avatars (Trikot, Hose, Stutzen, Schuh; Meter, positiv = bedeckt, `fields` in avatar.js) ≥ 0 ist, die Kante wird an der Nulllinie sauber geschnitten.
 import * as THREE from 'three';
 
-const PAD = { shirt: 0.018, under: 0.009, shorts: 0.016, socks: 0.007, boots: 0.012 };   // Abstand der Hülle vom Körper (m)
+const PAD = { shirt: 0.018, under: 0.009, shorts: 0.016, socks: 0.007, boots: 0.012, gloves: 0.006 };   // Abstand der Hülle vom Körper (m)
 // Ein Stück liegt dort, wo sein Feld ≥ 0 ist und kein darüber getragenes Stück liegt (Trikot über Hose über Schuh über Stutzen)
 const FIELD = {
   shirt: (w) => w[0],
@@ -66,6 +67,8 @@ export function garmentBases(body, ctx) {
   // Unterhemd: lange Ärmel vom Schulteransatz bis zum Handgelenk (rein nach der Lage: der Avatar steht in T-Haltung, die Arme liegen entlang ±x)
   const sx = Math.abs(ctx.sleeve.l.from.x), wrist = Math.abs(ctx.wristX);
   bases.under = clip(body.geometry, (i) => Math.min(Math.abs(pos.getX(i)) - (sx - 0.015), wrist - Math.abs(pos.getX(i))));
+  // Handschuhe: alles jenseits des Handgelenks (T-Haltung: die Hände liegen außen auf ±x)
+  bases.gloves = clip(body.geometry, (i) => Math.abs(pos.getX(i)) - (wrist - 0.012));
   for (const [name, g] of Object.entries(bases)) {
     const p = g.attributes.position, nrm = g.attributes.normal, pad = PAD[name];
     for (let i = 0; i < p.count; i++) p.setXYZ(i, p.getX(i) + nrm.getX(i) * pad, p.getY(i) + nrm.getY(i) * pad, p.getZ(i) + nrm.getZ(i) * pad);
@@ -83,10 +86,7 @@ export function garmentUv(name, geometry, kit, ctx) {
   const [W, H] = kit.size, B = kit.boxes, b = box(geometry);
   const put = (i, x, y) => { uv[i * 2] = x / W; uv[i * 2 + 1] = y / H; };
   const at = (r, fx, fy) => [r[0] + fx * r[2], r[1] + fy * r[3]];
-  if (name === 'under') {
-    const [x, y] = at(B.underFront, 0.5, 0.5);
-    for (let i = 0; i < n; i++) put(i, x, y);      // einfarbig schwarz: ein Punkt in der Mitte des Stücks
-  } else if (name === 'shirt') {
+  if (name === 'shirt') {
     const sx = Math.abs(ctx.sleeve.l.from.x), length = ctx.sleeve.l.length, sy = ctx.sleeve.l.from.y;
     let hemHalf = 0.1, yTop = -1e9, yBot = 1e9;
     for (let i = 0; i < n; i++) {
@@ -94,8 +94,8 @@ export function garmentUv(name, geometry, kit, ctx) {
       if (ax < sx * 0.95) { yTop = Math.max(yTop, y); yBot = Math.min(yBot, y); }
     }
     for (let i = 0; i < n; i++) if (Math.abs(p.getX(i)) < sx * 0.95 && p.getY(i) < yBot + 0.05) hemHalf = Math.max(hemHalf, Math.abs(p.getX(i)));
-    const SLEEVE = { s: [0.234, 0.19], c: [0.044, 0.372] };      // Ärmel im Kit-Blatt (Anteil des Trikotrechtecks): Ansatz und Bündchen des linken Ärmels (Bildseite links)
-    const BODY = [0.215, 0.785, 0.044];                          // Rumpf im Kit-Blatt: linker und rechter Rand, Oberkante (Anteil)
+    const SLEEVE = { s: kit.shape.sleeveS, c: kit.shape.sleeveC };      // Ärmel im Kit-Blatt (Anteil des Trikotrechtecks, gemessen in tools/kit_sheet.py): Ansatz und Bündchen des linken Ärmels (Bildseite links)
+    const BODY = kit.shape.body;                                         // Rumpf im Kit-Blatt: linker und rechter Rand, Oberkante (Anteil)
     for (let i = 0; i < n; i++) {
       const x = p.getX(i), y = p.getY(i), front = nrm.getZ(i) >= 0, r = front ? B.shirtFront : B.shirtBack;
       const side = x >= 0 ? 1 : -1;      // +x = links des Spielers: vorn im Bild rechts, hinten (Ansicht von hinten) im Bild links
@@ -129,24 +129,23 @@ export function garmentUv(name, geometry, kit, ctx) {
       const tube = r === B.sockL ? [0.5, 0.98] : [0.02, 0.5];      // das Bein des flachen Strumpfs liegt in der linken Strumpf rechts, im rechten links (Paar spiegelbildlich), der Fuß daneben
       put(i, ...at(r, tube[0] + fx * (tube[1] - tube[0]), 0.62 * (b.max.y - p.getY(i)) / (b.max.y - b.min.y)));
     }
-  } else if (name === 'boots') {
-    const half = (b.max.x + b.min.x) / 2;
-    for (let i = 0; i < n; i++) {
-      const side = p.getX(i) >= half ? 1 : -1, r = side > 0 ? B.bootR : B.bootL;
-      const fz = (p.getZ(i) - b.min.z) / Math.max(1e-6, b.max.z - b.min.z);      // 0 = hinten (Ferse), 1 = vorn (Spitze)
-      put(i, ...at(r, side > 0 ? fz : 1 - fz, (b.max.y - p.getY(i)) / (b.max.y - b.min.y)));
-    }
   }
   return uv;
 }
 
-/** Netze der Kleidungsstücke für eine Figur: `base` aus garmentBases, `skeletonMesh` der geklonte Körper (gleiches Skelett), `kit` { texture, boxes, size }. */
+const flat = (colour, roughness = 0.85) => new THREE.MeshStandardMaterial({ color: new THREE.Color(colour).convertSRGBToLinear(), roughness, metalness: 0, side: THREE.DoubleSide });
+
+/** Netze der Kleidungsstücke für eine Figur: `base` aus garmentBases, `skeletonMesh` der geklonte Körper (gleiches Skelett),
+ *  `kit` { texture, boxes, shape, size, variant: { baseLayer, gloves, boots } } (Mannschaftsblatt samt aufgedruckter Nummer, was der Spieler zusätzlich trägt). */
 export function dressUp(base, skeletonMesh, kit) {
-  const meshes = [];
-  const material = new THREE.MeshStandardMaterial({ map: kit.texture, roughness: 0.85, metalness: 0, side: THREE.DoubleSide });
-  for (const name of ['shirt', 'under', 'shorts', 'socks', 'boots']) {
+  const meshes = [], v = kit.variant ?? {};
+  const textured = new THREE.MeshStandardMaterial({ map: kit.texture, roughness: 0.85, metalness: 0, side: THREE.DoubleSide });
+  const parts = [['shirt', textured], ['shorts', textured], ['socks', textured], ['boots', flat(v.boots ?? '#202020', 0.6)]];
+  if (v.baseLayer) parts.push(['under', flat(v.baseLayer)]);
+  if (v.gloves) parts.push(['gloves', flat(v.gloves, 0.7)]);
+  for (const [name, material] of parts) {
     const g = base[name].clone();
-    g.setAttribute('uv', new THREE.BufferAttribute(garmentUv(name, g, kit, base.ctx), 2));
+    if (material === textured) g.setAttribute('uv', new THREE.BufferAttribute(garmentUv(name, g, kit, base.ctx), 2));
     const mesh = new THREE.SkinnedMesh(g, material);
     mesh.name = `Kit_${name}`;
     mesh.frustumCulled = false;

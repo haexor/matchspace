@@ -656,6 +656,8 @@ def main(scene_dir, player, photos, mesh_path, out_dir, debug=None):
         bp = meta["looks"].setdefault("backPatch", {"file": "backs.png", "cell": BACK_CELL, "columns": BACK_COLUMNS, "half": BACK_HALF, "players": {}})
         bp["y"] = round(yc, 4)
         bp["players"][player] = k
+    if skin_bgr is not None:
+        meta["looks"].setdefault("skin", {})[player] = [int(v) for v in np.clip(skin_bgr[::-1], 0, 255)]      # Hautfarbe (RGB): tools/kit_player.py unterscheidet damit Haut von Unterhemd und Handschuh
     meta["looks"]["faceFromModel"] = True      # Gesicht (Augen, Brauen, Nase, Mund) zeichnet der Viewer mit dem Modell; das Foto liefert Hautton, Haar, Ohren
     meta["looks"].setdefault("fromPhoto", {})[player] = {v: Path(p).name for v, p in photos.items()}
     (out_dir / "meta.json").write_text(json.dumps(meta, indent=2, ensure_ascii=False) + "\n")
