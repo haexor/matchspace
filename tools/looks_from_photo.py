@@ -42,9 +42,10 @@ HEAD_SIDE_NZ = 0.2         # Kopf: Seitenfotos nur für den seitlichen Streifen 
 TORSO_MIN_FACING = 0.3      # Rumpf aus Vorder-/Rückfoto nur, wo die Fläche dem Foto zugewandt ist (cos)
 TORSO_FILL = "inpaint"       # Rumpflücken (vom Arm verdeckt): "inpaint" (weicher Verlauf aus dem Rand) oder "median"
 INPAINT_FLAG = cv2.INPAINT_TELEA
+EYE_ABOVE_HEAD = 0.099      # m: Augenhöhe des Avatars über dem Kopfgelenk (Augennetz 1,684 bis 1,714 m bei Kopfgelenk 1,600 m)
 HEAD_NECK_T = 0.1          # Kopfachse: bis hier ist es der Halsansatz
 CROWN_T = 0.92             # Kopfachse: ab hier ist es der Scheitel
-NECK_T = 1.15              # Rumpfachse: ab hier ist der Rumpf nur noch Hals (Haut)
+NECK_T = 1.22              # Rumpfachse: ab hier ist der Rumpf nur noch Hals (Haut)
 FILL_MIN_COVERAGE = 0.6    # ab diesem Anteil der Texel eines Teils aus Fotos werden die übrigen aus den Nachbarn gefüllt (sonst bleibt das Video)
 PARTS = ("torso", "head", "thigh_l", "thigh_r", "calf_l", "calf_r", "foot_l", "foot_r") + tuple(ARMS)
 
@@ -76,6 +77,14 @@ def arm_band(kp, conf, scale, shape):
     return band > 0
 
 
+def eye_line(kp, conf, min_conf):
+    """Höhe v der Augen im Foto (Mittel der sicher gefundenen Augenpunkte) und ihre Bildspalte u; None, wenn kein Auge sicher gefunden wurde."""
+    use = [i for i in (1, 2) if conf[i] >= min_conf]
+    if not use:
+        return None
+    return float(np.mean([kp[i][1] for i in use])), float(np.mean([kp[i][0] for i in use]))
+
+
 def fit_side(mesh, photo_path, view):
     """Seitenansicht: wie fit(), nur trägt die Bildbreite die Tiefe (z des Avatars): u = u_Ebene + Richtung · (z − z_Ebene) · Maßstab. Die Blickrichtung der Figur (Nase gegen Hüfte)
     bestimmt, welche Seite das Foto wirklich zeigt (von links schaut die Figur nach Bildlinks); zeigt es die andere, gilt es als diese."""
@@ -95,7 +104,13 @@ def fit_side(mesh, photo_path, view):
     sh, hip = levels[3], levels[2]
     scale = (hip["v"] - sh["v"]) / (sh["y"] - hip["y"])
     top_rows = ys < v_top + 0.08 * (ys.max() - v_top)
-    levels.append({"y": float(world[head, 1].max()), "z": J["Head"][2], "v": v_top, "u": float(np.median(xs[top_rows]))})
+    top = {"y": float(world[head, 1].max()), "z": J["Head"][2], "v": v_top, "u": float(np.median(xs[top_rows]))}
+    levels.append(top)
+    # Augenhöhe: Das Foto zeigt die Haare mit ihrem Volumen, der Scheitel der Maske liegt über dem Schädel des Avatars. Mit nur dem Scheitel als obere Ebene rutschen Augen, Brauen
+    # und Ohren des Fotos zu tief (zweites Augenpaar und zweite Ohren neben denen des Netzes). Die Augen des Fotos werden deshalb auf die Augenhöhe des Netzes gelegt.
+    eyes = eye_line(kp, conf, 0.3)
+    if eyes is not None and top["v"] < eyes[0] < sh["v"]:
+        levels.append({"y": J["Head"][1] + EYE_ABOVE_HEAD, "z": J["Head"][2], "v": eyes[0], "u": top["u"]})
     levels.sort(key=lambda q: q["y"])
     hip_u = np.mean([kp[i][0] for i in (11, 12) if conf[i] >= 0.3] or [hip["u"]])
     expected = -1.0 if view == "links" else 1.0
@@ -133,6 +148,9 @@ def fit(mesh, photo_path, view):
     scale_y = (hip["v"] - sh["v"]) / (sh["y"] - hip["y"])        # Pixel je Meter senkrecht (Schulter bis Hüfte)
     top_rows = ys < v_top + 0.08 * (ys.max() - v_top)
     levels.append({"y": y_top, "v": v_top, "u": float(np.median(xs[top_rows])), "sx": scale_y})
+    eyes = eye_line(kp, conf, 0.5) if min(conf[1], conf[2]) >= 0.5 else None      # nur von vorn: von hinten sind die Augenpunkte geraten
+    if eyes is not None and v_top < eyes[0] < sh["v"]:
+        levels.append({"y": J["Head"][1] + EYE_ABOVE_HEAD, "v": eyes[0], "u": eyes[1], "sx": scale_y})      # siehe fit_side: Augen des Fotos auf die Augenhöhe des Netzes
     levels.sort(key=lambda q: q["y"])
     return {"kp": kp, "conf": conf, "levels": levels, "mask": mask, "arm_mask": arm_band(kp, conf, scale_y, mask.shape), "y": np.array([q["y"] for q in levels]), "v": np.array([q["v"] for q in levels]),
             "u": np.array([q["u"] for q in levels]), "sx": np.array([q["sx"] for q in levels]), "view": view}
