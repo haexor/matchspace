@@ -78,14 +78,18 @@ export function garmentBases(body, ctx) {
   return bases;
 }
 
-const box = (g) => g.boundingBox;
+const box = (g) => g.boundingBox ?? (g.computeBoundingBox(), g.boundingBox);
 
-/** Texturkoordinaten einer Hülle aus der Lage in der Grundhaltung und den Rechtecken des Kit-Blatts (Pixel, `kit.boxes`, Bildgröße `kit.size`). Vorn/hinten nach der Normale. */
+/** Texturkoordinaten einer Hülle aus der Lage in der Grundhaltung und den Rechtecken des Kit-Blatts (Pixel, `kit.boxes`, Bildgröße `kit.size`). Vorn/hinten je Dreieck nach der Normale. */
 export function garmentUv(name, geometry, kit, ctx) {
   const p = geometry.attributes.position, nrm = geometry.attributes.normal, n = p.count, uv = new Float32Array(n * 2);
   const [W, H] = kit.size, B = kit.boxes, b = box(geometry);
   const put = (i, x, y) => { uv[i * 2] = x / W; uv[i * 2 + 1] = y / H; };
   const at = (r, fx, fy) => [r[0] + fx * r[2], r[1] + fy * r[3]];
+  // Vorder- oder Rückseite des Blatts wird je Dreieck gewählt (Geometrie ist nicht indiziert): sonst spannte ein Dreieck an der Seitennaht
+  // mit einer vorderen und einer hinteren Ecke das ganze Blatt auf und es zog sich ein Streifen übers Trikot.
+  const facing = new Uint8Array(n);
+  for (let t = 0; t + 2 < n; t += 3) facing[t] = facing[t + 1] = facing[t + 2] = nrm.getZ(t) + nrm.getZ(t + 1) + nrm.getZ(t + 2) >= 0 ? 1 : 0;
   if (name === 'shirt') {
     const sx = Math.abs(ctx.sleeve.l.from.x), length = ctx.sleeve.l.length, sy = ctx.sleeve.l.from.y;
     let hemHalf = 0.1, yTop = -1e9, yBot = 1e9;
@@ -97,7 +101,7 @@ export function garmentUv(name, geometry, kit, ctx) {
     const SLEEVE = { s: kit.shape.sleeveS, c: kit.shape.sleeveC };      // Ärmel im Kit-Blatt (Anteil des Trikotrechtecks, gemessen in tools/kit_sheet.py): Ansatz und Bündchen des linken Ärmels (Bildseite links)
     const BODY = kit.shape.body;                                         // Rumpf im Kit-Blatt: linker und rechter Rand, Oberkante (Anteil)
     for (let i = 0; i < n; i++) {
-      const x = p.getX(i), y = p.getY(i), front = nrm.getZ(i) >= 0, r = front ? B.shirtFront : B.shirtBack;
+      const x = p.getX(i), y = p.getY(i), front = facing[i] === 1, r = front ? B.shirtFront : B.shirtBack;
       const side = x >= 0 ? 1 : -1;      // +x = links des Spielers: vorn im Bild rechts, hinten (Ansicht von hinten) im Bild links
       const imgSide = front ? side : -side;          // +1 = rechte Bildhälfte
       if (Math.abs(x) <= sx) {
@@ -115,7 +119,7 @@ export function garmentUv(name, geometry, kit, ctx) {
     }
   } else if (name === 'shorts') {
     for (let i = 0; i < n; i++) {
-      const front = nrm.getZ(i) >= 0, r = front ? B.shortsFront : B.shortsBack;
+      const front = facing[i] === 1, r = front ? B.shortsFront : B.shortsBack;
       let fx = (p.getX(i) - b.min.x) / (b.max.x - b.min.x);      // vorn steht +x (links des Spielers) im Bild rechts, von hinten links
       if (!front) fx = 1 - fx;
       put(i, ...at(r, fx, (b.max.y - p.getY(i)) / (b.max.y - b.min.y)));
@@ -144,7 +148,8 @@ export function dressUp(base, skeletonMesh, kit) {
   if (v.baseLayer) parts.push(['under', flat(v.baseLayer)]);
   if (v.gloves) parts.push(['gloves', flat(v.gloves, 0.7)]);
   for (const [name, material] of parts) {
-    const g = base[name].clone();
+    let g = base[name].clone();
+    if (material === textured) g = g.index ? g.toNonIndexed() : g;
     if (material === textured) g.setAttribute('uv', new THREE.BufferAttribute(garmentUv(name, g, kit, base.ctx), 2));
     const mesh = new THREE.SkinnedMesh(g, material);
     mesh.name = `Kit_${name}`;
