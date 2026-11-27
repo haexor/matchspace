@@ -78,6 +78,29 @@ function hash(text) {
   return h >>> 0;
 }
 
+// Die Frisuren des Modells stehen am Scheitel bis zu 4 cm vom Schädel ab und wirken wie ein Bienenkorb. Jeder Haarpunkt, der weiter als HAIR_THICKNESS
+// vom Kopf des Körpernetzes entfernt liegt, wird auf diese Dicke an den Kopf herangezogen: die Frisur liegt am Schädel an, ihre Form (Ansatz, Seiten) bleibt.
+const HAIR_THICKNESS = 0.012;   // m
+const HEAD_FROM = 1.6;   // m: ab dieser Höhe (Grundhaltung) zählen Körperpunkte zum Kopf
+function hugHead(hair, body) {
+  const bp = body.geometry.attributes.position, head = [];
+  for (let i = 0; i < bp.count; i++) if (bp.getY(i) > HEAD_FROM && Math.abs(bp.getX(i)) < 0.13) head.push(new THREE.Vector3().fromBufferAttribute(bp, i));
+  const position = hair.geometry.attributes.position, p = new THREE.Vector3(), d = new THREE.Vector3();
+  for (let i = 0; i < position.count; i++) {
+    p.fromBufferAttribute(position, i);
+    let best = Infinity, near = null;
+    for (const q of head) { const l = p.distanceToSquared(q); if (l < best) { best = l; near = q; } }
+    const dist = Math.sqrt(best);
+    if (dist <= HAIR_THICKNESS) continue;
+    d.subVectors(p, near).multiplyScalar(HAIR_THICKNESS / dist);
+    position.setXYZ(i, near.x + d.x, near.y + d.y, near.z + d.z);
+  }
+  position.needsUpdate = true;
+  hair.geometry.computeVertexNormals();
+  hair.geometry.computeBoundingBox();
+  hair.geometry.computeBoundingSphere();
+}
+
 export async function loadAvatars(url) {
   const gltf = await new GLTFLoader().loadAsync(url);
   const template = gltf.scene;
@@ -152,6 +175,7 @@ export async function loadAvatars(url) {
   const plate = new THREE.Vector4(0.13, (shoulderY + rest.Hips.p.y) / 2 + 0.05, 0.13, 1);
   dress(body, wear, extra);
   body.geometry.setAttribute('wear', new THREE.BufferAttribute(wear, 4));
+  for (const h of hairs) hugHead(h, body);
   lookCoordinates(template, [body, ...hairs], body, 0.035);
 
   // Entspannte Hände: Finger leicht gebeugt statt gestreckt wie in der Grundhaltung.

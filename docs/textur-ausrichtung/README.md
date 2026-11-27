@@ -295,3 +295,10 @@ Jetzt (`splitSeams`):
 - Das Netz hat danach mehr Punkte; `tools/avatar_bake.py` liest es unverändert aus (neu backen: `avatar_bake.py SZENE OUT.pkl --von 0 --bis 1`, für Spielerfotos reicht ein Bild).
 Größerer Kopf: Das Gesicht belegte nur etwa 32 Pixel der Kopfkachel. Der Kopfbereich liegt jetzt in der freien rechten unteren Ecke der Kachel (`veo_looks.SEGMENTS`, 256 × 256 statt 128 × 128 Pixel bei Kachel 512), das Gesicht bekommt etwa 64 Pixel. Szenen im alten Layout werden von `looks_from_photo.migrate_layout` beim Übertragen umgestellt (Kopfbereich hochskaliert kopiert, Meta angepasst); der Viewer liest die Rechtecke aus dem Meta.
 Bleibt: Durchdringungen, wo sich Teile wirklich durchstoßen (Unterarm hinter dem Rumpf an der Hüfte).
+
+## Versuch 24: Frisur liegt am Kopf an
+
+Rückmeldung: Bei manchen Spielern sah das Haar wie ein hoher Bienenkorb aus. Ursache ist die Geometrie, nicht die Textur: Die Frisuren des Modells (`Hair_SimpleParted`, `Hair_Buzzed`) stehen am Scheitel bis zu 4 cm vom Kopf des Körpernetzes ab (bei 1,78 m Höhe Haar ±9 cm breit, Kopf ±6,5 cm) und bilden eine Haube mit Absatz über den Ohren.
+Jetzt (`hugHead` in `web/avatar.js`, beim Laden des Modells): Jeder Haarpunkt, der weiter als `HAIR_THICKNESS` (1,2 cm) vom nächsten Kopfpunkt des Körpernetzes liegt, wird auf diese Dicke herangezogen, danach neue Normalen. Ansatz und Seiten der Frisur bleiben, der Überstand verschwindet; Textur und Farbe unverändert (aus dem Foto, wie bisher).
+Verworfen: Frisur von oben stauchen (Ansatz rückt hoch, aber die Haube bleibt breit); 2,5 cm Dicke (Bienenkorb bleibt sichtbar).
+Offen: Die Frisurform ist weiterhin die des Modells (zwei Stile), nicht die des Spielers; Locken oder lange Haare kommen nur als Farbe.
