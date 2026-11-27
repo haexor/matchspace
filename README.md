@@ -307,6 +307,7 @@ seinen eigenen Browser (`playwright install chromium`) und die Grafik des Rechne
   `photo_ai.py` lässt eine Bild-KI (Standard GPT Image 2.5 über OpenRouter, Meta Muse als Ersatz; Vergleich in `photo_ai_bench.py`) aus Ausschnitt,
   Farben und Nummer eine gerade Ansicht erzeugen (Vorderansicht bekommt die Rückansicht als Referenz), `looks_from_photo.py` legt die Ansichten über die Gelenkpunkte
   auf Rumpf, Kopf, Beine und Arme des Avatars. `kit_sheet.py` lässt je Mannschaft ein Blatt mit Trikot (vorn, hinten, ohne Nummer), Hose und Stutzen einzeln auf neutralem Grund zeichnen (rund 0,04 bis 0,08 USD je Blatt), `kit_player.py` liest je Spieler Unterhemd und Schuhfarbe aus der Videotextur; `web/garments.js` zieht daraus eigene Kleidungshüllen an (`spieler.html?...&kit=1`). Das Gesicht ist ein plausibler Ersatz, keine Ähnlichkeit. Die Bilder gehen an einen Dienst Dritter (Jugendspieler): bewusst entscheiden.
+- Spieler steuern (Vorschau): `web/spielen.html?match=SZENE&player=own-6`, W A S D, Umschalt, Leertaste, E. Werte je Spieler in `web/profile.js`, Bewertung aus den Bahnen mit `tools/player_rating.py`; siehe `docs/spielen/README.md`.
 - Zwischenergebnisse liegen neben den Erkennungen: `*.det.json.keypoints.npz` (Gelenkpunkte je Box),
   `*.det.json.virtual.npz` (Suche nach Spielern ohne Box) und `*.det.json.players.npz` (Gelenkpunkte,
   Körperhöhe und Liegen je Spieler, für `veo_looks.py`). Sie bleiben lokal bei den Rohdaten.

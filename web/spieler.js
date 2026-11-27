@@ -59,6 +59,7 @@ function reload() {
 $('layer').addEventListener('change', reload);
 $('kit').addEventListener('change', reload);      // wie die Schicht: wird beim Laden von web/avatar.js gelesen
 let avatar = null, current = -1, lookStatus = '';
+function playLink() { $('play').href = `spielen.html?match=${query.get('match') ?? ''}&player=${ENTITIES[Number(who.value)].id}`; }
 
 function build() {
   const i = Number(who.value);
@@ -84,12 +85,13 @@ function pose() {
   $('status').textContent = lookStatus;
 }
 
-who.addEventListener('change', () => { build(); });
+who.addEventListener('change', () => { build(); playLink(); });
 $('tpose').addEventListener('change', () => { build(); });      // zurücksetzen: neue Figur in Grundhaltung
 $('wire').addEventListener('change', (e) => {
   avatar.root.traverse((o) => { if (o.isSkinnedMesh && o.material && 'wireframe' in o.material) o.material.wireframe = e.target.checked; });
 });
 build();
+playLink();
 
 let last = performance.now();
 function loop(now) {
