@@ -43,7 +43,7 @@ export function createLooks(meta, base) {
   /** Kleidung eines Spielers aus dem Blatt seiner Mannschaft: Textur mit seiner Rückennummer, dazu was er laut Textur zusätzlich trägt (Unterhemd, Handschuhe, Schuhe); null ohne Blatt. */
   function kitFor(entity) {
     if (entity.role === 'goalkeeper') return null;      // der Torwart trägt ein anderes Trikot als sein Blatt (kein Blatt: einfarbig, siehe outfitOf)
-    const sheet = kitSheets.get(entity.team), meta = LOOKS.kit?.teams?.[entity.team];
+    const sheet = kitSheets.get(entity.team), meta = LOOKS?.kit?.teams?.[entity.team];
     if (!sheet || !meta) return null;
     if (!kitCache.has(entity.id)) {
       const cv = document.createElement('canvas');
