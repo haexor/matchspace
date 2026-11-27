@@ -46,6 +46,7 @@ FLECK_AREA = 150           # Texel: kleinere dunkle Flecken in der Ohrgegend wer
 FLECK_LUMA = 60            # Helligkeit (0 bis 255), unter der ein Texel als dunkel gilt (Haar, Strich am Ohr)
 EAR_ZONE = ((0.066, 1.55, 1.745), (0.052, 1.55, 1.715))      # m: Ohrgegend am Kopf als Ausschnitte (Abstand von der Mittelebene ab, Höhe von bis; Grundhaltung); Augen und Brauen liegen innerhalb von 0,05 bzw. über 1,715 m
 EAR_MESH_X, EAR_MESH_Y = 0.075, (1.64, 1.73)      # m: Ohrnetz (Abstand von der Mittelebene ab, Höhe von bis; Grundhaltung)
+CHEEK_X, CHEEK_Y, CHEEK_Z = (0.035, 0.065), (1.62, 1.69), 0.03      # m: Wange vor dem Ohr (Abstand von der Mittelebene, Höhe, z ab; nur die Vorderseite des Kopfes), Hautfarbe fürs Netzohr
 EAR_Y, EAR_Z = 1.686, -0.016      # m: Mitte der Ohren des Netzes in der Grundhaltung (Ohrnetz y 1,658 bis 1,715, z -0,031 bis -0,001)
 EYE_ABOVE_HEAD = 0.099      # m: Augenhöhe des Avatars über dem Kopfgelenk (Augennetz 1,684 bis 1,714 m bei Kopfgelenk 1,600 m)
 HEAD_NECK_T = 0.1          # Kopfachse: bis hier ist es der Halsansatz
@@ -83,16 +84,28 @@ def arm_band(kp, conf, scale, shape):
 
 
 def remove_ear_flecks(tile, zone):
-    """Kleine dunkle Flecken (Zusammenhang unter FLECK_AREA Texeln) in der Ohrgegend `zone` (bool wie tile) mit der Umgebung füllen. Dort liegen Haarsträhnen, Ohrränder und
+    """Kleine (Zusammenhang unter FLECK_AREA Texeln) und dünne (unter etwa 5 Texeln breite) dunkle Flecken in der Ohrgegend `zone` (bool wie tile) mit der Umgebung füllen. Dort liegen Haarsträhnen, Ohrränder und
     Ohrring des Seitenfotos, die auf der Wange vor dem Ohr als schwarze Zacken stehen; große dunkle Flächen (Haar) bleiben."""
     dark = (cv2.cvtColor(tile, cv2.COLOR_BGR2GRAY) < FLECK_LUMA).astype(np.uint8)
     count, labels, stats, _ = cv2.connectedComponentsWithStats(dark, connectivity=8)
     small = np.isin(labels, [i for i in range(1, count) if stats[i, cv2.CC_STAT_AREA] < FLECK_AREA])
-    fleck = small & zone
+    wide = cv2.morphologyEx(dark, cv2.MORPH_OPEN, np.ones((5, 5), np.uint8))      # dünne Striche, die am Haar hängen, gehören zu einem großen Zusammenhang: auch sie fallen heraus
+    thin = (dark > 0) & ~(cv2.dilate(wide, np.ones((5, 5), np.uint8)) > 0)
+    fleck = (small | thin) & zone
     if not fleck.any():
         return tile
     fleck = cv2.dilate(fleck.astype(np.uint8), np.ones((3, 3), np.uint8))
     return cv2.inpaint(tile, fleck, 3, cv2.INPAINT_TELEA)
+
+
+def paint_ear(tile, ear, cheek):
+    """Texel des Netzohrs (`ear`, bool wie tile) in der Hautfarbe der Wange (Median der Texel `cheek`, die das Vorderfoto sieht). Das Ohr aus dem Foto ist zu klein und von Haaren
+    verdeckt; es würde als dunkles, gerippt gestreiftes Gebilde (Haarfarbe) auf dem Netzohr stehen und neben dem Ohr des Netzes ein zweites zeigen."""
+    if not ear.any() or cheek.sum() < 8:
+        return tile
+    out = tile.copy()
+    out[cv2.dilate(ear.astype(np.uint8), np.ones((3, 3), np.uint8)) > 0] = np.median(tile[cheek], axis=0)
+    return out
 
 
 def eye_line(kp, conf, min_conf):
@@ -488,6 +501,13 @@ def main(scene_dir, player, photos, mesh_path, out_dir, debug=None):
             wrapped = np.concatenate([tile_new[:, -pad:], tile_new, tile_new[:, :pad]], axis=1)
             gap_w = np.concatenate([gap[:, -pad:], gap, gap[:, :pad]], axis=1)
             tile_new = cv2.inpaint(wrapped, gap_w, 3, cv2.INPAINT_TELEA)[:, pad:-pad]
+        if name == "head":      # Netzohr zuletzt (die Lückenfüllung davor hätte es mit der Haarfarbe der Nachbarn gefüllt)
+            px, py = np.abs(np.nan_to_num(P[:, 0])), np.nan_to_num(P[:, 1])
+            ear_mesh = ok & (px > EAR_MESH_X) & (py > EAR_MESH_Y[0]) & (py < EAR_MESH_Y[1])
+            cheek = ok & (px > CHEEK_X[0]) & (px < CHEEK_X[1]) & (py > CHEEK_Y[0]) & (py < CHEEK_Y[1]) & (np.nan_to_num(P[:, 2]) > CHEEK_Z) & has
+            tile_new = paint_ear(tile_new, ear_mesh.reshape(h, w), cheek.reshape(h, w))
+            ear_zone = (ok & np.any([(px > x0) & (py > y0) & (py < y1) for x0, y0, y1 in EAR_ZONE], axis=0)).reshape(h, w)
+            tile_new = remove_ear_flecks(tile_new, ear_zone)      # Reste (einzelne dunkle Punkte am Ohrrand) nach dem Anmalen
         out[ty + y:ty + y + h, tx + x:tx + x + w] = tile_new
     print("Anteil der Texel aus Fotos je Teil:", {a: round(c, 2) for a, c in stats.items()})
     out_dir.mkdir(parents=True, exist_ok=True)

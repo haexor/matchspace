@@ -65,6 +65,26 @@ class EarFleckTest(unittest.TestCase):
         self.assertTrue((out == tile).all())
 
 
+class EarPaintTest(unittest.TestCase):
+    def test_ear_texels_get_the_cheek_colour(self):
+        tile = np.full((40, 40, 3), (20, 20, 20), np.uint8)        # dunkel: Haar rundherum
+        tile[30:38, 5:15] = (90, 140, 200)                         # Wange
+        ear = np.zeros((40, 40), bool)
+        ear[10:20, 25:30] = True
+        cheek = np.zeros((40, 40), bool)
+        cheek[30:38, 5:15] = True
+        out = lfp.paint_ear(tile, ear, cheek)
+        self.assertEqual(tuple(out[15, 27]), (90, 140, 200))
+        self.assertEqual(tuple(out[2, 2]), (20, 20, 20))
+
+    def test_without_cheek_nothing_changes(self):
+        tile = np.full((20, 20, 3), 30, np.uint8)
+        ear = np.zeros((20, 20), bool)
+        ear[5:9, 5:9] = True
+        out = lfp.paint_ear(tile, ear, np.zeros((20, 20), bool))
+        self.assertTrue((out == tile).all())
+
+
 class ProjectionTest(unittest.TestCase):
     def fm(self, with_eyes):
         y = [1.45, 1.81]
