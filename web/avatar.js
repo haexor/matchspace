@@ -347,7 +347,27 @@ export async function loadAvatars(url, options = {}) {
     if (kitBases && outfit) {
       let bodyMesh = null;
       model.traverse((o) => { if (o.isSkinnedMesh && o.name === body.name) bodyMesh = o; });
-      if (LAYER !== 'skin') for (const m of dressUp(kitBases, bodyMesh, outfit)) bodyMesh.parent.add(m);
+      if (LAYER !== 'skin') for (const m of dressUp(kitBases, bodyMesh, outfit)) {
+        if (m.name === 'Kit_shirt' && outfit.flat && number != null) {
+          const numberMap = numberTexture(String(number));
+          m.material.onBeforeCompile = (shader) => {
+            Object.assign(shader.uniforms, { flatNumberMap: { value: numberMap }, flatNumberPlate: { value: plate } });
+            shader.vertexShader = shader.vertexShader
+              .replace('#include <common>', '#include <common>\nvarying vec3 vFlatRest;\nvarying float vFlatBack;')
+              .replace('#include <begin_vertex>', '#include <begin_vertex>\nvFlatRest = position;\nvFlatBack = normal.z;');
+            shader.fragmentShader = shader.fragmentShader
+              .replace('#include <common>', '#include <common>\nvarying vec3 vFlatRest;\nvarying float vFlatBack;\nuniform sampler2D flatNumberMap;\nuniform vec4 flatNumberPlate;')
+              .replace('#include <color_fragment>', `#include <color_fragment>
+                vec2 flatPlateUv = vec2(0.5 - vFlatRest.x / (2.0 * flatNumberPlate.x), 0.5 + (vFlatRest.y - flatNumberPlate.y) / (2.0 * flatNumberPlate.z));
+                if (vFlatBack < -0.25 && flatPlateUv.x > 0.0 && flatPlateUv.x < 1.0 && flatPlateUv.y > 0.0 && flatPlateUv.y < 1.0) {
+                  vec4 digit = texture2D(flatNumberMap, flatPlateUv);
+                  diffuseColor.rgb = mix(diffuseColor.rgb, digit.rgb, digit.a);
+                }`);
+          };
+          m.material.customProgramCacheKey = () => 'matchspace-flat-shirt-number';
+        }
+        bodyMesh.parent.add(m);
+      }
       if (LAYER === 'cloth') bodyMesh.visible = false;
     }
     if (LAYER === 'cloth') model.traverse((o) => { if (o.isSkinnedMesh && /^(Hair_|Eyebrows|Eyes)/.test(o.name)) o.visible = false; });

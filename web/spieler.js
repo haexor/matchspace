@@ -77,7 +77,10 @@ function build() {
   avatar = factory.create(kit, e.label ? null : e.number, e.id, look, outfitOf(e));
   scene.add(avatar.root);
   current = i;
-  lookStatus = look ? `${e.id}: Gesicht und Haut aus ${look.printKept ? 'Video und Foto' : 'dem Video'}, Kleidung vom Kit` : `${e.id}: keine Videotextur, Standardkörper mit Kit`;
+  const kitEnabled = $('kit').checked;
+  lookStatus = look
+    ? `${e.id}: Gesicht und Haut aus ${look.printKept ? 'Video und Foto' : 'dem Video'}, Kleidung ${kitEnabled ? 'vom Kit' : 'aus der Körpertextur'}`
+    : `${e.id}: keine Videotextur, ${kitEnabled ? 'Standardkörper mit Kit' : 'Kleidung aus der Körpertextur'}`;
 }
 
 function pose() {

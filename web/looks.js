@@ -95,7 +95,7 @@ export function createLooks(meta, base) {
 
   /** Kleidung einer Figur als Hüllen: aus dem Blatt der Mannschaft, sonst (Torwart, Schiedsrichter, Mannschaft ohne Blatt) einfarbig in den Mannschaftsfarben. Jede Figur trägt Hüllen, auch ohne Videotextur. */
   function outfitOf(entity) {
-    return kitFor(entity) ?? { flat: kitOf(entity), variant: {} };
+    return kitFor(entity) ?? { flat: kitOf(entity), variant: LOOKS?.kit?.players?.[entity.id] ?? {} };
   }
 
   function kitOf(entity) {
