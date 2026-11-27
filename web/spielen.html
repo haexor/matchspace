@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MatchSpace · Spieler steuern</title>
+<style>
+  :root { color-scheme: dark; }
+  html, body { margin: 0; height: 100%; background: #101419; color: #e8eaed; font: 14px/1.4 system-ui, sans-serif; overflow: hidden; }
+  canvas { display: block; touch-action: none; }
+  #bar { position: fixed; inset: 0 0 auto 0; display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; padding: 8px 14px; background: rgba(16,20,25,.82); backdrop-filter: blur(4px); }
+  #bar label { display: flex; gap: 6px; align-items: center; color: #9aa3ad; font-size: 12px; }
+  select { font: inherit; color: #e8eaed; background: #1d242b; border: 1px solid #2b323a; border-radius: 6px; padding: 3px 6px; }
+  a { color: #7fb4ff; }
+  #status { color: #9aa3ad; font-size: 12px; margin-left: auto; }
+  #hud { position: fixed; left: 14px; bottom: 14px; padding: 10px 14px; background: rgba(16,20,25,.78); border: 1px solid #2b323a; border-radius: 10px; min-width: 210px; font-size: 12px; }
+  #hud b { font-size: 13px; }
+  #hud .bar { height: 6px; background: #2b323a; border-radius: 3px; overflow: hidden; margin: 3px 0 7px; }
+  #hud .bar i { display: block; height: 100%; width: 100%; background: #3fb950; }
+  #hud table { border-collapse: collapse; margin-top: 4px; }
+  #hud td { padding: 0 10px 0 0; color: #9aa3ad; }
+  #hud td + td { color: #e8eaed; text-align: right; padding: 0; }
+  #help { position: fixed; right: 14px; bottom: 14px; max-width: 260px; font-size: 12px; color: #9aa3ad; text-align: right; line-height: 1.6; }
+  kbd { background: #1d242b; border: 1px solid #2b323a; border-radius: 4px; padding: 0 5px; color: #e8eaed; }
+</style>
+<script type="importmap">{ "imports": { "three": "./vendor/three.module.js" } }</script>
+</head>
+<body>
+<div id="bar">
+  <b>Spieler steuern</b>
+  <label>Figur <select id="who"></select></label>
+  <a id="tp" href="#">T-Haltung ansehen</a>
+  <span id="status">Lade …</span>
+</div>
+<div id="hud"><b id="name"></b><div>Tempo <span id="speed">0</span> km/h</div><div class="bar"><i id="stamina"></i></div>
+  <table id="ratings"></table></div>
+<div id="help"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> laufen · <kbd>Umschalt</kbd> sprinten<br><kbd>Leertaste</kbd> springen · <kbd>E</kbd> schießen<br>Maus ziehen: Kamera drehen · Rad: Abstand</div>
+<script type="module" src="spielen.js"></script>
+</body>
+</html>
