@@ -78,7 +78,10 @@ function build() {
   physics = physicsOf(ratings);
   $('name').textContent = `${entity.id}${entity.number ? ' · ' + entity.number : ''}`;
   $('ratings').innerHTML = ATTRIBUTES.map(([key, label]) => `<tr><td>${label}</td><td>${ratings[key]}</td></tr>`).join('');
-  $('status').textContent = look ? 'Gesicht und Haut aus dem Video, Kleidung vom Kit' : 'Standardkörper mit Kit';
+  const kitEnabled = query.get('kit') !== '0';
+  $('status').textContent = look
+    ? `Gesicht und Haut aus dem Video, Kleidung ${kitEnabled ? 'vom Kit' : 'aus der Körpertextur'}`
+    : `Standardkörper, Kleidung ${kitEnabled ? 'vom Kit' : 'aus der Körpertextur'}`;
   $('tp').href = `spieler.html?match=${query.get('match') ?? ''}&player=${entity.id}&tpose=1`;
   mover = createMover(0, 0, Math.PI / 2);
   Object.assign(ball, createBall(2, 0));
