@@ -46,6 +46,8 @@ FLECK_AREA = 150           # Texel: kleinere dunkle Flecken in der Ohrgegend wer
 FLECK_LUMA = 60            # Helligkeit (0 bis 255), unter der ein Texel als dunkel gilt (Haar, Strich am Ohr)
 EAR_ZONE = ((0.066, 1.55, 1.745), (0.052, 1.55, 1.715))      # m: Ohrgegend am Kopf als Ausschnitte (Abstand von der Mittelebene ab, Höhe von bis; Grundhaltung); Augen und Brauen liegen innerhalb von 0,05 bzw. über 1,715 m
 EAR_MESH_X, EAR_MESH_Y = 0.075, (1.64, 1.73)      # m: Ohrnetz (Abstand von der Mittelebene ab, Höhe von bis; Grundhaltung)
+FACE_Z, FACE_TOP, FACE_X = (0.0, 0.03), (1.75, 1.79), (0.082, 0.1)      # m: Gesichtsfläche am Kopf (Vorderseite: z ab, bis zur Höhe, Abstand von der Mittelebene bis); Übergänge weich
+LIPS_Y, LIPS_RADIUS, LIP_TINT = 1.618, (0.024, 0.0075), (0.82, 0.74, 1.0)      # m: Mund (Höhe, Halbachsen x/y) und Farbfaktor (BGR) der Lippen gegenüber der Haut
 CHEEK_X, CHEEK_Y, CHEEK_Z = (0.035, 0.065), (1.62, 1.69), 0.03      # m: Wange vor dem Ohr (Abstand von der Mittelebene, Höhe, z ab; nur die Vorderseite des Kopfes), Hautfarbe fürs Netzohr
 EAR_Y, EAR_Z = 1.686, -0.016      # m: Mitte der Ohren des Netzes in der Grundhaltung (Ohrnetz y 1,658 bis 1,715, z -0,031 bis -0,001)
 EYE_ABOVE_HEAD = 0.099      # m: Augenhöhe des Avatars über dem Kopfgelenk (Augennetz 1,684 bis 1,714 m bei Kopfgelenk 1,600 m)
@@ -106,6 +108,27 @@ def paint_ear(tile, ear, cheek):
     out = tile.copy()
     out[cv2.dilate(ear.astype(np.uint8), np.ones((3, 3), np.uint8)) > 0] = np.median(tile[cheek], axis=0)
     return out
+
+
+def smooth(x, lo, hi):
+    """0 unter lo, 1 über hi, dazwischen weich (smoothstep)."""
+    t = np.clip((x - lo) / (hi - lo), 0.0, 1.0)
+    return t * t * (3.0 - 2.0 * t)
+
+
+def model_face(tile, shape, P, ok, skin_bgr):
+    """Das Gesicht kommt vom Modell, nicht vom Foto: Die Vorderseite des Kopfes (Stirn bis Kinn, Wangen, Nase, Mund) bekommt die Hautfarbe des Spielers, die Lippen einen Ton darüber.
+    Augen, Brauen, Nase und Mund zeichnet der Viewer mit den Teilen des Modells (ein Gesicht, immer zwei Augen). Das Foto liefert nur Hautton, Haar und Ohren; Weichzeichnung am Rand
+    gegen Nähte (Wange/Ohr, Stirn/Haar)."""
+    h, w = shape
+    x, y, z = np.abs(np.nan_to_num(P[:, 0])), np.nan_to_num(P[:, 1]), np.nan_to_num(P[:, 2])
+    weight = smooth(z, FACE_Z[0], FACE_Z[1]) * (1.0 - smooth(y, FACE_TOP[0], FACE_TOP[1])) * (1.0 - smooth(x, FACE_X[0], FACE_X[1])) * ok
+    weight = cv2.GaussianBlur(weight.reshape(h, w).astype(np.float32), (0, 0), 1.5)[..., None]
+    out = tile.astype(np.float32) * (1.0 - weight) + np.asarray(skin_bgr, np.float32) * weight
+    lips = (1.0 - smooth(np.hypot(x / LIPS_RADIUS[0], (y - LIPS_Y) / LIPS_RADIUS[1]), 0.6, 1.0)) * smooth(z, 0.06, 0.08) * ok
+    lips = cv2.GaussianBlur(lips.reshape(h, w).astype(np.float32), (0, 0), 1.0)[..., None]
+    out = out * (1.0 - lips) + out * np.asarray(LIP_TINT, np.float32) * lips
+    return np.clip(out, 0, 255).astype(np.uint8)
 
 
 def eye_line(kp, conf, min_conf):
@@ -505,6 +528,8 @@ def main(scene_dir, player, photos, mesh_path, out_dir, debug=None):
             px, py = np.abs(np.nan_to_num(P[:, 0])), np.nan_to_num(P[:, 1])
             ear_mesh = ok & (px > EAR_MESH_X) & (py > EAR_MESH_Y[0]) & (py < EAR_MESH_Y[1])
             cheek = ok & (px > CHEEK_X[0]) & (px < CHEEK_X[1]) & (py > CHEEK_Y[0]) & (py < CHEEK_Y[1]) & (np.nan_to_num(P[:, 2]) > CHEEK_Z) & has
+            if cheek.sum() >= 8:
+                tile_new = model_face(tile_new, (h, w), P, ok, np.median(tile_new[cheek.reshape(h, w)], axis=0))      # vor dem Ohr: gleicher Hautton
             tile_new = paint_ear(tile_new, ear_mesh.reshape(h, w), cheek.reshape(h, w))
             ear_zone = (ok & np.any([(px > x0) & (py > y0) & (py < y1) for x0, y0, y1 in EAR_ZONE], axis=0)).reshape(h, w)
             tile_new = remove_ear_flecks(tile_new, ear_zone)      # Reste (einzelne dunkle Punkte am Ohrrand) nach dem Anmalen
@@ -515,6 +540,7 @@ def main(scene_dir, player, photos, mesh_path, out_dir, debug=None):
         if item.name != "looks.png" and not (out_dir / item.name).exists():
             (shutil.copytree if item.is_dir() else shutil.copy2)(item, out_dir / item.name)
     cv2.imwrite(str(out_dir / "looks.png"), out)
+    meta["looks"]["faceFromModel"] = True      # Gesicht (Augen, Brauen, Nase, Mund) zeichnet der Viewer mit dem Modell; das Foto liefert Hautton, Haar, Ohren
     meta["looks"].setdefault("fromPhoto", {})[player] = {v: Path(p).name for v, p in photos.items()}
     (out_dir / "meta.json").write_text(json.dumps(meta, indent=2, ensure_ascii=False) + "\n")
     print(f"-> {out_dir}")

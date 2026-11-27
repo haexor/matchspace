@@ -300,7 +300,7 @@ export async function loadAvatars(url) {
 
   /**
    * kit: { shirt, shorts, socks } als THREE.Color, optional skin und hair; number: Rückennummer oder null; seed: wählt die Frisur
-   * (und ohne Videotextur die Haarfarbe). look: Videotextur des Spielers { map, tile: [x, y], size: [Breite, Höhe], rects, ranges, photo } oder null (photo: Gesicht aus Fotos, trägt Augen und Brauen selbst).
+   * (und ohne Videotextur die Haarfarbe). look: Videotextur des Spielers { map, tile: [x, y], size: [Breite, Höhe], rects, ranges, photo } oder null (photo: Gesicht aus dem Foto statt vom Modell, trägt Augen und Brauen selbst; Szenen mit faceFromModel zeigen die Teile des Modells).
    */
   function create(kit, number, seed = number ?? 0, look = null) {
     const root = new THREE.Group();
