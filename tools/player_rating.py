@@ -38,8 +38,12 @@ def smooth(v, n):
         return v
     ok = ~np.isnan(v)
     k = np.ones(n)
-    num = np.convolve(np.where(ok, v, 0.0), k, "same")
-    den = np.convolve(ok.astype(float), k, "same")
+    # numpy's "same" returns max(len(v), n) values. Crop the full
+    # convolution explicitly so short tracks still produce one value per frame.
+    start = (n - 1) // 2
+    stop = start + len(v)
+    num = np.convolve(np.where(ok, v, 0.0), k, "full")[start:stop]
+    den = np.convolve(ok.astype(float), k, "full")[start:stop]
     with np.errstate(invalid="ignore", divide="ignore"):
         out = num / den
     out[den == 0] = np.nan
