@@ -94,7 +94,7 @@ class ModelFaceTest(unittest.TestCase):
         xs = np.tile(np.linspace(-0.04, 0.04, n), n)
         self.P = np.zeros((n * n, 3))
         self.P[:, 0] = xs
-        self.P[:, 1] = 1.65
+        self.P[:, 1] = 1.72      # über der Haarkante am Nacken (NECK_LOW) und unter der Stirn (FACE_TOP)
         self.P[:, 2] = 0.09
         self.P[(np.arange(n * n) // n) < 10, 2] = -0.08      # obere Zeilen: Hinterkopf
         self.ok = np.ones(n * n, bool)
