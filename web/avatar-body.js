@@ -2,7 +2,10 @@
 import * as THREE from 'three';
 
 // Umformen zum Jugendlichen: Breite und Tiefe des Rumpfs, Dicke der Glieder (Anteil des Erwachsenenmodells)
-const SLIM = { torsoX: 0.84, torsoZ: 0.86, upperarm: 0.74, lowerarm: 0.8, hand: 0.9, thigh: 0.84, calf: 0.88, neck: 0.98, jaw: 0.9 };
+const SLIM = { torsoX: 0.84, torsoZ: 0.86, upperarm: 0.66, lowerarm: 0.76, hand: 0.9, thigh: 0.82, calf: 0.86, neck: 0.98, jaw: 0.9 };
+// Muskelrelief der Glieder: Der Querschnitt wird zu diesem Anteil auf den mittleren Radius seiner Höhe am Glied gezogen (Bizeps, Wade, Oberschenkel werden zu glatten Röhren, wie bei Fußballern statt Kraftsportlern)
+const FLATTEN = { upperarm: 0.7, lowerarm: 0.6, thigh: 0.5, calf: 0.6 };
+const SECTIONS = 12;
 // Hals: Vom Schulteransatz (from) bis zum Kinn (to) läuft der Rumpf weich auf `scale` der Breite und Tiefe zu; ohne das steht der Hals wie ein dicker Zylinder
 // auf einer flachen Schulterkante (kein fließender Übergang von Schulter über Hals zum Kopf). Maße in m der Grundhaltung vor dem Umformen.
 const NECK_TAPER = { from: 1.47, to: 1.62, scale: 0.82 };
@@ -40,13 +43,38 @@ export function reshape(template, meshes) {
     for (const [part, a, b, f] of [['upperarm', 'upperarm', 'lowerarm', SLIM.upperarm], ['lowerarm', 'lowerarm', 'hand', SLIM.lowerarm],
       ['thigh', 'thigh', 'calf', SLIM.thigh], ['calf', 'calf', 'foot', SLIM.calf]]) {
       const from = pos(`${a}_${side}`), dir = pos(`${b}_${side}`).sub(from).normalize();
-      axis[`${part}_${side}`] = { from, dir, f };
+      axis[`${part}_${side}`] = { from, dir, f, to: pos(`${b}_${side}`) };
     }
     axis['hand_' + side] = { from: pos('hand_' + side), dir: pos('middle_01_' + side).sub(pos('hand_' + side)).normalize(), f: SLIM.hand };
   }
   // Gesicht: Das Modell hat das kantige Kinn eines Erwachsenen; unterhalb der Nase wird der Kopf schmaler.
   const head = pos('Head'), nose = head.y + 0.075, chin = head.y + 0.005;
   const d = new THREE.Vector3(), r = new THREE.Vector3(), p = new THREE.Vector3();
+  // Mittlerer Radius je Glied und Höhe am Glied (zwölf Abschnitte von Gelenk zu Gelenk), vor dem Umformen gemessen
+  const reach = (part, q) => { const a = axis[part]; r.subVectors(q, a.from); const s = r.dot(a.dir); r.addScaledVector(a.dir, -s); return { s: s / a.length, rho: r.length() }; };
+  for (const part of Object.keys(axis)) if (FLATTEN[part.slice(0, -2)]) axis[part].length = Math.max(1e-3, axis[part].to.distanceTo(axis[part].from));
+  const sum = {}, count = {};
+  for (const mesh of meshes) {
+    const position = mesh.geometry.attributes.position, index = mesh.geometry.attributes.skinIndex, weight = mesh.geometry.attributes.skinWeight;
+    const parts = mesh.skeleton.bones.map((b) => partOf(b.name));
+    for (let i = 0; i < position.count; i++) {
+      let best = -1, bw = 0.5;
+      for (let k = 0; k < 4; k++) if (weight.getComponent(i, k) > bw) { bw = weight.getComponent(i, k); best = parts[index.getComponent(i, k)]; }
+      if (best === -1 || !FLATTEN[best.slice(0, -2)] || !axis[best]) continue;
+      const { s, rho } = reach(best, p.fromBufferAttribute(position, i));
+      if (s < 0 || s > 1) continue;
+      const key = best + Math.min(SECTIONS - 1, Math.floor(s * SECTIONS));
+      sum[key] = (sum[key] ?? 0) + rho; count[key] = (count[key] ?? 0) + 1;
+    }
+  }
+  const smooth = (part, q) => {      // Faktor, der den Radius dieses Punkts zum Mittel seines Abschnitts zieht
+    const flat = FLATTEN[part.slice(0, -2)];
+    if (!flat || !axis[part]) return 1;
+    const { s, rho } = reach(part, q);
+    const key = part + Math.min(SECTIONS - 1, Math.max(0, Math.floor(s * SECTIONS)));
+    if (!count[key] || rho < 1e-4) return 1;
+    return 1 - flat + flat * (sum[key] / count[key]) / rho;
+  };
   for (const mesh of meshes) {
     const position = mesh.geometry.attributes.position, index = mesh.geometry.attributes.skinIndex, weight = mesh.geometry.attributes.skinWeight;
     const parts = mesh.skeleton.bones.map((b) => partOf(b.name));
@@ -74,9 +102,10 @@ export function reshape(template, meshes) {
         d.addScaledVector(shift[limb + side], w);
         const a = axis[part];
         if (a) {
+          const smoothing = smooth(part, p);
           r.subVectors(p, a.from);
           r.addScaledVector(a.dir, -r.dot(a.dir));
-          d.addScaledVector(r, w * (a.f - 1));
+          d.addScaledVector(r, w * (a.f * Math.min(1.2, Math.max(0.5, smoothing)) - 1));
         }
       }
       position.setXYZ(i, p.x + d.x, p.y + d.y, p.z + d.z);
