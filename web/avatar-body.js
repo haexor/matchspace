@@ -7,6 +7,8 @@ const SLIM = { torsoX: 0.84, torsoZ: 0.86, upperarm: 0.74, lowerarm: 0.8, hand: 
 // auf einer flachen Schulterkante (kein fließender Übergang von Schulter über Hals zum Kopf). Maße in m der Grundhaltung vor dem Umformen.
 const NECK_TAPER = { from: 1.47, to: 1.62, scale: 0.82 };
 // Kleidung trägt auf (Meter)
+// Das Trikot trägt zum Rand (Halsausschnitt, Ärmel, Saum) hin nicht schlagartig auf, sondern läuft über so viele Meter aus: sonst steht am Halsausschnitt eine Stufe (V-förmiger Grat quer über den Hals).
+const PAD_RAMP = 0.03;
 export const PAD = { shirt: 0.016, sleeve: 0.02, shorts: 0.014, shortsHem: 0.024, sock: 0.004, boot: 0.008 };
 
 /** Zu welchem Körperteil ein Knochen des Modells gehört. */
@@ -103,12 +105,13 @@ export function dress(mesh, wear, extra) {
     if (!keys.has(key)) keys.set(key, keys.size);
     group[i] = keys.get(key);
   }
+  const ramp = (d) => { const t = Math.min(1, d / PAD_RAMP); return t * t * (3 - 2 * t); };
   const g = keys.size, P = new Float32Array(g * 3), cloth = new Float32Array(g), pad = new Float32Array(g);
   for (let i = 0; i < n; i++) {
     const k = group[i], shirt = wear[i * 4], shorts = wear[i * 4 + 1], sock = wear[i * 4 + 2], boot = wear[i * 4 + 3];
     P[k * 3] = position.getX(i); P[k * 3 + 1] = position.getY(i); P[k * 3 + 2] = position.getZ(i);
     cloth[k] = Math.max(cloth[k], Math.min(1, Math.max(shirt, shorts, 0) / 0.04), Math.min(1, Math.max(boot, 0) / 0.02));   // zum Saum hin läuft die Glättung aus; im Schuh verschwinden die Zehen
-    pad[k] = Math.max(pad[k], shirt > 0 ? PAD.shirt + extra[i] : shorts > 0 ? PAD.shorts + extra[i] : boot > 0 ? PAD.boot : sock > 0 ? PAD.sock : 0);
+    pad[k] = Math.max(pad[k], shirt > 0 ? (PAD.shirt + extra[i]) * ramp(shirt) : shorts > 0 ? PAD.shorts + extra[i] : boot > 0 ? PAD.boot : sock > 0 ? PAD.sock : 0);
   }
   const index = geometry.index.array, near = Array.from({ length: g }, () => new Set());
   for (let t = 0; t < index.length; t += 3) {

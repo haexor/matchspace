@@ -48,7 +48,8 @@ EAR_ZONE = ((0.066, 1.55, 1.745), (0.052, 1.55, 1.715))      # m: Ohrgegend am K
 EAR_MESH_X, EAR_MESH_Y = 0.075, (1.64, 1.73)      # m: Ohrnetz (Abstand von der Mittelebene ab, Höhe von bis; Grundhaltung)
 FACE_Z, FACE_TOP, FACE_X = (0.0, 0.03), (1.75, 1.79), (0.082, 0.1)      # m: Gesichtsfläche am Kopf (Vorderseite: z ab, bis zur Höhe, Abstand von der Mittelebene bis); Übergänge weich
 GAP_SPREAD = 17            # Texel: so weit reicht die Hautfarbe über den Rand der Netzfläche hinaus (Kopf/Hals, Hals/Rumpf)
-NECK_Y, NECK_Z, NECK_RADII, NECK_EDGE = 1.505, -0.045, (0.085, 0.085), (1.0, 1.2)      # m: Halsröhre am Rumpf: ab dieser Höhe, Achse (z), Halbachsen (x, z); Haut bis zum Rand (Anteil der Halbachsen, weich von bis); Grundhaltung nach dem Umformen
+NECKLINE, NECKLINE_EDGE = (0.018, 0.55, 0.3), 0.008      # Halsausschnitt des Trikots wie im Viewer (fields in web/avatar.js): Höhe über dem Halsknochen, Anstieg je m seitlich, Anstieg je m nach hinten (bis 6 cm); weicher Rand in m
+NECK_RADII, NECK_EDGE = (0.09, 0.09), (1.0, 1.25)      # m: Halsröhre: Halbachsen (x, z) um den Halsknochen; Haut bis zum Rand (Anteil, weich von bis)
 NECK_LOW = (1.655, 1.685)      # m: unterhalb davon ist der Kopf (Kiefer, Nacken) rundum Haut; bis 1,685 m weicher Übergang zum Haar
 LIPS_Y, LIPS_RADIUS, LIP_TINT = 1.618, (0.024, 0.0075), (0.82, 0.74, 1.0)      # m: Mund (Höhe, Halbachsen x/y) und Farbfaktor (BGR) der Lippen gegenüber der Haut
 CHEEK_X, CHEEK_Y, CHEEK_Z = (0.035, 0.065), (1.62, 1.69), 0.03      # m: Wange vor dem Ohr (Abstand von der Mittelebene, Höhe, z ab; nur die Vorderseite des Kopfes), Hautfarbe fürs Netzohr
@@ -143,14 +144,15 @@ def model_face(tile, shape, P, ok, skin_bgr):
     return np.clip(out, 0, 255).astype(np.uint8)
 
 
-def model_neck(tile, P, skin_bgr, ok):
-    """Hals am Rumpf in der Hautfarbe des Spielers statt aus dem Foto gelesen: Das Foto gab fleckige, rosa Haut an Nacken und Schulterkante und einen anderen Ton als das Gesicht (der Hals
-    wirkte aufgesetzt). Haut ist nur die Röhre des Halses (innerhalb der Ellipse NECK_RADII um die Halsachse, ab NECK_Y): Die Schulterkante darum gehört zum Trikot, der Kragen läuft als Ring um den Hals.
-    Weicher Übergang an Ring und Kragen."""
+def model_neck(tile, P, skin_bgr, ok, neck):
+    """Hals am Rumpf in der Hautfarbe des Spielers statt aus dem Foto gelesen: Das Foto gab fleckige, rosa Haut an Nacken und Schulter und einen anderen Ton als das Gesicht (der Hals
+    wirkte aufgesetzt). Haut ist, was über dem Halsausschnitt des Trikots liegt (derselbe Ausschnitt wie im Viewer, `fields` in web/avatar.js: V-förmig, hinten höher; `neck` ist der
+    Halsknochen) und innerhalb der Ellipse NECK_RADII um die Halsachse. Der Kragen läuft als Ring am Ausschnitt; Haut und Aufdruck gehen weich ineinander über."""
     h, w = tile.shape[:2]
     x, y, z = np.nan_to_num(P[:, 0]), np.nan_to_num(P[:, 1]), np.nan_to_num(P[:, 2])
-    r = np.hypot(x / NECK_RADII[0], (z - NECK_Z) / NECK_RADII[1])
-    weight = smooth(y, NECK_Y - 0.01, NECK_Y + 0.01) * (1.0 - smooth(r, NECK_EDGE[0], NECK_EDGE[1])) * ok
+    neckline = neck[1] + NECKLINE[0] + NECKLINE[1] * np.abs(x - neck[0]) + NECKLINE[2] * np.clip(neck[2] - z, 0.0, 0.06) - y      # > 0: vom Trikot bedeckt
+    r = np.hypot((x - neck[0]) / NECK_RADII[0], (z - neck[2]) / NECK_RADII[1])
+    weight = (1.0 - smooth(neckline, -NECKLINE_EDGE, NECKLINE_EDGE)) * (1.0 - smooth(r, NECK_EDGE[0], NECK_EDGE[1])) * ok
     weight = spread_into_gaps(weight.reshape(h, w), ok.reshape(h, w))
     weight = cv2.GaussianBlur(weight, (0, 0), 1.0)[..., None]
     return np.clip(tile.astype(np.float32) * (1.0 - weight) + np.asarray(skin_bgr, np.float32) * weight, 0, 255).astype(np.uint8)
@@ -561,7 +563,7 @@ def main(scene_dir, player, photos, mesh_path, out_dir, debug=None):
             ear_zone = (ok & np.any([(px > x0) & (py > y0) & (py < y1) for x0, y0, y1 in EAR_ZONE], axis=0)).reshape(h, w)
             tile_new = remove_ear_flecks(tile_new, ear_zone)      # Reste (einzelne dunkle Punkte am Ohrrand) nach dem Anmalen
         if name == "torso" and skin_bgr is not None:      # Hals zuletzt, aus demselben Grund
-            tile_new = model_neck(tile_new, P, skin_bgr, ok)
+            tile_new = model_neck(tile_new, P, skin_bgr, ok, J["neck_01"])
         out[ty + y:ty + y + h, tx + x:tx + x + w] = tile_new
     print("Anteil der Texel aus Fotos je Teil:", {a: round(c, 2) for a, c in stats.items()})
     out_dir.mkdir(parents=True, exist_ok=True)

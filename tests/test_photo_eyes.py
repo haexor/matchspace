@@ -114,24 +114,26 @@ class ModelFaceTest(unittest.TestCase):
 
 
 class ModelNeckTest(unittest.TestCase):
-    def test_neck_tube_gets_the_skin_colour_shoulder_stays(self):
+    NECK = np.array([0.0, 1.53, -0.045])
+
+    def tile_and_points(self, y):
         n = 40
         tile = np.full((n, n, 3), (30, 160, 20), np.uint8)       # Trikot
         P = np.zeros((n * n, 3))
-        P[:, 0] = np.tile(np.linspace(-0.12, 0.12, n), n)          # x quer über die Schulter
-        P[:, 1] = 1.56
-        P[:, 2] = lfp.NECK_Z
-        ok = np.ones(n * n, bool)
-        out = lfp.model_neck(tile, P, (90, 140, 200), ok)
-        self.assertTrue((np.abs(out[20, 20].astype(int) - np.array((90, 140, 200))) < 6).all())      # Mitte: Hals
-        self.assertTrue((np.abs(out[20, 1].astype(int) - np.array((30, 160, 20))) < 4).all())             # Rand: Schulter bleibt Trikot
+        P[:, 0] = np.tile(np.linspace(-0.14, 0.14, n), n)          # x quer über Hals und Schulter
+        P[:, 1] = y
+        P[:, 2] = self.NECK[2]
+        return tile, P, np.ones(n * n, bool)
 
-    def test_below_the_neck_base_nothing_changes(self):
-        n = 20
-        tile = np.full((n, n, 3), (30, 160, 20), np.uint8)
-        P = np.zeros((n * n, 3))
-        P[:, 1] = 1.40
-        out = lfp.model_neck(tile, P, (90, 140, 200), np.ones(n * n, bool))
+    def test_above_the_neckline_is_skin_shoulder_stays_shirt(self):
+        tile, P, ok = self.tile_and_points(self.NECK[1] + 0.05)      # 5 cm über dem Halsknochen: über dem Ausschnitt in der Mitte, seitlich (Schulterkante, x 14 cm) darunter
+        out = lfp.model_neck(tile, P, (90, 140, 200), ok, self.NECK)
+        self.assertTrue((np.abs(out[20, 20].astype(int) - np.array((90, 140, 200))) < 6).all())      # Mitte: Hals
+        self.assertTrue((np.abs(out[20, 1].astype(int) - np.array((30, 160, 20))) < 4).all())        # Rand: Schulter bleibt Trikot
+
+    def test_below_the_neckline_nothing_changes(self):
+        tile, P, ok = self.tile_and_points(1.40)
+        out = lfp.model_neck(tile, P, (90, 140, 200), ok, self.NECK)
         self.assertTrue((out == tile).all())
 
 
