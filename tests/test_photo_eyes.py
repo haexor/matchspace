@@ -113,6 +113,17 @@ class ModelFaceTest(unittest.TestCase):
         self.assertLess(mid[1], 140)
 
 
+class ModelNeckTest(unittest.TestCase):
+    def test_neck_rows_get_the_skin_colour_shirt_rows_stay(self):
+        n = 40
+        tile = np.full((n, n, 3), (30, 160, 20), np.uint8)       # Trikot
+        t_axis = np.repeat(np.linspace(0.9, 1.3, n), n)
+        ok = np.ones(n * n, bool)
+        out = lfp.model_neck(tile, t_axis, (90, 140, 200), ok)
+        self.assertTrue((np.abs(out[-3, 20].astype(int) - np.array((90, 140, 200))) < 6).all())      # Hals
+        self.assertEqual(tuple(out[2, 20]), (30, 160, 20))                                            # Trikot
+
+
 class ProjectionTest(unittest.TestCase):
     def fm(self, with_eyes):
         y = [1.45, 1.81]
