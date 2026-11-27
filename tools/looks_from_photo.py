@@ -242,7 +242,7 @@ def fit(mesh, photo_path, view):
     scale_y = (hip["v"] - sh["v"]) / (sh["y"] - hip["y"])        # Pixel je Meter senkrecht (Schulter bis Hüfte)
     top_rows = ys < v_top + 0.08 * (ys.max() - v_top)
     levels.append({"y": y_top, "v": v_top, "u": float(np.median(xs[top_rows])), "sx": scale_y})
-    eyes = eye_line(kp, conf, 0.5) if min(conf[1], conf[2]) >= 0.5 else None      # nur von vorn: von hinten sind die Augenpunkte geraten
+    eyes = eye_line(kp, conf, 0.5)      # nur von vorn: von hinten sind die Augenpunkte geraten; ein sicheres Auge genügt
     if eyes is not None and v_top < eyes[0] < sh["v"]:
         levels.append({"y": J["Head"][1] + EYE_ABOVE_HEAD, "v": eyes[0], "u": eyes[1], "sx": scale_y})      # siehe fit_side: Augen des Fotos auf die Augenhöhe des Netzes
     levels.sort(key=lambda q: q["y"])
