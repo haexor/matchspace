@@ -81,10 +81,69 @@ class ShirtShapeTest(unittest.TestCase):
         self.assertLess(s["sleeveC"][0], 0.07)                              # Bündchen ganz außen
         self.assertGreater(s["sleeveC"][1], s["sleeveS"][1])                # der Ärmel hängt nach unten
 
+    def test_sleeve_height_is_taken_from_the_connected_run_not_from_outliers(self):
+        m = shirt_mask()
+        m[270:275, 60:75] = True                                      # Ausreißer (Fleck) weit unter dem Ärmel am Rand des Rumpfs
+        s = kit_sheet.shirt_shape(m)
+        self.assertAlmostEqual(s["sleeveW"][0], 80 / 280, delta=0.05)  # Ärmelhöhe am Ansatz: Zeilen 12 bis 90
+        self.assertLess(s["sleeveW"][1], s["sleeveW"][0])              # am Bündchen kürzer als am Ansatz
+        self.assertAlmostEqual(s["sleeveS"][1], 51 / 280, delta=0.06)
+
     def test_a_shirt_without_sleeves_gives_none(self):
         m = np.zeros((280, 300), bool)
         m[12:260, 70:230] = True
         self.assertIsNone(kit_sheet.shirt_shape(m))
+
+
+def shorts_mask():
+    """Hose 200 × 160: oben 100 breit (Spalten 50 bis 150), unten 190 breit (Spalten 5 bis 195)."""
+    m = np.zeros((160, 200), np.uint8)
+    cv2.fillPoly(m, [np.array([[50, 0], [150, 0], [195, 159], [5, 159]], np.int32)], 1)
+    return m.astype(bool)
+
+
+class ShortsShapeTest(unittest.TestCase):
+    def test_the_waist_is_narrower_than_the_hem(self):
+        rows = kit_sheet.shorts_shape(shorts_mask())
+        self.assertEqual(len(rows), kit_sheet.SHORTS_ROWS)
+        self.assertGreater(rows[0][0], rows[-1][0] + 0.1)             # Bund: linker Rand weiter innen
+        self.assertLess(rows[0][1], rows[-1][1] - 0.1)
+        self.assertTrue(all(0 <= lo < hi <= 1 for lo, hi in rows))
+
+    def test_an_empty_row_gives_none(self):
+        m = shorts_mask()
+        m[40:80] = False
+        self.assertIsNone(kit_sheet.shorts_shape(m))
+
+
+class SpeckTest(unittest.TestCase):
+    def sheet(self):
+        img = np.full((1024, 1024, 3), 217, np.uint8)
+        for (x, y, w, h) in [(106, 22, 400, 380), (519, 22, 400, 380), (156, 428, 300, 250), (564, 428, 300, 250), (315, 694, 140, 300), (565, 694, 140, 300)]:
+            cv2.rectangle(img, (x, y), (x + w, y + h), (40, 40, 160), -1)
+        return img
+
+    def boxes(self, img):
+        return kit_sheet.boxes_of(img)
+
+    def test_a_small_white_label_on_the_shorts_is_removed(self):
+        img = self.sheet()
+        cv2.rectangle(img, (400, 600), (420, 608), (255, 255, 255), -1)
+        out = kit_sheet.remove_specks(img, self.boxes(img))
+        self.assertLess(int(out[604, 410].astype(int).sum()), 3 * 120)      # wieder Stoff statt Weiß
+
+    def test_a_small_dark_label_on_light_shorts_is_removed(self):
+        img = self.sheet()
+        cv2.rectangle(img, (156, 428), (456, 678), (235, 235, 235), -1)       # weiße Hose
+        cv2.rectangle(img, (400, 600), (420, 608), (10, 10, 10), -1)
+        out = kit_sheet.remove_specks(img, self.boxes(img))
+        self.assertGreater(int(out[604, 410].astype(int).sum()), 3 * 150)
+
+    def test_a_long_stripe_stays(self):
+        img = self.sheet()
+        cv2.rectangle(img, (106, 100), (506, 112), (255, 255, 255), -1)       # Streifen über das ganze Trikot
+        out = kit_sheet.remove_specks(img, self.boxes(img))
+        self.assertGreater(int(out[106, 300].astype(int).sum()), 3 * 240)
 
 
 if __name__ == "__main__":
