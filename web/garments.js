@@ -27,8 +27,9 @@ function smoothField(geometry, field, passes) {
     if (!keys.has(key)) keys.set(key, keys.size);
     group[i] = keys.get(key);
   }
-  const g = keys.size, value = new Float64Array(g), near = Array.from({ length: g }, () => new Set());
-  for (let i = 0; i < n; i++) value[group[i]] = field[i];
+  const g = keys.size, value = new Float64Array(g), count = new Uint32Array(g), near = Array.from({ length: g }, () => new Set());
+  for (let i = 0; i < n; i++) { value[group[i]] += field[i]; count[group[i]]++; }
+  for (let k = 0; k < g; k++) value[k] /= count[k];
   const index = geometry.index.array;
   for (let t = 0; t < index.length; t += 3) {
     const a = group[index[t]], b = group[index[t + 1]], c = group[index[t + 2]];
@@ -41,7 +42,7 @@ function smoothField(geometry, field, passes) {
       for (const m of near[k]) sum += value[m];
       next[k] = near[k].size ? 0.5 * value[k] + 0.5 * sum / near[k].size : value[k];
     }
-    [value.set(next)];
+    value.set(next);
   }
   return Float32Array.from({ length: n }, (_, i) => value[group[i]]);
 }
