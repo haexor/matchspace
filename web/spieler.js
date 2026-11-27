@@ -28,6 +28,13 @@ camera.position.set(0, 1.25, 3.6);
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.target.set(0, 0.9, 0);
 controls.enableDamping = true;
+// Nahansicht: `&cam=Höhe,Abstand,Blickrichtung` (m, m, Grad; 0 = von vorn, 180 = von hinten) richtet die Kamera auf einen Körperausschnitt (zum Prüfen von Trikotsaum, Ärmeln, Schuhen)
+const cam = (query.get('cam') ?? '').split(',').map(Number);
+if (cam.length === 3 && cam.every(Number.isFinite)) {
+  const [height, distance, turn] = cam, a = turn * Math.PI / 180;
+  controls.target.set(0, height, 0);
+  camera.position.set(Math.sin(a) * distance, height + 0.1 * distance, Math.cos(a) * distance);
+}
 function resize() { renderer.setSize(innerWidth, innerHeight); camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); }
 addEventListener('resize', resize);
 resize();
