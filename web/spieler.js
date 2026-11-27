@@ -1,5 +1,5 @@
 // Ein Spieler einzeln als 3D-Modell: Avatar mit seiner Videotextur (looks.png), Haltung aus einem wählbaren Bild der Szene, Drehteller und freie Kamera.
-// Aufruf: spieler.html?match=SZENE&player=own-6&frame=22  (optional: &tpose=1 Grundhaltung ohne Pose, &layer=skin|cloth nur Körper oder nur Kleidung, &kit=1 Kleidung als eigene Hüllen mit dem Kit-Blatt der Bild-KI)
+// Aufruf: spieler.html?match=SZENE&player=own-6&frame=22  (optional: &tpose=1 Grundhaltung ohne Pose, &layer=skin|cloth nur Körper oder nur Kleidung, &kit=0 die alte Körpertextur statt der Kleidung als eigene Hüllen mit dem Kit-Blatt der Bild-KI)
 import * as THREE from 'three';
 import { OrbitControls } from './vendor/OrbitControls.js';
 import { loadAvatars } from './avatar.js?v=14';
@@ -39,7 +39,7 @@ function resize() { renderer.setSize(innerWidth, innerHeight); camera.aspect = i
 addEventListener('resize', resize);
 resize();
 
-const { loadLooks, lookOf, hairOf, kitOf } = createLooks(meta, base);
+const { loadLooks, lookOf, hairOf, kitOf, outfitOf } = createLooks(meta, base);
 const [factory] = await Promise.all([loadAvatars('models/player/player.glb'), loadLooks()]);
 
 const players = ENTITIES.map((e, i) => ({ e, i })).filter(({ e }) => e.kind === 'player' && PLAYER_SLOTS.has(ENTITIES.indexOf(e)));
@@ -54,13 +54,13 @@ frame.value = String(Number(query.get('frame') ?? Math.floor(N / 2)));
 const joints = Array.from({ length: J }, () => new THREE.Vector3());
 $('tpose').checked = query.get('tpose') === '1';
 $('layer').value = query.get('layer') ?? 'both';
-$('kit').checked = query.get('kit') === '1';
+$('kit').checked = query.get('kit') !== '0';
 // Die Schicht (ohne Kleidung, nur Kleidung) wird beim Laden von web/avatar.js gelesen: Wechsel lädt die Seite mit demselben Spieler neu.
 function reload() {
   const q = new URLSearchParams(location.search);
   q.set('player', ENTITIES[Number(who.value)].id); q.set('frame', frame.value); q.set('layer', $('layer').value);
   if ($('tpose').checked) q.set('tpose', '1'); else q.delete('tpose');
-  if ($('kit').checked) q.set('kit', '1'); else q.delete('kit');
+  if ($('kit').checked) q.delete('kit'); else q.set('kit', '0');
   location.search = q.toString();
 }
 $('layer').addEventListener('change', reload);
@@ -74,10 +74,10 @@ function build() {
   const e = ENTITIES[i];
   const kit = kitOf(e), look = lookOf(e);
   if (look) kit.hair = hairOf(look);
-  avatar = factory.create(kit, e.label ? null : e.number, e.id, look);
+  avatar = factory.create(kit, e.label ? null : e.number, e.id, look, outfitOf(e));
   scene.add(avatar.root);
   current = i;
-  lookStatus = look ? `${e.id}: Textur aus ${look.printKept ? 'Video und Foto' : 'dem Video'}` : `${e.id}: keine Videotextur, Mannschaftsfarben`;
+  lookStatus = look ? `${e.id}: Gesicht und Haut aus ${look.printKept ? 'Video und Foto' : 'dem Video'}, Kleidung vom Kit` : `${e.id}: keine Videotextur, Standardkörper mit Kit`;
 }
 
 function pose() {

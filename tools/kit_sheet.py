@@ -184,7 +184,7 @@ def to_scene(sheet_path, scene_dir, team):
     cv2.imwrite(str(scene_dir / "kit" / f"{team}.png"), extend_edges(remove_specks(sheet, boxes)))
     meta_path = scene_dir / "meta.json"
     meta = json.loads(meta_path.read_text())
-    meta["looks"].setdefault("kit", {}).setdefault("teams", {})[team] = {"file": f"kit/{team}.png", "size": [sheet.shape[1], sheet.shape[0]], "boxes": boxes, "shape": shape}
+    meta.setdefault("looks", {}).setdefault("kit", {}).setdefault("teams", {})[team] = {"file": f"kit/{team}.png", "size": [sheet.shape[1], sheet.shape[0]], "boxes": boxes, "shape": shape}
     meta_path.write_text(json.dumps(meta, indent=2, ensure_ascii=False) + "\n")
     print(f"{team}: Kit-Blatt in {scene_dir / 'kit'}, {len(boxes)} Rechtecke in meta.json")
 

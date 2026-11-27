@@ -214,15 +214,17 @@ export function bootMaterial(colour) {
 
 export function dressUp(base, skeletonMesh, kit) {
   const meshes = [], v = kit.variant ?? {};
-  const textured = new THREE.MeshStandardMaterial({ map: kit.texture, vertexColors: true, roughness: 0.85, metalness: 0, side: THREE.DoubleSide });
-  const parts = [['shirt', textured], ['shorts', textured], ['socks', textured], ['boots', bootMaterial(v.boots ?? '#202020')]];
+  // Mit Blatt: Textur der Mannschaft. Ohne Blatt (kit.flat = { shirt, shorts, socks } als Farben, z. B. Schiedsrichter, Torwart, Szene ohne Blatt): einfarbige Stücke, sonst gleiche Form und Saumschatten.
+  const cloth = (colour) => new THREE.MeshStandardMaterial({ ...(kit.flat ? { color: colour } : { map: kit.texture }), vertexColors: true, roughness: 0.85, metalness: 0, side: THREE.DoubleSide });
+  const textured = kit.flat ? null : cloth();
+  const parts = [['shirt', textured ?? cloth(kit.flat.shirt)], ['shorts', textured ?? cloth(kit.flat.shorts)], ['socks', textured ?? cloth(kit.flat.socks)], ['boots', bootMaterial(v.boots ?? '#202020')]];
   if (v.baseLayer) parts.push(['under', flat(v.baseLayer)]);
   if (v.gloves) parts.push(['gloves', flat(v.gloves, 0.7)]);
   for (const [name, material] of parts) {
     let g = base[name].clone();
-    if (material === textured) g = g.index ? g.toNonIndexed() : g;
-    if (material === textured) {
-      g.setAttribute('uv', new THREE.BufferAttribute(garmentUv(name, g, kit, base.ctx), 2));
+    if (name === 'shirt' || name === 'shorts' || name === 'socks') {
+      g = g.index ? g.toNonIndexed() : g;
+      if (!kit.flat) g.setAttribute('uv', new THREE.BufferAttribute(garmentUv(name, g, kit, base.ctx), 2));
       g.setAttribute('color', new THREE.BufferAttribute(shade(name, g), 3));
     }
     const mesh = new THREE.SkinnedMesh(g, material);

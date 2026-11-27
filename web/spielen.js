@@ -50,9 +50,8 @@ function resize() { renderer.setSize(innerWidth, innerHeight); camera.aspect = i
 addEventListener('resize', resize);
 resize();
 
-const { loadLooks, lookOf, hairOf, kitOf } = createLooks(meta, base);
-const hasKit = Boolean(meta.looks?.kit?.teams);
-const [factory] = await Promise.all([loadAvatars('models/player/player.glb', { kit: hasKit }), loadLooks()]);
+const { loadLooks, lookOf, hairOf, kitOf, outfitOf } = createLooks(meta, base);
+const [factory] = await Promise.all([loadAvatars('models/player/player.glb'), loadLooks()]);
 
 const players = ENTITIES.map((e, i) => ({ e, i })).filter(({ e, i }) => e.kind === 'player' && PLAYER_SLOTS.has(i));
 const who = $('who');
@@ -73,14 +72,14 @@ function build() {
   entity = ENTITIES[Number(who.value)];
   const kit = kitOf(entity), look = lookOf(entity);
   if (look) kit.hair = hairOf(look);
-  avatar = factory.create(kit, entity.label ? null : entity.number, entity.id, look);
+  avatar = factory.create(kit, entity.label ? null : entity.number, entity.id, look, outfitOf(entity));
   scene.add(avatar.root);
   ratings = ratingsOf(entity);
   physics = physicsOf(ratings);
   $('name').textContent = `${entity.id}${entity.number ? ' · ' + entity.number : ''}`;
   $('ratings').innerHTML = ATTRIBUTES.map(([key, label]) => `<tr><td>${label}</td><td>${ratings[key]}</td></tr>`).join('');
-  $('status').textContent = look?.kit ? 'Kleidung: Kit der Mannschaft' : look ? 'Textur aus Video und Foto' : 'Mannschaftsfarben';
-  $('tp').href = `spieler.html?match=${query.get('match') ?? ''}&player=${entity.id}&tpose=1${look?.kit ? '&kit=1' : ''}`;
+  $('status').textContent = look ? 'Gesicht und Haut aus dem Video, Kleidung vom Kit' : 'Standardkörper mit Kit';
+  $('tp').href = `spieler.html?match=${query.get('match') ?? ''}&player=${entity.id}&tpose=1`;
   mover = createMover(0, 0, Math.PI / 2);
   Object.assign(ball, createBall(2, 0));
   camera.position.set(-6, 3.2, 0);

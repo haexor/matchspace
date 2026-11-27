@@ -34,7 +34,7 @@ const SKIN = new THREE.Color(0xd8a583), BOOT = new THREE.Color(0x141414);
 // Schichten ansehen (Hilfsansicht): ?layer=skin zeigt den Körper ohne Kleidung (Hautfarbe, ohne Stoffaufpolsterung), ?layer=cloth nur die Kleidungsstücke (Trikot, Hose, Stutzen, Schuhe)
 const LAYER = typeof location === 'undefined' ? null : new URLSearchParams(location.search).get('layer');
 // ?kit=1: Kleidung als eigene Hüllen mit der Textur des Kit-Blatts der Bild-KI (web/garments.js) statt in der Körpertextur
-const KIT_PARAM = typeof location === 'undefined' ? false : new URLSearchParams(location.search).get('kit') === '1';
+const KIT_PARAM = typeof location === 'undefined' ? true : new URLSearchParams(location.search).get('kit') !== '0';      // Kleidung als Hüllen ist Standard; `?kit=0` zeigt die alte Körpertextur
 const HAIR_COLOURS = [0x2a1c13, 0x3b2a1b, 0x4c3521, 0x6a4b2c, 0x8a6a3f, 0x1b1613].map((c) => new THREE.Color(c));
 const HAIR_STYLES = ['Hair_SimpleParted', 'Hair_SimpleParted', 'Hair_Buzzed'];
 const FINGERS = ['index', 'middle', 'ring', 'pinky'];
@@ -319,7 +319,7 @@ export async function loadAvatars(url, options = {}) {
    * kit: { shirt, shorts, socks } als THREE.Color, optional skin und hair; number: Rückennummer oder null; seed: wählt die Frisur
    * (und ohne Videotextur die Haarfarbe). look: Videotextur des Spielers { map, tile: [x, y], size: [Breite, Höhe], rects, ranges, photo } oder null (photo: Gesicht aus dem Foto statt vom Modell, trägt Augen und Brauen selbst; Szenen mit faceFromModel zeigen die Teile des Modells).
    */
-  function create(kit, number, seed = number ?? 0, look = null) {
+  function create(kit, number, seed = number ?? 0, look = null, outfit = null) {
     const root = new THREE.Group();
     const model = SkeletonUtils.clone(template);
     root.add(model);
@@ -344,10 +344,10 @@ export async function loadAvatars(url, options = {}) {
       }
     });
     for (const o of drop) o.removeFromParent();
-    if (kitBases && look?.kit) {
+    if (kitBases && outfit) {
       let bodyMesh = null;
       model.traverse((o) => { if (o.isSkinnedMesh && o.name === body.name) bodyMesh = o; });
-      if (LAYER !== 'skin') for (const m of dressUp(kitBases, bodyMesh, look.kit)) bodyMesh.parent.add(m);
+      if (LAYER !== 'skin') for (const m of dressUp(kitBases, bodyMesh, outfit)) bodyMesh.parent.add(m);
       if (LAYER === 'cloth') bodyMesh.visible = false;
     }
     if (LAYER === 'cloth') model.traverse((o) => { if (o.isSkinnedMesh && /^(Hair_|Eyebrows|Eyes)/.test(o.name)) o.visible = false; });
