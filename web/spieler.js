@@ -1,5 +1,5 @@
 // Ein Spieler einzeln als 3D-Modell: Avatar mit seiner Videotextur (looks.png), Haltung aus einem wählbaren Bild der Szene, Drehteller und freie Kamera.
-// Aufruf: spieler.html?match=SZENE&player=own-6&frame=22
+// Aufruf: spieler.html?match=SZENE&player=own-6&frame=22  (optional: &tpose=1 Grundhaltung ohne Pose, &layer=skin|cloth nur Körper oder nur Kleidung)
 import * as THREE from 'three';
 import { OrbitControls } from './vendor/OrbitControls.js';
 import { loadAvatars } from './avatar.js?v=14';
@@ -45,6 +45,15 @@ who.value = String(start >= 0 ? start : players[0].i);
 frame.value = String(Number(query.get('frame') ?? Math.floor(N / 2)));
 
 const joints = Array.from({ length: J }, () => new THREE.Vector3());
+$('tpose').checked = query.get('tpose') === '1';
+$('layer').value = query.get('layer') ?? 'both';
+// Die Schicht (ohne Kleidung, nur Kleidung) wird beim Laden von web/avatar.js gelesen: Wechsel lädt die Seite mit demselben Spieler neu.
+$('layer').addEventListener('change', () => {
+  const q = new URLSearchParams(location.search);
+  q.set('player', ENTITIES[Number(who.value)].id); q.set('frame', frame.value); q.set('layer', $('layer').value);
+  if ($('tpose').checked) q.set('tpose', '1'); else q.delete('tpose');
+  location.search = q.toString();
+});
 let avatar = null, current = -1, lookStatus = '';
 
 function build() {
@@ -60,6 +69,7 @@ function build() {
 }
 
 function pose() {
+  if ($('tpose').checked) { $('status').textContent = `${lookStatus} · Grundhaltung (T)`; return; }
   const slot = PLAYER_SLOTS.get(current), f = Number(frame.value);
   const ok = samplePose(slot, f, { x: 0, z: 0 }, joints);
   if (!ok) { $('status').textContent = 'Haltung wird geladen … (oder in diesem Bild nicht erkannt)'; return; }
@@ -71,6 +81,7 @@ function pose() {
 }
 
 who.addEventListener('change', () => { build(); });
+$('tpose').addEventListener('change', () => { build(); });      // zurücksetzen: neue Figur in Grundhaltung
 $('wire').addEventListener('change', (e) => {
   avatar.root.traverse((o) => { if (o.isSkinnedMesh && o.material && 'wireframe' in o.material) o.material.wireframe = e.target.checked; });
 });
