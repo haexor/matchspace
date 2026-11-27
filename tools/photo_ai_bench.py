@@ -156,7 +156,7 @@ def prompt_for(case, team, crop=True):
     return "\n".join(lines)
 
 
-def generate_image(model_info, prompt, url, extra_urls=()):
+def generate_image(model_info, prompt, url, extra_urls=(), aspect="3:4"):
     """Ein Bild von einem OpenRouter-Modell holen: (PNG-Bytes, Antwort mit usage). Modelle mit Textausgabe über chat/completions, reine Bildmodelle über /images.
     Wirft ApiError (HTTP-Fehler mit Antworttext) oder RuntimeError (Antwort ohne Bild)."""
     model = model_info["id"]
@@ -164,7 +164,7 @@ def generate_image(model_info, prompt, url, extra_urls=()):
     payload = {"model": model, "modalities": ["image", "text"] if "text" in outputs else ["image"], "usage": {"include": True},
                "messages": [{"role": "user", "content": [{"type": "text", "text": prompt}] + [{"type": "image_url", "image_url": {"url": u}} for u in (url, *extra_urls)]}]}
     if model.startswith("google/"):
-        payload["image_config"] = {"aspect_ratio": "3:4"}
+        payload["image_config"] = {"aspect_ratio": aspect}
     try:
         resp = request("/chat/completions", payload)
         msg = resp["choices"][0]["message"]
@@ -179,7 +179,7 @@ def generate_image(model_info, prompt, url, extra_urls=()):
             raise ApiError(err.code, body)
     # reine Bildmodelle: eigener Endpunkt (POST /api/v1/images) mit Referenzbild in input_references
     try:
-        resp = request("/images", {"model": model, "prompt": prompt, "aspect_ratio": "3:4", "response_format": "b64_json",
+        resp = request("/images", {"model": model, "prompt": prompt, "aspect_ratio": aspect, "response_format": "b64_json",
                                    "input_references": [{"type": "image_url", "image_url": {"url": u}} for u in (url, *extra_urls)]})
     except urllib.error.HTTPError as err:
         raise ApiError(err.code, err.read().decode())
