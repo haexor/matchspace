@@ -132,6 +132,12 @@ class SpeckTest(unittest.TestCase):
         out = kit_sheet.remove_specks(img, self.boxes(img))
         self.assertLess(int(out[604, 410].astype(int).sum()), 3 * 120)      # wieder Stoff statt Weiß
 
+    def test_a_small_crest_on_the_shirt_is_preserved(self):
+        img = self.sheet()
+        cv2.rectangle(img, (250, 300), (270, 320), (255, 255, 255), -1)
+        out = kit_sheet.remove_specks(img, self.boxes(img))
+        self.assertGreater(int(out[310, 260].astype(int).sum()), 3 * 240)   # kleine Drucke sind keine Etiketten
+
     def test_a_small_dark_label_on_light_shorts_is_removed(self):
         img = self.sheet()
         cv2.rectangle(img, (156, 428), (456, 678), (235, 235, 235), -1)       # weiße Hose
