@@ -197,7 +197,7 @@ export async function loadAvatars(url) {
   }
   // Wo die Rückennummer sitzt (Grundhaltung): halbe Breite, Mitte in der Höhe, halbe Höhe
   const plate = new THREE.Vector4(0.13, (shoulderY + rest.Hips.p.y) / 2 + 0.05, 0.13, 1);
-  if (LAYER !== 'skin' && !KIT) dress(body, wear, extra);      // nackt: ohne Aufpolsterung und Glättung unter dem Stoff
+  if (LAYER !== 'skin') dress(body, wear, extra, !KIT);      // Kit-Hüllen tragen selbst auf: unter ihnen wird das Muskelrelief nur geglättet      // nackt: ohne Aufpolsterung und Glättung unter dem Stoff
   body.geometry.setAttribute('wear', new THREE.BufferAttribute(wear, 4));
   for (const h of hairs) hugHead(h, body);
   lookCoordinates(template, [body, ...hairs], body, 0.035);

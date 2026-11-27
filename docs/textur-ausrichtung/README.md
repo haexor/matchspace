@@ -364,3 +364,4 @@ Umsetzung:
 3. Viewer: `spieler.html?...&kit=1` (Schalter „Kit aus KI-Blatt“), zusammen mit `&tpose=1` und `&layer=skin|cloth`. Der Körper bleibt unaufgepolstert (kein `dress`).
 Ergebnis (opponent-7): Trikot (Nummer 7), Hose, Stutzen, Schuhe und Unterhemd getrennt, ohne Zacken am Saum und ohne Übergang Stutzen/Schuh.
 Offen: Nähte an den Körperseiten (vorn/hinten nach der Normale), Schulterkappe, das Blatt entspricht dem Video nur so weit, wie die KI die Ansichten liest (Ärmelbündchen, Schuhe), Bewegung (Hüllen folgen den Hautgewichten des Körpers, keine Stoffphysik).
+Nachtrag (weniger Muskeln): Im Kit-Modus (`&kit=1`) entfällt das Aufpolstern des Körpers unter Trikot und Hose (`dress(..., padded=false)`, die Hüllen tragen selbst auf); das Muskelrelief wird weiter geglättet. Der Oberkörper unter dem Trikot wirkt dadurch schmaler und glatter. Arme und Beine behalten das Relief des Modells (`SLIM` in `web/avatar-body.js`).
