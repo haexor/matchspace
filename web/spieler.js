@@ -1,5 +1,5 @@
 // Ein Spieler einzeln als 3D-Modell: Avatar mit seiner Videotextur (looks.png), Haltung aus einem wählbaren Bild der Szene, Drehteller und freie Kamera.
-// Aufruf: spieler.html?match=SZENE&player=own-6&frame=22  (optional: &tpose=1 Grundhaltung ohne Pose, &layer=skin|cloth nur Körper oder nur Kleidung)
+// Aufruf: spieler.html?match=SZENE&player=own-6&frame=22  (optional: &tpose=1 Grundhaltung ohne Pose, &layer=skin|cloth nur Körper oder nur Kleidung, &kit=1 Kleidung als eigene Hüllen mit dem Kit-Blatt der Bild-KI)
 import * as THREE from 'three';
 import { OrbitControls } from './vendor/OrbitControls.js';
 import { loadAvatars } from './avatar.js?v=14';
@@ -47,13 +47,17 @@ frame.value = String(Number(query.get('frame') ?? Math.floor(N / 2)));
 const joints = Array.from({ length: J }, () => new THREE.Vector3());
 $('tpose').checked = query.get('tpose') === '1';
 $('layer').value = query.get('layer') ?? 'both';
+$('kit').checked = query.get('kit') === '1';
 // Die Schicht (ohne Kleidung, nur Kleidung) wird beim Laden von web/avatar.js gelesen: Wechsel lädt die Seite mit demselben Spieler neu.
-$('layer').addEventListener('change', () => {
+function reload() {
   const q = new URLSearchParams(location.search);
   q.set('player', ENTITIES[Number(who.value)].id); q.set('frame', frame.value); q.set('layer', $('layer').value);
   if ($('tpose').checked) q.set('tpose', '1'); else q.delete('tpose');
+  if ($('kit').checked) q.set('kit', '1'); else q.delete('kit');
   location.search = q.toString();
-});
+}
+$('layer').addEventListener('change', reload);
+$('kit').addEventListener('change', reload);      // wie die Schicht: wird beim Laden von web/avatar.js gelesen
 let avatar = null, current = -1, lookStatus = '';
 
 function build() {

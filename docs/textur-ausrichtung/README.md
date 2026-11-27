@@ -354,3 +354,13 @@ Jetzt (`garment_cleanup` in `tools/looks_from_photo.py`, `GARMENT_*`): Das Netz 
 2. An der Naht von Trikot und Hose (±12 cm um die Hüfte, 0,954 m) bekommen Texel, deren Farbe näher an der des anderen Stücks liegt, die Farbe ihres Stücks: der Saum wird eine gerade Linie.
 3. Texel ohne Kleidung (Beine zwischen Hose und Stutzen, Knie) bekommen insgesamt die Hautfarbe des Spielers (flach: Das Foto gibt dort nur Schatten, Schmutz, Reste von Hose und Stutzen).
 Mit den Ergebnissen aus Versuch 29 (scharfe Rückennummer) sind Trikot und Hose sauber, aber flacher. Offen: Der Saum hängt am Foto etwas franselig (Mischfarben in der Naht), dünne Linien in der Hose, Schuhe.
+
+## Versuch 31: Kleidung als eigene Hüllen mit dem Kit-Blatt der Bild-KI
+
+Rückmeldung: Das Trikot sieht nicht gut aus, schwammig, Shirt nicht von der Hose getrennt, die Stutzen gehen in die Schuhe über. Wunsch: Die Bild-KI zeichnet erst ein ordentliches Bild der Kleidung, und die Figur trägt sie in der T-Haltung als eigenes Teil.
+Umsetzung:
+1. `tools/kit_sheet.py` (Standardmodell wie `photo_ai.py`, rund 0,08 USD je Blatt): aus den vier Ansichten eines Spielers ein Blatt mit zehn Stücken auf hellem Grund: Trikot vorn/hinten, Unterhemd vorn/hinten, Hose vorn/hinten, Stutzen links/rechts, Schuhe links/rechts. `--szene web/data/SZENE` legt das Blatt (mit nach außen fortgesetzten Rändern, `extend_edges`) und die Rechtecke der Stücke (`boxes_of`: zehn Zusammenhänge gegen den Grund, sonst Fehler) in der Szene ab (`looks.kit.players` in `meta.json`).
+2. `web/garments.js`: Jedes Stück ist ein Netz am Skelett des Körpers: die Dreiecke des Körpers werden an der Nulllinie des Kleidungsfelds (Trikot, Hose, Stutzen, Schuh aus `fields` in `web/avatar.js`) sauber geschnitten (`clip`), um 0,7 bis 1,8 cm entlang der Normale abgehoben, und über die Lage in der Grundhaltung auf das Blatt abgebildet (vorn/hinten nach der Normale; Rumpf als Rechteck, Ärmel entlang ihrer Achse auf die schräg gezeichneten Ärmel des Blatts, Hose, Stutzen und Schuhe als Rechteck). Das Unterhemd (lange Ärmel) ist einfarbig schwarz.
+3. Viewer: `spieler.html?...&kit=1` (Schalter „Kit aus KI-Blatt“), zusammen mit `&tpose=1` und `&layer=skin|cloth`. Der Körper bleibt unaufgepolstert (kein `dress`).
+Ergebnis (opponent-7): Trikot (Nummer 7), Hose, Stutzen, Schuhe und Unterhemd getrennt, ohne Zacken am Saum und ohne Übergang Stutzen/Schuh.
+Offen: Nähte an den Körperseiten (vorn/hinten nach der Normale), Schulterkappe, das Blatt entspricht dem Video nur so weit, wie die KI die Ansichten liest (Ärmelbündchen, Schuhe), Bewegung (Hüllen folgen den Hautgewichten des Körpers, keine Stoffphysik).

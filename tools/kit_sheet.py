@@ -17,6 +17,9 @@ import sys
 import time
 from pathlib import Path
 
+import cv2
+import numpy as np
+
 sys.path.insert(0, str(Path(__file__).parent))
 import photo_ai as ai  # noqa: E402
 import photo_ai_bench as bench  # noqa: E402
@@ -52,7 +55,60 @@ def prompt_for(team, number):
     return "\n".join(lines)
 
 
+def boxes_of(sheet, threshold=18, min_area=800):
+    """Rechtecke (x, y, Breite, Höhe in Pixeln) der Kleidungsstücke auf dem Blatt: die zehn größten Zusammenhänge gegen den hellen Grund, nach Zeile (Trikot, Unterhemd, Hose, Stutzen, Schuhe)
+    und links/rechts geordnet. None, wenn nicht genau zehn gefunden werden (dann hat die KI ein anderes Blatt gezeichnet)."""
+    background = np.median(sheet[5:25, 5:25].reshape(-1, 3), axis=0)
+    mask = (np.linalg.norm(sheet.astype(float) - background, axis=2) > threshold).astype(np.uint8)
+    mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, np.ones((5, 5), np.uint8))
+    count, _, stats, _ = cv2.connectedComponentsWithStats(mask, connectivity=8)
+    items = sorted((tuple(int(v) for v in stats[i, :4]) for i in range(1, count) if stats[i, 4] > min_area), key=lambda r: r[1])
+    if len(items) != 10:
+        return None
+    rows = [sorted(items[i:i + 2], key=lambda r: r[0]) for i in range(0, 10, 2)]
+    names = ("shirt", "under", "shorts", "sock", "boot")
+    out = {}
+    for name, (left, right) in zip(names, rows):
+        if name == "shirt":
+            out["shirtFront"], out["shirtBack"] = list(left), list(right)
+        elif name == "under":
+            out["underFront"], out["underBack"] = list(left), list(right)
+        elif name == "shorts":
+            out["shortsFront"], out["shortsBack"] = list(left), list(right)
+        elif name == "sock":
+            out["sockL"], out["sockR"] = list(left), list(right)
+        else:
+            out["bootL"], out["bootR"] = list(left), list(right)
+    return out
+
+
+def extend_edges(sheet, threshold=18):
+    """Blatt mit nach außen fortgesetzten Rändern: Der helle Grund neben jedem Stück bekommt dessen Randfarben (Abbildung der Hülle trifft knapp daneben, dann stünde sonst Grau im Stoff)."""
+    background = np.median(sheet[5:25, 5:25].reshape(-1, 3), axis=0)
+    item = (np.linalg.norm(sheet.astype(float) - background, axis=2) > threshold).astype(np.uint8)
+    item = cv2.erode(cv2.morphologyEx(item, cv2.MORPH_CLOSE, np.ones((5, 5), np.uint8)), np.ones((3, 3), np.uint8))     # Rand innen: ohne den hellen Saum
+    return cv2.inpaint(sheet, (1 - item).astype(np.uint8), 12, cv2.INPAINT_TELEA)
+
+
+def to_scene(sheet_path, scene_dir, player):
+    """Kit-Blatt in eine Szene legen (web/data/SZENE/kit/SPIELER.png mit fortgesetzten Rändern) und Rechtecke in meta.json eintragen (looks.kit.players): der Viewer zeigt sie mit ?kit=1."""
+    sheet = cv2.imread(str(sheet_path))
+    boxes = boxes_of(sheet)
+    if boxes is None:
+        sys.exit(f"{sheet_path}: nicht genau zehn Kleidungsstücke gefunden; Blatt neu erzeugen (--neu)")
+    scene_dir = Path(scene_dir)
+    (scene_dir / "kit").mkdir(exist_ok=True)
+    cv2.imwrite(str(scene_dir / "kit" / f"{player}.png"), extend_edges(sheet))
+    meta_path = scene_dir / "meta.json"
+    meta = json.loads(meta_path.read_text())
+    meta["looks"].setdefault("kit", {"players": {}})["players"][player] = {"file": f"kit/{player}.png", "size": [sheet.shape[1], sheet.shape[0]], "boxes": boxes}
+    meta_path.write_text(json.dumps(meta, indent=2, ensure_ascii=False) + "\n")
+    print(f"{player}: Kit-Blatt in {scene_dir / 'kit'}, {len(boxes)} Rechtecke in meta.json")
+
+
 def main(a):
+    if a.szene:
+        return to_scene(Path(a.ausgabe) / f"{a.spieler}_kit.png", a.szene, a.spieler)
     folder = Path(a.ausgabe)
     folder.mkdir(parents=True, exist_ok=True)
     teams = json.loads(Path(a.teams).read_text())
@@ -97,5 +153,6 @@ if __name__ == "__main__":
     ap.add_argument("--modell", default=ai.MODEL)
     ap.add_argument("--max-kosten", type=float, default=0.5)
     ap.add_argument("--neu", action="store_true")
+    ap.add_argument("--szene", help="Szenenordner (web/data/SZENE): vorhandenes Blatt dort ablegen und Rechtecke in meta.json eintragen, ohne die KI aufzurufen")
     ap.add_argument("--trocken", action="store_true")
     main(ap.parse_args())

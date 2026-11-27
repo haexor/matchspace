@@ -6,6 +6,7 @@ import * as THREE from 'three';
 export function createLooks(meta, base) {
   const LOOKS = meta.looks ?? null;
   let lookAtlas = null, lookPixels = null, backAtlas = null;
+  const kitTextures = new Map();      // Kit-Blätter der Bild-KI (looks.kit.players, tools/kit_sheet.py)
   function loadLooks() {
     if (!LOOKS) return Promise.resolve();
     // Rückenpartie aus dem Foto (scharfe Nummer): eigene Bilddatei, ein Feld je Spieler (tools/looks_from_photo.py)
@@ -18,7 +19,13 @@ export function createLooks(meta, base) {
       tex.needsUpdate = true;
       backAtlas = tex;
     }).catch((err) => console.warn('Rückenpartie nicht geladen:', err)) : Promise.resolve();
-    return backs.then(() => new THREE.TextureLoader().loadAsync(`${base}${LOOKS.file}?tile=${LOOKS.tile}`).then((tex) => {
+    const kits = Object.entries(LOOKS.kit?.players ?? {}).map(([id, k]) => new THREE.TextureLoader().loadAsync(`${base}${k.file}`).then((tex) => {
+      tex.flipY = false;      // Texturkoordinaten zählen von oben (Pixel des Blatts)
+      tex.colorSpace = THREE.SRGBColorSpace;
+      tex.anisotropy = 4;
+      kitTextures.set(id, tex);
+    }).catch((err) => console.warn('Kit-Blatt nicht geladen:', err)));
+    return Promise.all([backs, ...kits]).then(() => new THREE.TextureLoader().loadAsync(`${base}${LOOKS.file}?tile=${LOOKS.tile}`).then((tex) => {
       tex.flipY = false;
       tex.colorSpace = THREE.SRGBColorSpace;
       tex.generateMipmaps = false;
@@ -39,7 +46,8 @@ export function createLooks(meta, base) {
     const tile = [(k % LOOKS.columns) * LOOKS.tile, Math.floor(k / LOOKS.columns) * LOOKS.tile];
     const bp = LOOKS.backPatch, cell = bp?.players?.[entity.id];
     const back = backAtlas && cell !== undefined ? { map: backAtlas, cell: new THREE.Vector4((cell % bp.columns) * bp.cell, Math.floor(cell / bp.columns) * bp.cell, bp.cell, bp.half), y: bp.y, size: new THREE.Vector2(backAtlas.image.width, backAtlas.image.height) } : null;
-    return { back, printKept: Boolean(LOOKS.cleaned?.printKept), photo: Boolean(LOOKS.fromPhoto?.[entity.id]?.vorn) && !LOOKS.faceFromModel, map: lookAtlas, tile, size: [lookAtlas.image.width, lookAtlas.image.height],
+    const kitMeta = LOOKS.kit?.players?.[entity.id], kit = kitMeta && kitTextures.has(entity.id) ? { texture: kitTextures.get(entity.id), boxes: kitMeta.boxes, size: kitMeta.size } : null;
+    return { kit, back, printKept: Boolean(LOOKS.cleaned?.printKept), photo: Boolean(LOOKS.fromPhoto?.[entity.id]?.vorn) && !LOOKS.faceFromModel, map: lookAtlas, tile, size: [lookAtlas.image.width, lookAtlas.image.height],
       rects: LOOKS.segments.map((s) => new THREE.Vector4(...s.rect)), ranges: LOOKS.segments.map((s) => new THREE.Vector2(...s.t)) };
   }
   /** Mittlere Farbe des Oberkopfs (oberstes Zehntel des Kopfbereichs) in der Kachel: Haarfarbe für die Augenbrauen. */
