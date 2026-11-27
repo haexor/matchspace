@@ -9,6 +9,7 @@ const HEM_SHADOW = { shorts: 0.06, rim: 0.012, strength: 0.4 };   // Schatten de
 const SOLE = { height: 0.02, lip: 0.008, studs: 0.007 };   // Schuhsohle: Höhe, Überstand, Höhe der Stollenplatte (m)
 const PAD = { shirt: 0.018, under: 0.009, shorts: 0.016, socks: 0.007, boots: 0.012, gloves: 0.006 };   // Abstand der Hülle vom Körper (m)
 // Ein Stück liegt dort, wo sein Feld ≥ 0 ist und kein darüber getragenes Stück liegt (Trikot über Hose über Schuh über Stutzen)
+const EDGE_SMOOTHING = 12;   // Durchgänge, mit denen die Kleidungsfelder vor dem Schneiden geglättet werden (glatte Kanten)
 const BOOT_DROP = 0.025;   // Der Schuh endet so viel tiefer als das Schuhfeld des Avatars (m): ein flacher Fußballschuh, kein Stiefel; der Stutzen läuft entsprechend tiefer
 const FIELD = {
   shirt: (w) => w[0],
@@ -16,6 +17,34 @@ const FIELD = {
   socks: (w) => Math.min(w[2], -(w[3] - BOOT_DROP), -w[1], -w[0]),
   boots: (w) => w[3] - BOOT_DROP,
 };
+
+/** Glättet ein Feld über die Nachbarn im Netz (Punkte an derselben Stelle, etwa an Nähten der Textur, zählen als einer): Das Netz des Körpers ist grob, die Nulllinie des Feldes folgt sonst
+ *  den Dreieckskanten und läuft als Zickzack um Saum, Stutzenrand und Schuhkante. */
+function smoothField(geometry, field, passes) {
+  const p = geometry.attributes.position, n = p.count, group = new Int32Array(n), keys = new Map();
+  for (let i = 0; i < n; i++) {
+    const key = `${Math.round(p.getX(i) * 2e4)},${Math.round(p.getY(i) * 2e4)},${Math.round(p.getZ(i) * 2e4)}`;
+    if (!keys.has(key)) keys.set(key, keys.size);
+    group[i] = keys.get(key);
+  }
+  const g = keys.size, value = new Float64Array(g), near = Array.from({ length: g }, () => new Set());
+  for (let i = 0; i < n; i++) value[group[i]] = field[i];
+  const index = geometry.index.array;
+  for (let t = 0; t < index.length; t += 3) {
+    const a = group[index[t]], b = group[index[t + 1]], c = group[index[t + 2]];
+    near[a].add(b).add(c); near[b].add(a).add(c); near[c].add(a).add(b);
+  }
+  let next = new Float64Array(g);
+  for (let pass = 0; pass < passes; pass++) {
+    for (let k = 0; k < g; k++) {
+      let sum = 0;
+      for (const m of near[k]) sum += value[m];
+      next[k] = near[k].size ? 0.5 * value[k] + 0.5 * sum / near[k].size : value[k];
+    }
+    [value.set(next)];
+  }
+  return Float32Array.from({ length: n }, (_, i) => value[group[i]]);
+}
 
 /** Schneidet die Dreiecke von `geometry` an der Linie field = 0 und behält den Teil mit field ≥ 0. Rückgabe: neue BufferGeometry mit Lage, Normale, Haut und Hautgewichten. */
 function clip(geometry, field) {
@@ -67,7 +96,10 @@ export function garmentBases(body, ctx) {
   const wear = body.geometry.attributes.wear, pos = body.geometry.attributes.position;
   const w4 = (i) => [wear.getX(i), wear.getY(i), wear.getZ(i), wear.getW(i)];
   const bases = {};
-  for (const [name, fn] of Object.entries(FIELD)) bases[name] = clip(body.geometry, (i) => fn(w4(i)));
+  for (const [name, fn] of Object.entries(FIELD)) {
+    const field = smoothField(body.geometry, Float32Array.from({ length: pos.count }, (_, i) => fn(w4(i))), EDGE_SMOOTHING);
+    bases[name] = clip(body.geometry, (i) => field[i]);
+  }
   // Unterhemd: lange Ärmel vom Schulteransatz bis zum Handgelenk (rein nach der Lage: der Avatar steht in T-Haltung, die Arme liegen entlang ±x)
   const sx = Math.abs(ctx.sleeve.l.from.x), wrist = Math.abs(ctx.wristX);
   bases.under = clip(body.geometry, (i) => Math.min(Math.abs(pos.getX(i)) - (sx - 0.015), wrist - Math.abs(pos.getX(i))));

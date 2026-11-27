@@ -137,7 +137,7 @@ def extend_edges(sheet, threshold=18):
 SPECK_BRIGHT = 55            # ein Fleck ist so viel heller (Helligkeitsstufen) als der Stoff des Stücks
 SPECK_DARK = 80              # oder so viel dunkler (schwarzes Etikett an weißer Hose)
 SPECK_AREA = 0.008           # und höchstens so groß (Anteil der Stückfläche) und kompakt (ausgefüllter Anteil des Umrissrechtecks, Seitenverhältnis): Etikett, Punkt, Lichtreflex; kein Streifen, Bündchen oder Kragen
-SPECK_FILL = 0.6
+SPECK_FILL = 0.4
 SPECK_ASPECT = 5
 
 

@@ -388,3 +388,10 @@ Jetzt:
 - **Jede Figur** (`outfitOf` in `web/looks.js`): Kit-Blatt der Mannschaft, mit Rückennummer nur, wenn sie aus dem Video gelesen ist (nie erfunden). Torwart, Schiedsrichter und Mannschaften ohne Blatt tragen einfarbige Hüllen (Mannschaftsfarbe, gleiche Form und Saumschatten, `kit.flat` in `web/garments.js`). Videotexturen liefern nur noch Gesicht und Haut.
 - **Ein Blatt je Mannschaft für alle Szenen eines Spiels**: `tools/kit_sheet.py MANNSCHAFT ... --szene web/data/SZENE` kopiert das Blatt samt Maßen in jede Szene (ohne neue Bildgenerierung); Szenen ohne `looks` (4928) bekommen den Eintrag neu angelegt.
 Offen: Der Torwart trägt eine andere Farbe als sein Team; ohne Blatt je Torwart bleibt er in der Teamfarbe. Standard-Haut und -Haar für Figuren ohne Foto sind die des Modells.
+
+## Versuch 34: Glatte Kanten an Saum, Stutzen und Schuh
+
+Die Kanten von Hose, Stutzen und Schuh liefen als Zickzack: Das Netz des Körpers ist grob, und die Nulllinie des Kleidungsfelds folgte den Dreieckskanten. `smoothField` in `web/garments.js` glättet das Feld über die Nachbarn im Netz (Punkte an derselben Stelle zählen als einer; `EDGE_SMOOTHING` Durchgänge), bevor `clip` schneidet. Stutzen und Schuh bleiben deckungsgleich (das Feld des Schuhs ist das negierte des Stutzens, die Glättung ist linear). Hosensaum und Stutzenrand sind jetzt gerade, die Linie zwischen Stutzen und Schuh sauber.
+Dazu: Ein dünnes helles Etikett an der Hose blieb im Blatt, weil sein Umrissrechteck zu locker gefüllt war (`SPECK_FILL` 0,6 → 0,4).
+Der Tonunterschied zwischen Ärmel und Rumpf am eigenen Trikot ist kein Blattfehler: Die Farben im Blatt sind gleich (229/15/31 gegen 230/14/30), es war Schatten unter dem Arm. Beim Trikot der Gegner ist der Ärmel im Blatt dunkler grün, das ist der Entwurf des Trikots.
+Offen: Ein rosa Band auf dem Oberschenkel unter dem Hosensaum (die Haut an der Hosenkante hat Rot aus dem Video, Kachel der Haut) und vereinzelte kleine helle Punkte am Hosensaum.
