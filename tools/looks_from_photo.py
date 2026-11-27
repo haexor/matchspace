@@ -47,7 +47,8 @@ FLECK_LUMA = 60            # Helligkeit (0 bis 255), unter der ein Texel als dun
 EAR_ZONE = ((0.066, 1.55, 1.745), (0.052, 1.55, 1.715))      # m: Ohrgegend am Kopf als Ausschnitte (Abstand von der Mittelebene ab, Höhe von bis; Grundhaltung); Augen und Brauen liegen innerhalb von 0,05 bzw. über 1,715 m
 EAR_MESH_X, EAR_MESH_Y = 0.075, (1.64, 1.73)      # m: Ohrnetz (Abstand von der Mittelebene ab, Höhe von bis; Grundhaltung)
 FACE_Z, FACE_TOP, FACE_X = (0.0, 0.03), (1.75, 1.79), (0.082, 0.1)      # m: Gesichtsfläche am Kopf (Vorderseite: z ab, bis zur Höhe, Abstand von der Mittelebene bis); Übergänge weich
-MODEL_NECK_T = 1.15        # Rumpfachse: ab hier (1,53 m, Halsansatz; Breite dort ±8 bis 10 cm) ist der Hals in der Hautfarbe des Spielers
+GAP_SPREAD = 17            # Texel: so weit reicht die Hautfarbe über den Rand der Netzfläche hinaus (Kopf/Hals, Hals/Rumpf)
+NECK_Y, NECK_Z, NECK_RADII, NECK_EDGE = 1.505, -0.045, (0.085, 0.085), (1.0, 1.2)      # m: Halsröhre am Rumpf: ab dieser Höhe, Achse (z), Halbachsen (x, z); Haut bis zum Rand (Anteil der Halbachsen, weich von bis); Grundhaltung nach dem Umformen
 NECK_LOW = (1.655, 1.685)      # m: unterhalb davon ist der Kopf (Kiefer, Nacken) rundum Haut; bis 1,685 m weicher Übergang zum Haar
 LIPS_Y, LIPS_RADIUS, LIP_TINT = 1.618, (0.024, 0.0075), (0.82, 0.74, 1.0)      # m: Mund (Höhe, Halbachsen x/y) und Farbfaktor (BGR) der Lippen gegenüber der Haut
 CHEEK_X, CHEEK_Y, CHEEK_Z = (0.035, 0.065), (1.62, 1.69), 0.03      # m: Wange vor dem Ohr (Abstand von der Mittelebene, Höhe, z ab; nur die Vorderseite des Kopfes), Hautfarbe fürs Netzohr
@@ -112,6 +113,13 @@ def paint_ear(tile, ear, cheek):
     return out
 
 
+def spread_into_gaps(weight, ok, size=GAP_SPREAD):
+    """Gewicht (h, w) auch in die Texel neben dem Netz (`ok` False) ziehen, bis `size` Texel weit: Der Viewer liest am Rand der Netzfläche (Bilinearfilter, Dreiecksnähte) Texel daneben;
+    sie tragen sonst die Farben der Füllung (dunkle Streifen, im Viewer eine Zackenlinie am Übergang von Kopf zu Hals)."""
+    grown = cv2.dilate(weight.astype(np.float32), np.ones((size, size), np.uint8))
+    return np.where(ok, weight, grown)
+
+
 def smooth(x, lo, hi):
     """0 unter lo, 1 über hi, dazwischen weich (smoothstep)."""
     t = np.clip((x - lo) / (hi - lo), 0.0, 1.0)
@@ -126,7 +134,8 @@ def model_face(tile, shape, P, ok, skin_bgr):
     x, y, z = np.abs(np.nan_to_num(P[:, 0])), np.nan_to_num(P[:, 1]), np.nan_to_num(P[:, 2])
     weight = smooth(z, FACE_Z[0], FACE_Z[1]) * (1.0 - smooth(y, FACE_TOP[0], FACE_TOP[1])) * (1.0 - smooth(x, FACE_X[0], FACE_X[1])) * ok
     weight = np.maximum(weight, (1.0 - smooth(y, NECK_LOW[0], NECK_LOW[1])) * ok)      # Kiefer und Nacken unter der Haarkante: rundum Haut
-    weight = cv2.GaussianBlur(weight.reshape(h, w).astype(np.float32), (0, 0), 1.5)[..., None]
+    weight = spread_into_gaps(weight.reshape(h, w), ok.reshape(h, w))
+    weight = cv2.GaussianBlur(weight, (0, 0), 1.5)[..., None]
     out = tile.astype(np.float32) * (1.0 - weight) + np.asarray(skin_bgr, np.float32) * weight
     lips = (1.0 - smooth(np.hypot(x / LIPS_RADIUS[0], (y - LIPS_Y) / LIPS_RADIUS[1]), 0.6, 1.0)) * smooth(z, 0.06, 0.08) * ok
     lips = cv2.GaussianBlur(lips.reshape(h, w).astype(np.float32), (0, 0), 1.0)[..., None]
@@ -134,11 +143,15 @@ def model_face(tile, shape, P, ok, skin_bgr):
     return np.clip(out, 0, 255).astype(np.uint8)
 
 
-def model_neck(tile, t_axis, skin_bgr, ok):
-    """Hals am Rumpf (Rumpfachse ab `MODEL_NECK_T`, Höhe 1,53 m: der Halsansatz, wo der Kragen liegt) in der Hautfarbe des Spielers statt aus dem Foto gelesen: Das Foto gab fleckige, rosa Haut an Nacken und Schulterkante und einen anderen Ton
-    als das Gesicht (der Hals wirkte aufgesetzt). Weicher Übergang zum Trikot (Kragen)."""
+def model_neck(tile, P, skin_bgr, ok):
+    """Hals am Rumpf in der Hautfarbe des Spielers statt aus dem Foto gelesen: Das Foto gab fleckige, rosa Haut an Nacken und Schulterkante und einen anderen Ton als das Gesicht (der Hals
+    wirkte aufgesetzt). Haut ist nur die Röhre des Halses (innerhalb der Ellipse NECK_RADII um die Halsachse, ab NECK_Y): Die Schulterkante darum gehört zum Trikot, der Kragen läuft als Ring um den Hals.
+    Weicher Übergang an Ring und Kragen."""
     h, w = tile.shape[:2]
-    weight = (smooth(t_axis, MODEL_NECK_T - 0.02, MODEL_NECK_T + 0.02) * ok).reshape(h, w).astype(np.float32)
+    x, y, z = np.nan_to_num(P[:, 0]), np.nan_to_num(P[:, 1]), np.nan_to_num(P[:, 2])
+    r = np.hypot(x / NECK_RADII[0], (z - NECK_Z) / NECK_RADII[1])
+    weight = smooth(y, NECK_Y - 0.01, NECK_Y + 0.01) * (1.0 - smooth(r, NECK_EDGE[0], NECK_EDGE[1])) * ok
+    weight = spread_into_gaps(weight.reshape(h, w), ok.reshape(h, w))
     weight = cv2.GaussianBlur(weight, (0, 0), 1.0)[..., None]
     return np.clip(tile.astype(np.float32) * (1.0 - weight) + np.asarray(skin_bgr, np.float32) * weight, 0, 255).astype(np.uint8)
 
@@ -515,8 +528,6 @@ def main(scene_dir, player, photos, mesh_path, out_dir, debug=None):
         # Texel, die kein Foto sieht: bei guter Abdeckung (alle Ansichten da) aus den Nachbartexeln der Fotos gefüllt; nur bei kaum Fotos (zum Beispiel nur ein Rückenfoto) bleibt die Videotextur
         new = np.where(has[:, None], acc / np.maximum(total, 1e-9)[:, None], base)
         tile_new = np.clip(new, 0, 255).astype(np.uint8).reshape(h, w, 3)
-        if name == "torso" and skin_bgr is not None:
-            tile_new = model_neck(tile_new, t_axis, skin_bgr, ok)
         if name == "torso" and TORSO_FILL == "median":
             tile_new = fill_holes_median(tile_new, (ok & ~has).reshape(h, w), ok.reshape(h, w))
         if name == "head":      # Scheitel (die letzten Zeilen): im Foto knapp am Rand der Personenmaske, dort steht Himmel zwischen den Haaren; die Haarzeile darunter fortsetzen
@@ -539,7 +550,7 @@ def main(scene_dir, player, photos, mesh_path, out_dir, debug=None):
             wrapped = np.concatenate([tile_new[:, -pad:], tile_new, tile_new[:, :pad]], axis=1)
             gap_w = np.concatenate([gap[:, -pad:], gap, gap[:, :pad]], axis=1)
             tile_new = cv2.inpaint(wrapped, gap_w, 3, cv2.INPAINT_TELEA)[:, pad:-pad]
-        if name == "head":      # Netzohr zuletzt (die Lückenfüllung davor hätte es mit der Haarfarbe der Nachbarn gefüllt)
+        if name == "head":      # Gesicht und Netzohr zuletzt (die Lückenfüllung davor hätte sie mit der Haarfarbe der Nachbarn gefüllt)
             px, py = np.abs(np.nan_to_num(P[:, 0])), np.nan_to_num(P[:, 1])
             ear_mesh = ok & (px > EAR_MESH_X) & (py > EAR_MESH_Y[0]) & (py < EAR_MESH_Y[1])
             cheek = ok & (px > CHEEK_X[0]) & (px < CHEEK_X[1]) & (py > CHEEK_Y[0]) & (py < CHEEK_Y[1]) & (np.nan_to_num(P[:, 2]) > CHEEK_Z) & has
@@ -549,6 +560,8 @@ def main(scene_dir, player, photos, mesh_path, out_dir, debug=None):
             tile_new = paint_ear(tile_new, ear_mesh.reshape(h, w), cheek.reshape(h, w))
             ear_zone = (ok & np.any([(px > x0) & (py > y0) & (py < y1) for x0, y0, y1 in EAR_ZONE], axis=0)).reshape(h, w)
             tile_new = remove_ear_flecks(tile_new, ear_zone)      # Reste (einzelne dunkle Punkte am Ohrrand) nach dem Anmalen
+        if name == "torso" and skin_bgr is not None:      # Hals zuletzt, aus demselben Grund
+            tile_new = model_neck(tile_new, P, skin_bgr, ok)
         out[ty + y:ty + y + h, tx + x:tx + x + w] = tile_new
     print("Anteil der Texel aus Fotos je Teil:", {a: round(c, 2) for a, c in stats.items()})
     out_dir.mkdir(parents=True, exist_ok=True)

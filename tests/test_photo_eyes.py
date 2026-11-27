@@ -114,14 +114,25 @@ class ModelFaceTest(unittest.TestCase):
 
 
 class ModelNeckTest(unittest.TestCase):
-    def test_neck_rows_get_the_skin_colour_shirt_rows_stay(self):
+    def test_neck_tube_gets_the_skin_colour_shoulder_stays(self):
         n = 40
         tile = np.full((n, n, 3), (30, 160, 20), np.uint8)       # Trikot
-        t_axis = np.repeat(np.linspace(0.9, 1.3, n), n)
+        P = np.zeros((n * n, 3))
+        P[:, 0] = np.tile(np.linspace(-0.12, 0.12, n), n)          # x quer über die Schulter
+        P[:, 1] = 1.56
+        P[:, 2] = lfp.NECK_Z
         ok = np.ones(n * n, bool)
-        out = lfp.model_neck(tile, t_axis, (90, 140, 200), ok)
-        self.assertTrue((np.abs(out[-3, 20].astype(int) - np.array((90, 140, 200))) < 6).all())      # Hals
-        self.assertEqual(tuple(out[2, 20]), (30, 160, 20))                                            # Trikot
+        out = lfp.model_neck(tile, P, (90, 140, 200), ok)
+        self.assertTrue((np.abs(out[20, 20].astype(int) - np.array((90, 140, 200))) < 6).all())      # Mitte: Hals
+        self.assertTrue((np.abs(out[20, 1].astype(int) - np.array((30, 160, 20))) < 4).all())             # Rand: Schulter bleibt Trikot
+
+    def test_below_the_neck_base_nothing_changes(self):
+        n = 20
+        tile = np.full((n, n, 3), (30, 160, 20), np.uint8)
+        P = np.zeros((n * n, 3))
+        P[:, 1] = 1.40
+        out = lfp.model_neck(tile, P, (90, 140, 200), np.ones(n * n, bool))
+        self.assertTrue((out == tile).all())
 
 
 class ProjectionTest(unittest.TestCase):

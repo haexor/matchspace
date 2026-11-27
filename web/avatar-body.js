@@ -3,6 +3,9 @@ import * as THREE from 'three';
 
 // Umformen zum Jugendlichen: Breite und Tiefe des Rumpfs, Dicke der Glieder (Anteil des Erwachsenenmodells)
 const SLIM = { torsoX: 0.84, torsoZ: 0.86, upperarm: 0.74, lowerarm: 0.8, hand: 0.9, thigh: 0.84, calf: 0.88, neck: 0.98, jaw: 0.9 };
+// Hals: Vom Schulteransatz (from) bis zum Kinn (to) läuft der Rumpf weich auf `scale` der Breite und Tiefe zu; ohne das steht der Hals wie ein dicker Zylinder
+// auf einer flachen Schulterkante (kein fließender Übergang von Schulter über Hals zum Kopf). Maße in m der Grundhaltung vor dem Umformen.
+const NECK_TAPER = { from: 1.47, to: 1.62, scale: 0.82 };
 // Kleidung trägt auf (Meter)
 export const PAD = { shirt: 0.016, sleeve: 0.02, shorts: 0.014, shortsHem: 0.024, sock: 0.004, boot: 0.008 };
 
@@ -26,7 +29,7 @@ export function partOf(name) {
  */
 export function reshape(template, meshes) {
   const pos = (name) => template.getObjectByName(name).getWorldPosition(new THREE.Vector3());
-  const centreZ = pos('spine_02').z;
+  const centreZ = pos('spine_02').z, neckZ = pos('neck_01').z;
   const shift = {}, axis = {};
   for (const side of ['l', 'r']) {
     const shoulder = pos('upperarm_' + side), hip = pos('thigh_' + side);
@@ -60,8 +63,9 @@ export function reshape(template, meshes) {
         }
         if (part === 'torso' || part === 'neck') {
           const f = part === 'neck' ? SLIM.neck : 1;
-          d.x += w * (SLIM.torsoX * f - 1) * p.x;
-          d.z += w * (SLIM.torsoZ * f - 1) * (p.z - centreZ);
+          const t = Math.min(1, Math.max(0, (p.y - NECK_TAPER.from) / (NECK_TAPER.to - NECK_TAPER.from))), taper = 1 - (1 - NECK_TAPER.scale) * t * t * (3 - 2 * t);
+          d.x += w * (SLIM.torsoX * f * taper - 1) * p.x;
+          d.z += w * (SLIM.torsoZ * f - 1) * (p.z - centreZ) + w * (taper - 1) * (p.z - neckZ);
           continue;
         }
         const side = part.slice(-1), limb = part.startsWith('upperarm') || part.startsWith('lowerarm') || part.startsWith('hand') ? 'arm_' : 'leg_';

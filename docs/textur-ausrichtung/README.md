@@ -329,3 +329,12 @@ Das Avatar-Netz ist schon diese Figur (zwei Ohren, zwei Augen, Nase, Mund); Dopp
 - Der Viewer zeigt die Augen und Brauen des Modells wieder: Die Szene trägt `looks.faceFromModel`, `web/looks.js` setzt dann `photo` nicht (der Viewer blendet die Modellaugen nur aus, wenn das Gesicht aus dem Foto kommt, ältere Szenen bleiben also unverändert).
 Das Foto liefert damit Hautton, Haarfarbe und die Textur außerhalb des Gesichts. Ausbau später: Gesicht an Landmarken des Fotos formen (Augenabstand, Nasenbreite, Kinn) und einfärben.
 Nachtrag (Hals): Der Hals wirkte aufgesetzt und der Nacken unproportional: Das Foto gab Hals und Schulterkante in einem anderen, fleckigen (rosa) Hauton als das Gesicht. Jetzt trägt der ganze Hals dieselbe Hautfarbe wie das Gesicht, die `skin_reference` aus Nase und Wange des Vorderfotos (`skin_bgr`): am Rumpf ab `MODEL_NECK_T` (1,53 m, Halsansatz, `model_neck`), am Kopf rundum unter der Haarkante (`NECK_LOW`, in `model_face`). Die Form des Halses (steile Schulterkante bei 1,52 m) ist die des Modells.
+
+## Versuch 28: Hals als weicher Übergang von Schulter zu Kopf
+
+Rückmeldung: Hals und Nacken wirkten gruselig, ohne fließenden Übergang. Drei Ursachen und Maßnahmen:
+1. **Form** (`web/avatar-body.js`, `NECK_TAPER`): Der Rumpf lief vom Schulteransatz (1,47 m) bis zum Kinn (1,62 m) nicht zu, der Hals stand als Zylinder auf einer flachen Schulterkante. Jetzt verjüngt sich der Rumpf dort weich auf 82 % der Breite und Tiefe.
+2. **Farbe** (`looks_from_photo.model_neck`): Nur die Röhre des Halses (Ellipse um die Halsachse, ab 1,505 m) hat die Hautfarbe des Spielers; die Schulterkante ringsum bleibt Trikot, der Kragen läuft als Ring um den Hals (vorher: Haut über die ganze Schulterkante, wie ein Trichter). Auch das Foto-gelesene Rosa an Nacken und Schulter entfällt.
+3. **Zackenlinie im Nacken** (Naht zwischen Kopf- und Rumpfkachel): Der Viewer liest am Rand der Netzfläche Texel daneben (Filter, Dreiecksnähte); dort stand die Farbe der Füllung als dunkler Streifen. `spread_into_gaps` zieht die Hautfarbe 17 Texel über den Rand der Netzfläche hinaus (Kopf und Hals).
+Dazu: Die Frisur wird im Nacken bei 1,675 m gerade abgeschnitten (`HAIR_BOTTOM`; vorher Zacken der Haarsträhnen).
+Wichtig: Die Form des Netzes hat sich geändert; das Netz für die Übertragung muss neu gebacken werden (`tools/avatar_bake.py SZENE AUSGABE.pkl --von 0 --bis 1`), sonst liegen Fotos und Netz am Hals leicht daneben.
