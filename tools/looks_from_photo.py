@@ -47,6 +47,8 @@ FLECK_LUMA = 60            # Helligkeit (0 bis 255), unter der ein Texel als dun
 EAR_ZONE = ((0.066, 1.55, 1.745), (0.052, 1.55, 1.715))      # m: Ohrgegend am Kopf als Ausschnitte (Abstand von der Mittelebene ab, Höhe von bis; Grundhaltung); Augen und Brauen liegen innerhalb von 0,05 bzw. über 1,715 m
 EAR_MESH_X, EAR_MESH_Y = 0.075, (1.64, 1.73)      # m: Ohrnetz (Abstand von der Mittelebene ab, Höhe von bis; Grundhaltung)
 FACE_Z, FACE_TOP, FACE_X = (0.0, 0.03), (1.75, 1.79), (0.082, 0.1)      # m: Gesichtsfläche am Kopf (Vorderseite: z ab, bis zur Höhe, Abstand von der Mittelebene bis); Übergänge weich
+BACK_LIFT = 0.085          # m: Mitte der Rückenpartie über der Mitte zwischen Schulter und Hüfte
+BACK_HALF, BACK_CELL, BACK_COLUMNS = 0.15, 256, 8      # Rückenpartie: halbe Seitenlänge (m), Feldgröße (Pixel) und Felder je Zeile in backs.png (Maße wie plate in web/avatar.js)
 GAP_SPREAD = 17            # Texel: so weit reicht die Hautfarbe über den Rand der Netzfläche hinaus (Kopf/Hals, Hals/Rumpf)
 NECKLINE, NECKLINE_EDGE = (0.018, 0.55, 0.3), 0.008      # Halsausschnitt des Trikots wie im Viewer (fields in web/avatar.js): Höhe über dem Halsknochen, Anstieg je m seitlich, Anstieg je m nach hinten (bis 6 cm); weicher Rand in m
 NECK_RADII, NECK_EDGE = (0.09, 0.09), (1.0, 1.25)      # m: Halsröhre: Halbachsen (x, z) um den Halsknochen; Haut bis zum Rand (Anteil, weich von bis)
@@ -119,6 +121,17 @@ def spread_into_gaps(weight, ok, size=GAP_SPREAD):
     sie tragen sonst die Farben der Füllung (dunkle Streifen, im Viewer eine Zackenlinie am Übergang von Kopf zu Hals)."""
     grown = cv2.dilate(weight.astype(np.float32), np.ones((size, size), np.uint8))
     return np.where(ok, weight, grown)
+
+
+def back_patch(fm, image, yc, half=BACK_HALF, size=BACK_CELL):
+    """Rückenpartie des Hinterfotos als eigenes Bild: Quadrat der Seitenlänge 2·half (m) um die Höhe yc, mit derselben Abbildung wie die Kachel, nur in voller Auflösung des Fotos statt
+    256 Texeln um den ganzen Körper (die Rückennummer ist in der Kachel unscharf). Die Achsen gehören zum Viewer (plateUv in web/avatar.js): u wächst gegen x, die oberste Zeile ist oben."""
+    cols, rows = np.meshgrid(np.arange(size), np.arange(size))
+    x = (0.5 - (cols.ravel() + 0.5) / size) * 2.0 * half
+    y = yc + (0.5 - (rows.ravel() + 0.5) / size) * 2.0 * half
+    P = np.stack([x, y, np.zeros_like(x)], axis=1)
+    u, v = project(fm, P)
+    return np.clip(vl.sample(image, np.c_[u, v] + 0.5), 0, 255).astype(np.uint8).reshape(size, size, 3)
 
 
 def smooth(x, lo, hi):
@@ -571,6 +584,22 @@ def main(scene_dir, player, photos, mesh_path, out_dir, debug=None):
         if item.name != "looks.png" and not (out_dir / item.name).exists():
             (shutil.copytree if item.is_dir() else shutil.copy2)(item, out_dir / item.name)
     cv2.imwrite(str(out_dir / "looks.png"), out)
+    back = fits.get("hinten")
+    if back is not None and not back.get("side"):
+        yc = float((J["upperarm_l"][1] + J["upperarm_r"][1]) / 2 + J["pelvis"][1]) / 2 + BACK_LIFT      # (Schulterhöhe + Hüfte) / 2 plus Anhebung (die Nummer sitzt höher als die Mitte des Rückens)
+        backs_path = scene_dir / "backs.png"
+        sheet = cv2.imread(str(backs_path), cv2.IMREAD_UNCHANGED) if backs_path.exists() else None
+        rows_needed = (len(looks["players"]) + BACK_COLUMNS - 1) // BACK_COLUMNS
+        if sheet is None or sheet.shape[0] < rows_needed * BACK_CELL:
+            sheet = np.zeros((rows_needed * BACK_CELL, BACK_COLUMNS * BACK_CELL, 4), np.uint8)
+        patch = back_patch(back, images["hinten"], yc)
+        by, bx = (k // BACK_COLUMNS) * BACK_CELL, (k % BACK_COLUMNS) * BACK_CELL
+        sheet[by:by + BACK_CELL, bx:bx + BACK_CELL, :3] = patch
+        sheet[by:by + BACK_CELL, bx:bx + BACK_CELL, 3] = 255
+        cv2.imwrite(str(out_dir / "backs.png"), sheet)
+        bp = meta["looks"].setdefault("backPatch", {"file": "backs.png", "cell": BACK_CELL, "columns": BACK_COLUMNS, "half": BACK_HALF, "players": {}})
+        bp["y"] = round(yc, 4)
+        bp["players"][player] = k
     meta["looks"]["faceFromModel"] = True      # Gesicht (Augen, Brauen, Nase, Mund) zeichnet der Viewer mit dem Modell; das Foto liefert Hautton, Haar, Ohren
     meta["looks"].setdefault("fromPhoto", {})[player] = {v: Path(p).name for v, p in photos.items()}
     (out_dir / "meta.json").write_text(json.dumps(meta, indent=2, ensure_ascii=False) + "\n")

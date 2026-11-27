@@ -243,6 +243,7 @@ export async function loadAvatars(url) {
     const material = new THREE.MeshStandardMaterial({ roughness: 0.78, metalness: 0 });
     const uniforms = { numberMap: { value: number === null ? blank : numberTexture(String(number)) }, plate: { value: number === null ? new THREE.Vector4(1, 0, 1, 0) : plate },
       kitSkin: { value: kit.skin ?? SKIN }, kitShirt: { value: kit.shirt }, kitShorts: { value: kit.shorts }, kitSock: { value: kit.socks }, kitBoot: { value: BOOT },
+      backMap: { value: look?.back?.map ?? blank }, backCell: { value: look?.back?.cell ?? new THREE.Vector4(0, 0, 1, 1) }, backY: { value: look?.back?.y ?? 0 }, backSize: { value: look?.back?.size ?? new THREE.Vector2(1, 1) },
       ...(look ? lookUniforms(look) : {}) };
     // Mit Videotextur: Farbe von dort (Licht des Spieltags steckt schon darin, deshalb etwas aufgehellt); sonst Mannschaftsfarben je Kleidungsstück
     const colour = look ? 'vec3 kitColour = lookColour() * 1.15;' : `vec3 kitColour = mix(kitSkin, kitSock, covered(vWear.z));
@@ -257,7 +258,7 @@ export async function loadAvatars(url) {
       shader.fragmentShader = shader.fragmentShader
         .replace('#include <common>', `#include <common>
           varying vec4 vWear; varying vec3 vRest; varying float vBack;
-          uniform sampler2D numberMap; uniform vec4 plate; uniform vec3 kitSkin, kitShirt, kitShorts, kitSock, kitBoot;
+          uniform sampler2D numberMap, backMap; uniform vec4 plate, backCell; uniform float backY; uniform vec2 backSize; uniform vec3 kitSkin, kitShirt, kitShorts, kitSock, kitBoot;
           float covered(float d) { return smoothstep(-0.5, 0.5, d / max(fwidth(d), 1e-5)); }
           ${look ? LOOK_GLSL : ''}`)
         .replace('#include <color_fragment>', `${colour}
@@ -266,9 +267,17 @@ export async function loadAvatars(url) {
             vec4 digit = texture2D(numberMap, plateUv);
             kitColour = mix(kitColour, digit.rgb, digit.a);
           }
+          ${look?.back ? `
+          // Rückenpartie aus dem Foto (Nummer scharf): derselbe Rückenausschnitt wie das Foto, weicher Rand, nur auf der Rückseite des Trikots
+          vec2 bu = vec2(0.5 - vRest.x / (2.0 * backCell.w), 0.5 + (vRest.y - backY) / (2.0 * backCell.w));
+          if (bu.x > 0.0 && bu.x < 1.0 && bu.y > 0.0 && bu.y < 1.0) {
+            float edge = min(min(bu.x, 1.0 - bu.x), min(bu.y, 1.0 - bu.y));
+            float on = smoothstep(0.0, 0.1, edge) * smoothstep(0.25, 0.6, -vBack) * covered(vWear.x);
+            kitColour = mix(kitColour, texture2D(backMap, (backCell.xy + vec2(bu.x, 1.0 - bu.y) * backCell.z) / backSize).rgb * 1.15, on);
+          }` : ''}
           diffuseColor.rgb *= kitColour;`);
     };
-    material.customProgramCacheKey = () => (look ? 'matchspace-player-body-look' : 'matchspace-player-body');
+    material.customProgramCacheKey = () => (look ? (look.back ? 'matchspace-player-body-look-back' : 'matchspace-player-body-look') : 'matchspace-player-body');
     return material;
   }
   // Haare mit Videotextur: Strähnen aus der Haartextur des Modells, Farbe vom Oberkopf im Video

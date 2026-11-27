@@ -5,10 +5,20 @@ import * as THREE from 'three';
 /** Zustand für ein Spiel: lädt looks.png und liefert Aussehen, Haarfarbe und Trikot je Figur. */
 export function createLooks(meta, base) {
   const LOOKS = meta.looks ?? null;
-  let lookAtlas = null, lookPixels = null;
+  let lookAtlas = null, lookPixels = null, backAtlas = null;
   function loadLooks() {
     if (!LOOKS) return Promise.resolve();
-    return new THREE.TextureLoader().loadAsync(`${base}${LOOKS.file}?tile=${LOOKS.tile}`).then((tex) => {
+    // Rückenpartie aus dem Foto (scharfe Nummer): eigene Bilddatei, ein Feld je Spieler (tools/looks_from_photo.py)
+    const backs = LOOKS.backPatch ? new THREE.TextureLoader().loadAsync(`${base}${LOOKS.backPatch.file}?v=${LOOKS.backPatch.cell}`).then((tex) => {
+      tex.flipY = false;
+      tex.colorSpace = THREE.SRGBColorSpace;
+      tex.generateMipmaps = false;
+      tex.minFilter = THREE.LinearFilter;
+      tex.magFilter = THREE.LinearFilter;
+      tex.needsUpdate = true;
+      backAtlas = tex;
+    }).catch((err) => console.warn('Rückenpartie nicht geladen:', err)) : Promise.resolve();
+    return backs.then(() => new THREE.TextureLoader().loadAsync(`${base}${LOOKS.file}?tile=${LOOKS.tile}`).then((tex) => {
       tex.flipY = false;
       tex.colorSpace = THREE.SRGBColorSpace;
       tex.generateMipmaps = false;
@@ -21,13 +31,15 @@ export function createLooks(meta, base) {
       const g = cv.getContext('2d');
       g.drawImage(tex.image, 0, 0);
       lookPixels = g.getImageData(0, 0, cv.width, cv.height);
-    }).catch((err) => console.warn('Videotextur nicht geladen, zeige Mannschaftsfarben:', err));
+    })).catch((err) => console.warn('Videotextur nicht geladen, zeige Mannschaftsfarben:', err));
   }
   function lookOf(entity) {
     const k = LOOKS?.players?.[entity.id] ?? (entity.role === 'goalkeeper' ? undefined : LOOKS?.teams?.[entity.team]);
     if (k === undefined || !lookAtlas) return null;
     const tile = [(k % LOOKS.columns) * LOOKS.tile, Math.floor(k / LOOKS.columns) * LOOKS.tile];
-    return { printKept: Boolean(LOOKS.cleaned?.printKept), photo: Boolean(LOOKS.fromPhoto?.[entity.id]?.vorn) && !LOOKS.faceFromModel, map: lookAtlas, tile, size: [lookAtlas.image.width, lookAtlas.image.height],
+    const bp = LOOKS.backPatch, cell = bp?.players?.[entity.id];
+    const back = backAtlas && cell !== undefined ? { map: backAtlas, cell: new THREE.Vector4((cell % bp.columns) * bp.cell, Math.floor(cell / bp.columns) * bp.cell, bp.cell, bp.half), y: bp.y, size: new THREE.Vector2(backAtlas.image.width, backAtlas.image.height) } : null;
+    return { back, printKept: Boolean(LOOKS.cleaned?.printKept), photo: Boolean(LOOKS.fromPhoto?.[entity.id]?.vorn) && !LOOKS.faceFromModel, map: lookAtlas, tile, size: [lookAtlas.image.width, lookAtlas.image.height],
       rects: LOOKS.segments.map((s) => new THREE.Vector4(...s.rect)), ranges: LOOKS.segments.map((s) => new THREE.Vector2(...s.t)) };
   }
   /** Mittlere Farbe des Oberkopfs (oberstes Zehntel des Kopfbereichs) in der Kachel: Haarfarbe für die Augenbrauen. */

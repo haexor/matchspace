@@ -137,6 +137,27 @@ class ModelNeckTest(unittest.TestCase):
         self.assertTrue((out == tile).all())
 
 
+class BackPatchTest(unittest.TestCase):
+    def setUp(self):
+        n = 400
+        cols, rows = np.meshgrid(np.arange(n), np.arange(n))
+        self.image = np.stack([cols, rows, np.zeros_like(cols)], axis=-1).astype(np.float32).clip(0, 255)
+        # Höhe 1,0 m ist unten (v 300), 2,0 m oben (v 100); Mitte u = 200, 500 Pixel je Meter
+        self.fm = {"y": np.array([1.0, 2.0]), "v": np.array([300.0, 100.0]), "u": np.array([200.0, 200.0]), "sx": np.array([500.0, 500.0]), "view": "hinten"}
+
+    def test_patch_axes_match_the_viewer(self):
+        patch = lfp.back_patch(self.fm, self.image, 1.5, half=0.1, size=32)
+        self.assertEqual(patch.shape, (32, 32, 3))
+        # Viewer: u wächst gegen x; im Foto von hinten steht Spieler-links (x > 0) im Bild links, also wächst die Bildspalte mit u: Spalte (Kanal 0) steigt nach rechts
+        self.assertGreater(int(patch[16, -1, 0]), int(patch[16, 0, 0]))
+        # oberste Zeile = oben = größere Höhe = kleineres v: Zeile (Kanal 1) steigt nach unten
+        self.assertGreater(int(patch[-1, 16, 1]), int(patch[0, 16, 1]))
+
+    def test_patch_centre_is_the_requested_height(self):
+        patch = lfp.back_patch(self.fm, self.image, 1.5, half=0.1, size=32)
+        self.assertAlmostEqual(float(patch[16, 16, 1]), 200.0, delta=6.0)      # Höhe 1,5 m -> v 200
+
+
 class ProjectionTest(unittest.TestCase):
     def fm(self, with_eyes):
         y = [1.45, 1.81]
