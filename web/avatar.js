@@ -81,6 +81,7 @@ function hash(text) {
 // Die Frisuren des Modells stehen am Scheitel bis zu 4 cm vom Schädel ab und wirken wie ein Bienenkorb. Jeder Haarpunkt, der weiter als HAIR_THICKNESS
 // vom Kopf des Körpernetzes entfernt liegt, wird auf diese Dicke an den Kopf herangezogen: die Frisur liegt am Schädel an, ihre Form (Ansatz, Seiten) bleibt.
 const HAIR_THICKNESS = 0.012;   // m
+const HAIR_BOTTOM = 1.675;   // m: tiefste Haarkante im Nacken; die Zacken der Frisur darunter werden gerade abgeschnitten (sonst dunkle Zackenlinie auf dem Nacken)
 const HEAD_FROM = 1.6;   // m: ab dieser Höhe (Grundhaltung) zählen Körperpunkte zum Kopf
 // Die Frisur reicht an den Seiten über das Ohr (Strähnen am Ohr, im Netz ein zweites ohrförmiges Gebilde): Dreiecke mit einem Punkt im Ohrbereich entfallen,
 // das Ohr des Kopfes bleibt frei. Maße in m, Grundhaltung: Abstand von der Mittelebene ab, Höhe von bis, z von bis.
@@ -110,9 +111,8 @@ function hugHead(hair, body) {
     let best = Infinity, near = null;
     for (const q of head) { const l = p.distanceToSquared(q); if (l < best) { best = l; near = q; } }
     const dist = Math.sqrt(best);
-    if (dist <= HAIR_THICKNESS) continue;
-    d.subVectors(p, near).multiplyScalar(HAIR_THICKNESS / dist);
-    position.setXYZ(i, near.x + d.x, near.y + d.y, near.z + d.z);
+    if (dist > HAIR_THICKNESS) { d.subVectors(p, near).multiplyScalar(HAIR_THICKNESS / dist); position.setXYZ(i, near.x + d.x, near.y + d.y, near.z + d.z); }
+    if (position.getY(i) < HAIR_BOTTOM) position.setY(i, HAIR_BOTTOM);
   }
   position.needsUpdate = true;
   hair.geometry.computeVertexNormals();
