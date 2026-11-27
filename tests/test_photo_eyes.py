@@ -85,6 +85,34 @@ class EarPaintTest(unittest.TestCase):
         self.assertTrue((out == tile).all())
 
 
+class ModelFaceTest(unittest.TestCase):
+    def setUp(self):
+        n = 30
+        self.shape = (n, n)
+        self.tile = np.full((n, n, 3), (10, 10, 10), np.uint8)
+        # Texel: links die Vorderseite des Gesichts (z > 0, Mitte, Mundhöhe), rechts der Hinterkopf
+        xs = np.tile(np.linspace(-0.04, 0.04, n), n)
+        self.P = np.zeros((n * n, 3))
+        self.P[:, 0] = xs
+        self.P[:, 1] = 1.65
+        self.P[:, 2] = 0.09
+        self.P[(np.arange(n * n) // n) < 10, 2] = -0.08      # obere Zeilen: Hinterkopf
+        self.ok = np.ones(n * n, bool)
+
+    def test_front_gets_the_skin_colour_back_stays(self):
+        skin = (90, 140, 200)
+        out = lfp.model_face(self.tile, self.shape, self.P, self.ok, skin)
+        self.assertTrue((np.abs(out[20, 15].astype(int) - np.array(skin)) < 6).all())
+        self.assertLess(int(out[2, 15].mean()), 20)
+
+    def test_lips_are_redder_than_the_skin(self):
+        self.P[:, 1] = lfp.LIPS_Y
+        out = lfp.model_face(self.tile, self.shape, self.P, self.ok, (90, 140, 200))
+        mid = out[20, 15].astype(int)
+        self.assertLess(mid[0], 90)
+        self.assertLess(mid[1], 140)
+
+
 class ProjectionTest(unittest.TestCase):
     def fm(self, with_eyes):
         y = [1.45, 1.81]
