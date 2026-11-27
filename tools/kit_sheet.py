@@ -142,10 +142,12 @@ SPECK_ASPECT = 5
 
 
 def remove_specks(sheet, boxes):
-    """Blatt ohne kleine helle oder dunkle Flecken auf dem Stoff (Etikett an der Hose, Lichtpunkte): Sie wären auf der Hülle als weiße Marken zu sehen. Streifen und größere Muster bleiben."""
+    """Kleine helle oder dunkle Etiketten aus den Hosenfeldern entfernen; Drucke auf Trikot und Stutzen bleiben erhalten."""
     grey = cv2.cvtColor(sheet, cv2.COLOR_BGR2GRAY).astype(float)
     out = sheet.copy()
-    for x, y, w, h in boxes.values():
+    # Etiketten sitzen an den Shorts; kleine Kontraste auf dem Trikot können Wappen oder Druck sein.
+    for name in ("shortsFront", "shortsBack"):
+        x, y, w, h = boxes[name]
         part = grey[y:y + h, x:x + w]
         item = np.linalg.norm(sheet[y:y + h, x:x + w].astype(float) - np.median(sheet[5:25, 5:25].reshape(-1, 3), axis=0), axis=2) > 18
         if item.sum() < 100:
