@@ -158,9 +158,9 @@ def remove_specks(sheet, boxes):
         count, labels, stats, _ = cv2.connectedComponentsWithStats(bright.astype(np.uint8))
         mask = np.zeros(part.shape, np.uint8)
         for k in range(1, count):
-            area, x, y, bw, bh = (stats[k, cv2.CC_STAT_AREA], stats[k, cv2.CC_STAT_LEFT], stats[k, cv2.CC_STAT_TOP],
-                                  stats[k, cv2.CC_STAT_WIDTH], stats[k, cv2.CC_STAT_HEIGHT])
-            ys, xs = np.nonzero(labels[y:y + bh, x:x + bw] == k)
+            area, left, top, bw, bh = (stats[k, cv2.CC_STAT_AREA], stats[k, cv2.CC_STAT_LEFT], stats[k, cv2.CC_STAT_TOP],
+                                       stats[k, cv2.CC_STAT_WIDTH], stats[k, cv2.CC_STAT_HEIGHT])      # nicht x, y: so heißt die Ecke des Hosenfelds, die unten zum Füllen gebraucht wird
+            ys, xs = np.nonzero(labels[top:top + bh, left:left + bw] == k)
             points = np.column_stack((xs, ys)).astype(float)
             centered = points - points.mean(axis=0)
             axes = np.linalg.eigvalsh(centered.T @ centered / area)

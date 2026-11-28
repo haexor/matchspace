@@ -9,7 +9,7 @@ const HEM_SHADOW = { shorts: 0.06, rim: 0.012, strength: 0.4 };   // Schatten de
 const SOLE = { height: 0.02, lip: 0.008, studs: 0.007 };   // Schuhsohle: Höhe, Überstand, Höhe der Stollenplatte (m)
 const PAD = { shirt: 0.018, under: 0.009, shorts: 0.016, socks: 0.007, boots: 0.012, gloves: 0.006 };   // Abstand der Hülle vom Körper (m)
 // Ein Stück liegt dort, wo sein Feld ≥ 0 ist und kein darüber getragenes Stück liegt (Trikot über Hose über Schuh über Stutzen)
-const EDGE_SMOOTHING = 12;   // Durchgänge, mit denen die Kleidungsfelder vor dem Schneiden geglättet werden (glatte Kanten)
+export const EDGE_SMOOTHING = 8;   // Durchgänge, mit denen die Kleidungsfelder geglättet werden (glatte Kanten); der Körper (web/avatar.js) tut es vor Textur und Hüllen, damit beide dieselbe Kante haben
 const BOOT_DROP = 0.025;   // Der Schuh endet so viel tiefer als das Schuhfeld des Avatars (m): ein flacher Fußballschuh, kein Stiefel; der Stutzen läuft entsprechend tiefer
 const FIELD = {
   shirt: (w) => w[0],
@@ -20,7 +20,7 @@ const FIELD = {
 
 /** Glättet ein Feld über die Nachbarn im Netz (Punkte an derselben Stelle, etwa an Nähten der Textur, zählen als einer): Das Netz des Körpers ist grob, die Nulllinie des Feldes folgt sonst
  *  den Dreieckskanten und läuft als Zickzack um Saum, Stutzenrand und Schuhkante. */
-function smoothField(geometry, field, passes) {
+export function smoothField(geometry, field, passes) {
   const p = geometry.attributes.position, n = p.count, group = new Int32Array(n), keys = new Map();
   for (let i = 0; i < n; i++) {
     const key = `${Math.round(p.getX(i) * 2e4)},${Math.round(p.getY(i) * 2e4)},${Math.round(p.getZ(i) * 2e4)}`;
@@ -97,10 +97,7 @@ export function garmentBases(body, ctx) {
   const wear = body.geometry.attributes.wear, pos = body.geometry.attributes.position;
   const w4 = (i) => [wear.getX(i), wear.getY(i), wear.getZ(i), wear.getW(i)];
   const bases = {};
-  for (const [name, fn] of Object.entries(FIELD)) {
-    const field = smoothField(body.geometry, Float32Array.from({ length: pos.count }, (_, i) => fn(w4(i))), EDGE_SMOOTHING);
-    bases[name] = clip(body.geometry, (i) => field[i]);
-  }
+  for (const [name, fn] of Object.entries(FIELD)) bases[name] = clip(body.geometry, (i) => fn(w4(i)));
   // Unterhemd: lange Ärmel vom Schulteransatz bis zum Handgelenk (rein nach der Lage: der Avatar steht in T-Haltung, die Arme liegen entlang ±x)
   const sx = Math.abs(ctx.sleeve.l.from.x), wrist = Math.abs(ctx.wristX);
   bases.under = clip(body.geometry, (i) => Math.min(Math.abs(pos.getX(i)) - (sx - 0.015), wrist - Math.abs(pos.getX(i))));

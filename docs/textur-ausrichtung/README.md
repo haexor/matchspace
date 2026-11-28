@@ -389,9 +389,13 @@ Jetzt:
 - **Ein Blatt je Mannschaft für alle Szenen eines Spiels**: `tools/kit_sheet.py MANNSCHAFT ... --szene web/data/SZENE` kopiert das Blatt samt Maßen in jede Szene (ohne neue Bildgenerierung); Szenen ohne `looks` (4928) bekommen den Eintrag neu angelegt.
 Offen: Der Torwart trägt eine andere Farbe als sein Team; ohne Blatt je Torwart bleibt er in der Teamfarbe. Standard-Haut und -Haar für Figuren ohne Foto sind die des Modells.
 
-## Versuch 34: Glatte Kanten an Saum, Stutzen und Schuh
+## Versuch 34: Glatte Kanten an Saum, Stutzen und Schuh, Hautstreifen unter dem Saum
 
-Die Kanten von Hose, Stutzen und Schuh liefen als Zickzack: Das Netz des Körpers ist grob, und die Nulllinie des Kleidungsfelds folgte den Dreieckskanten. `smoothField` in `web/garments.js` glättet das Feld über die Nachbarn im Netz (Punkte an derselben Stelle zählen als einer; `EDGE_SMOOTHING` Durchgänge), bevor `clip` schneidet. Stutzen und Schuh bleiben deckungsgleich (das Feld des Schuhs ist das negierte des Stutzens, die Glättung ist linear). Hosensaum und Stutzenrand sind jetzt gerade, die Linie zwischen Stutzen und Schuh sauber.
-Dazu: Ein dünnes helles Etikett an der Hose blieb im Blatt, weil sein Umrissrechteck zu locker gefüllt war (`SPECK_FILL` 0,6 → 0,4). Die Hauptachsenprüfung hält diagonale Streifen von der Fleckentfernung aus.
+Die Kanten von Hose, Stutzen und Schuh liefen als Zickzack: Das Netz des Körpers ist grob, und die Nulllinie des Kleidungsfelds folgte den Dreieckskanten. `smoothField` (`web/garments.js`) glättet die vier Kleidungsfelder (`wear`) über die Nachbarn im Netz (Punkte an derselben Stelle zählen als einer, `EDGE_SMOOTHING` Durchgänge); `web/avatar.js` tut das einmal am Körper, bevor Textur und Hüllen die Felder lesen. So haben Hüllen und Körperfarbe dieselbe glatte Kante, und Stutzen und Schuh bleiben deckungsgleich (das Feld des Schuhs ist das negierte des Stutzens, die Glättung ist linear).
+Dazu:
+- **Hautstreifen** (Shader in `web/avatar.js`, `looks.skin` aus `web/looks.js`): Unter Hosensaum und Ärmelkante lag ein rosa Streifen auf der Haut, weil das Video dort Farbe der Kleidung in die Haut mischt (und die Hüllen etwas höher enden als die Videofläche). Zwischen 7 und 1,5 cm unter der Kleidungskante bekommt der Körper die Hautfarbe des Spielers (nur im Kit-Modus und mit bekannter Hautfarbe).
+- Ein dünnes helles Etikett an der Hose blieb im Blatt, weil sein Umrissrechteck zu locker gefüllt war (`SPECK_FILL` 0,6 → 0,4); die Hauptachsenprüfung hält diagonale Streifen von der Fleckentfernung aus.
+- `tools/avatar_bake.py` überspringt die Kit-Hüllen (`Kit_*`), die nicht indiziert sind und über 4000 Punkte haben: Sonst las es eine Hülle als Körper. Netz neu gebacken (dünnere Arme, geglättete Felder) und die Übertragung für die Nahszene wiederholt.
 Der Tonunterschied zwischen Ärmel und Rumpf am eigenen Trikot ist kein Blattfehler: Die Farben im Blatt sind gleich (229/15/31 gegen 230/14/30), es war Schatten unter dem Arm. Beim Trikot der Gegner ist der Ärmel im Blatt dunkler grün, das ist der Entwurf des Trikots.
-Offen: Ein rosa Band auf dem Oberschenkel unter dem Hosensaum (die Haut an der Hosenkante hat Rot aus dem Video, Kachel der Haut) und vereinzelte kleine helle Punkte am Hosensaum.
+In `remove_specks` überschrieb die Schleife über die Flecken die Ecke des Hosenfelds (`x`, `y`); das Füllen traf dann die falsche Stelle des Blatts und die Tests zu den Etiketten schlugen fehl. Behoben.
+Offen: vereinzelte kleine helle Punkte am Hosensaum.
