@@ -15,7 +15,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from './vendor/loaders/GLTFLoader.js';
 import * as SkeletonUtils from './vendor/utils/SkeletonUtils.js';
 import { PAD, partOf, reshape, dress } from './avatar-body.js';
-import { garmentBases, dressUp } from './garments.js';
+import { garmentBases, dressUp, smoothField, EDGE_SMOOTHING } from './garments.js';
 import { lookCoordinates, LOOK_GLSL, LOOK_VERTEX, LOOK_PASS, lookUniforms } from './avatar-look.js';
 
 // Name im Programm -> Knochen des Modells
@@ -198,6 +198,12 @@ export async function loadAvatars(url, options = {}) {
   }
   // Wo die Rückennummer sitzt (Grundhaltung): halbe Breite, Mitte in der Höhe, halbe Höhe
   const plate = new THREE.Vector4(0.13, (shoulderY + rest.Hips.p.y) / 2 + 0.05, 0.13, 1);
+  if (KIT) {      // Felder glätten: Hüllen und Körperfarbe teilen dieselbe glatte Kante (das Netz ist grob, die Nulllinie folgt sonst den Dreieckskanten)
+    for (let c = 0; c < 4; c++) {
+      const channel = smoothField(body.geometry, Float32Array.from({ length: position.count }, (_, i) => wear[i * 4 + c]), EDGE_SMOOTHING);
+      for (let i = 0; i < position.count; i++) wear[i * 4 + c] = channel[i];
+    }
+  }
   if (LAYER !== 'skin') dress(body, wear, extra, !KIT);      // Kit-Hüllen tragen selbst auf: unter ihnen wird das Muskelrelief nur geglättet; nackt: ohne Aufpolsterung und Glättung unter dem Stoff
   body.geometry.setAttribute('wear', new THREE.BufferAttribute(wear, 4));
   for (const h of hairs) hugHead(h, body);
@@ -251,9 +257,13 @@ export async function loadAvatars(url, options = {}) {
     const uniforms = { numberMap: { value: number === null ? blank : numberTexture(String(number)) }, plate: { value: number === null ? new THREE.Vector4(1, 0, 1, 0) : plate },
       kitSkin: { value: kit.skin ?? SKIN }, kitShirt: { value: kit.shirt }, kitShorts: { value: kit.shorts }, kitSock: { value: kit.socks }, kitBoot: { value: BOOT },
       backMap: { value: look?.back?.map ?? blank }, backCell: { value: look?.back?.cell ?? new THREE.Vector4(0, 0, 1, 1) }, backY: { value: look?.back?.y ?? 0 }, backSize: { value: look?.back?.size ?? new THREE.Vector2(1, 1) },
+      lookSkin: { value: look?.skin ?? kit.skin ?? SKIN },
       ...(look ? lookUniforms(look) : {}) };
+    const SKIN_BAND = KIT && look?.skin && LAYER !== 'skin';      // Streifen unter Saum und Ärmelkante: Das Video hat dort Farbe der Kleidung in der Haut, die Hüllen enden etwas höher; er bekommt die Hautfarbe des Spielers
     // Mit Videotextur: Farbe von dort (Licht des Spieltags steckt schon darin, deshalb etwas aufgehellt); sonst Mannschaftsfarben je Kleidungsstück
-    const colour = LAYER === 'skin' ? 'vec3 kitColour = kitSkin;' : look ? 'vec3 kitColour = lookColour() * 1.15;' : `vec3 kitColour = mix(kitSkin, kitSock, covered(vWear.z));
+    const colour = LAYER === 'skin' ? 'vec3 kitColour = kitSkin;' : look ? `vec3 kitColour = lookColour() * 1.15;${SKIN_BAND ? `
+          float cloth = max(max(vWear.x, vWear.y), max(vWear.z, vWear.w));
+          kitColour = mix(kitColour, lookSkin * 1.15, smoothstep(-0.07, -0.015, cloth) * (1.0 - smoothstep(-0.015, 0.0, cloth)));` : ''}` : `vec3 kitColour = mix(kitSkin, kitSock, covered(vWear.z));
           kitColour = mix(kitColour, kitBoot, covered(vWear.w));
           kitColour = mix(kitColour, kitShorts, covered(vWear.y));
           kitColour = mix(kitColour, kitShirt, covered(vWear.x));`;
@@ -265,7 +275,7 @@ export async function loadAvatars(url, options = {}) {
       shader.fragmentShader = shader.fragmentShader
         .replace('#include <common>', `#include <common>
           varying vec4 vWear; varying vec3 vRest; varying float vBack;
-          uniform sampler2D numberMap, backMap; uniform vec4 plate, backCell; uniform float backY; uniform vec2 backSize; uniform vec3 kitSkin, kitShirt, kitShorts, kitSock, kitBoot;
+          uniform sampler2D numberMap, backMap; uniform vec4 plate, backCell; uniform float backY; uniform vec2 backSize; uniform vec3 kitSkin, kitShirt, kitShorts, kitSock, kitBoot, lookSkin;
           float covered(float d) { return smoothstep(-0.5, 0.5, d / max(fwidth(d), 1e-5)); }
           ${look ? LOOK_GLSL : ''}`)
         .replace('#include <color_fragment>', `${colour}
@@ -285,7 +295,7 @@ export async function loadAvatars(url, options = {}) {
           }` : ''}
           diffuseColor.rgb *= kitColour;`);
     };
-    material.customProgramCacheKey = () => (look ? (look.back ? 'matchspace-player-body-look-back' : 'matchspace-player-body-look') : 'matchspace-player-body');
+    material.customProgramCacheKey = () => (look ? (look.back ? 'matchspace-player-body-look-back' : 'matchspace-player-body-look') : 'matchspace-player-body') + (SKIN_BAND ? '-skinband' : '');
     return material;
   }
   // Haare mit Videotextur: Strähnen aus der Haartextur des Modells, Farbe vom Oberkopf im Video
